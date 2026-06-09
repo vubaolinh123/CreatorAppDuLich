@@ -1,0 +1,64 @@
+# Root node_modules
+node_modules/
+package-lock.json
+
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+lerna-debug.log*
+
+# OS Files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# IDEs and editors
+.idea/
+.vscode/
+*.suo
+*.ntvsca*
+*.njsproj
+*.sln
+*.sw?
+
+# Next.js (Dashboard)
+/dulich-dashboard/node_modules/
+/dulich-dashboard/.next/
+/dulich-dashboard/out/
+/dulich-dashboard/build/
+/dulich-dashboard/.env.local
+/dulich-dashboard/.env.development.local
+/dulich-dashboard/.env.test.local
+/dulich-dashboard/.env.production.local
+
+# Vite / React (Desktop)
+/dulich-desktop/node_modules/
+/dulich-desktop/dist/
+/dulich-desktop/dist-ssr/
+/dulich-desktop/src-tauri/target/
+/dulich-desktop/src-tauri/WixTools/
+/dulich-desktop/src-tauri/*.log
+/dulich-desktop/src-tauri/gen/
+**/*.rs.bk
+/dulich-desktop/.env
+/dulich-desktop/.env.local
+/dulich-desktop/.env.*.local
+
+# Python Pipeline
+/dulich-pipeline/venv/
+/dulich-pipeline/.venv/
+/dulich-pipeline/env/
+/dulich-pipeline/output/
+/dulich-pipeline/.env
+/dulich-pipeline/mock_db.json
+**/__pycache__/
+**/*.pyc
+**/*.pyo
+**/*.pyd

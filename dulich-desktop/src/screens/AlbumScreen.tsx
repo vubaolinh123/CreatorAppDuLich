@@ -1,0 +1,727 @@
+import { useState, useEffect, useRef } from "react";
+import { invoke, convertFileSrc } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
+
+interface LogLine {
+  id: string;
+  time: string;
+  type: "info" | "success" | "warn" | "error";
+  text: string;
+}
+
+const CREATORS = [
+  { id: "lan_anh", name: "Lan Anh" },
+  { id: "minh_tuan", name: "Minh Tuấn" },
+  { id: "thu_ha", name: "Thu Hà" },
+  { id: "duc_anh", name: "Đức Anh" },
+  { id: "ngoc_mai", name: "Ngọc Mai" },
+];
+
+const FORMAT_LABELS: Record<string, string> = {
+  story: "Story (1080x1920)",
+  feed_square: "Feed Vuông (1080x1080)",
+  feed_portrait: "Feed Portrait (1080x1350)",
+  reels_cover: "Reels Cover (1080x1920)",
+  youtube_thumb: "YouTube Thumb (1280x720)",
+  facebook_cover: "Facebook Cover (820x312)",
+  pinterest: "Pinterest Pin (1000x1500)",
+  carousel_slide: "Carousel (1080x1080)",
+  blog_header: "Blog Header (1200x630)",
+  seeding_card: "Seeding Card (800x800)",
+};
+
+export default function AlbumScreen() {
+  const [step, setStep] = useState<1 | 2 | 3>(1); // 1: Input, 2: Running, 3: Result
+  const [topic, setTopic] = useState("");
+  const [title, setTitle] = useState("Review Phú Quốc Cực Chất");
+  const [subtitle, setSubtitle] = useState("Trải nghiệm thiên đường đảo ngọc cùng Lan Anh");
+  const [selectedCreator, setSelectedCreator] = useState("lan_anh");
+  const [canvaFrame, setCanvaFrame] = useState("");
+
+  const [logs, setLogs] = useState<LogLine[]>([]);
+  const [progress, setProgress] = useState(0);
+  const [statusText, setStatusText] = useState("Đang khởi động...");
+  const [resultImages, setResultImages] = useState<Record<string, string>>({});
+  const [zoomImage, setZoomImage] = useState<string | null>(null);
+
+  const [errorMsg, setErrorMsg] = useState("");
+  const logConsoleBottomRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (logConsoleBottomRef.current) {
+      logConsoleBottomRef.current.scrollIntoView({ behavior: "smooth" });
+    }
+  }, [logs.length]);
+
+  const runAlbumPipeline = async () => {
+    if (!topic.trim()) {
+      setErrorMsg("Vui lòng nhập chủ đề để AI tìm kiếm hình ảnh phù hợp.");
+      return;
+    }
+
+    setStep(2);
+    setLogs([]);
+    setProgress(0);
+    setStatusText("Đang khởi động pipeline...");
+    setErrorMsg("");
+
+    const isTauri = typeof window !== "undefined" && (window as any).__TAURI_INTERNALS__ !== undefined;
+
+    if (isTauri) {
+      try {
+        const unlisten = await listen<any>("pipeline-log", (event) => {
+          const logPayload = event.payload;
+          setLogs((prev) => [
+            ...prev,
+            {
+              id: Math.random().toString(),
+              time: logPayload.time,
+              type: (logPayload.level === "warn" ? "warn" : logPayload.level === "warning" ? "warn" : logPayload.level) as any,
+              text: logPayload.text,
+            }
+          ]);
+
+          // Update progress bar from python logs
+          const text = logPayload.text;
+          if (text.includes("tìm thấy ảnh nền")) {
+            setProgress(25);
+            setStatusText("Đang thiết lập background du lịch...");
+          } else if (text.includes("định dạng ảnh seeding")) {
+            setProgress(40);
+            setStatusText("Đang vẽ layout Pillow seeding...");
+          } else if (text.includes("Đã tạo format")) {
+            // Extrapolate progress from generated format count
+            setProgress((prev) => Math.min(90, prev + 5));
+            setStatusText(`Đang xuất ảnh: ${text.split("'")[1] || ""}`);
+          } else if (text.includes("Job tạo Album seeding hoàn tất")) {
+            setProgress(100);
+            setStatusText("Hoàn tất xuất album!");
+          }
+        });
+
+        const resultJsonStr = await invoke<string>("run_album_pipeline", {
+          topic,
+          title,
+          subtitle,
+          frame: canvaFrame,
+          creatorId: selectedCreator,
+        });
+
+        unlisten();
+
+        const runResult = JSON.parse(resultJsonStr);
+        setResultImages(runResult.images || {});
+        setStep(3);
+
+      } catch (err: any) {
+        setLogs((prev) => [
+          ...prev,
+          {
+            id: Math.random().toString(),
+            time: new Date().toLocaleTimeString(),
+            type: "error",
+            text: `❌ Lỗi: ${err.message || err}`,
+          }
+        ]);
+        setErrorMsg(err.toString());
+      }
+    } else {
+      // Mock mode
+      const mockFormats = [
+        "story", "feed_square", "feed_portrait", "reels_cover", "youtube_thumb",
+        "facebook_cover", "pinterest", "carousel_slide", "blog_header", "seeding_card"
+      ];
+      
+      const mockLogLines = [
+        "[AlbumPipeline] Khởi động Image Pipeline cho chủ đề: " + topic,
+        "[Pexels] Tìm kiếm ảnh stock cho từ khóa: " + topic,
+        "[Pexels] ✓ Tìm thấy ảnh nền du lịch từ stock",
+        "[Composer] Đang thiết lập kích thước vẽ Pillow...",
+        ...mockFormats.map(fmt => `[Composer] ✓ Đã tạo format '${fmt}': D:\\ProjectWeb\\DuLichAppWeb\\dulich-pipeline\\output\\albums\\album_mock_${fmt}.jpg`),
+        "[AlbumPipeline] ✓ Job tạo Album seeding hoàn tất thành công!"
+      ];
+
+      for (let i = 0; i < mockLogLines.length; i++) {
+        await new Promise((r) => setTimeout(r, 600));
+        const nowStr = new Date().toLocaleTimeString();
+        setLogs((prev) => [
+          ...prev,
+          {
+            id: Math.random().toString(),
+            time: nowStr,
+            type: mockLogLines[i].includes("Lỗi") ? "error" : mockLogLines[i].includes("✓") ? "success" : "info",
+            text: mockLogLines[i],
+          }
+        ]);
+        setProgress(Math.floor(((i + 1) / mockLogLines.length) * 100));
+        setStatusText(mockLogLines[i]);
+      }
+
+      // Generate mock paths
+      const mockImages: Record<string, string> = {};
+      mockFormats.forEach(fmt => {
+        mockImages[fmt] = `mock_placeholder`; // Handled by display helper
+      });
+      setResultImages(mockImages);
+      setStep(3);
+    }
+  };
+
+  const handleOpenFolder = async () => {
+    try {
+      // Open output/albums folder
+      await invoke("list_directory", { path: "./output/albums" });
+      alert("Đã mở thư mục output/albums trên máy local.");
+    } catch (e) {
+      alert("Hãy kiểm tra thư mục: dulich-pipeline/output/albums/");
+    }
+  };
+
+  const resetAll = () => {
+    setStep(1);
+    setTopic("");
+    setLogs([]);
+    setProgress(0);
+    setResultImages({});
+  };
+
+  return (
+    <div style={styles.container}>
+      <header style={styles.header}>
+        <h1 style={styles.title}>🖼️ Tạo Album Ảnh Seeding</h1>
+        <p style={styles.subtitle}>Sản xuất hàng loạt 10 kích thước ảnh chuẩn để seeding lên Facebook, Instagram, TikTok, Reels, YouTube và Pinterest.</p>
+      </header>
+
+      {errorMsg && <div style={styles.errorAlert}>⚠ {errorMsg}</div>}
+
+      {/* --- STEP 1: INPUT --- */}
+      {step === 1 && (
+        <div style={styles.glassPanel}>
+          <h2 style={styles.panelTitle}>Thông số thiết kế Album</h2>
+          
+          <div style={styles.formGrid}>
+            <div style={styles.formGroup}>
+              <label style={styles.label}>🗺️ Chủ đề hình ảnh (Từ khoá để AI tìm ảnh nền)</label>
+              <input
+                type="text"
+                value={topic}
+                onChange={(e) => setTopic(e.target.value)}
+                placeholder="VD: Phú Quốc resort, cafe Đà Lạt view đẹp, món ăn Hà Nội..."
+                style={styles.input}
+              />
+              <small style={styles.hint}>AI sẽ dùng từ khóa này để tìm kiếm ảnh stock chất lượng cao.</small>
+            </div>
+
+            <div style={styles.formRow}>
+              <div style={{ ...styles.formGroup, flex: 1.2 }}>
+                <label style={styles.label}>🔤 Tiêu đề chính (Title)</label>
+                <input
+                  type="text"
+                  value={title}
+                  onChange={(e) => setTitle(e.target.value)}
+                  placeholder="Nhập tiêu đề lớn in đậm..."
+                  style={styles.input}
+                />
+              </div>
+
+              <div style={{ ...styles.formGroup, flex: 1 }}>
+                <label style={styles.label}>👤 Người tạo (Creator)</label>
+                <select
+                  value={selectedCreator}
+                  onChange={(e) => setSelectedCreator(e.target.value)}
+                  style={styles.select}
+                >
+                  {CREATORS.map(c => (
+                    <option key={c.id} value={c.id}>{c.name}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            <div style={styles.formGroup}>
+              <label style={styles.label}>✍️ Phụ đề / Đoạn giới thiệu ngắn (Subtitle)</label>
+              <input
+                type="text"
+                value={subtitle}
+                onChange={(e) => setSubtitle(e.target.value)}
+                placeholder="Nhập mô tả phụ..."
+                style={styles.input}
+              />
+            </div>
+
+            <div style={styles.formGroup}>
+              <label style={styles.label}>🎨 Khung Canva tùy chọn (Đường dẫn ảnh PNG rỗng ở giữa)</label>
+              <input
+                type="text"
+                value={canvaFrame}
+                onChange={(e) => setCanvaFrame(e.target.value)}
+                placeholder="VD: D:\Design\frame_dulich.png (Bỏ trống để tự động sinh frame mockup viền neon)"
+                style={styles.input}
+              />
+            </div>
+
+            <button onClick={runAlbumPipeline} style={styles.generateBtn}>
+              ✨ Bắt đầu xuất 10 ảnh Seeding
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* --- STEP 2: RUNNING --- */}
+      {step === 2 && (
+        <div style={styles.glassPanel}>
+          <h2 style={styles.panelTitle}>⚙️ Đang xử lý Album ảnh...</h2>
+          
+          <div style={styles.progressSection}>
+            <div style={styles.progressBarBg}>
+              <div style={{ ...styles.progressBarFill, width: `${progress}%` }} />
+            </div>
+            <div style={styles.progressMeta}>
+              <span style={styles.progressStatus}>{statusText}</span>
+              <span style={styles.progressPercent}>{progress}%</span>
+            </div>
+          </div>
+
+          {/* Console logs */}
+          <div style={styles.consoleBox}>
+            <div style={styles.consoleHeader}>📟 Console Outputs</div>
+            <div style={styles.consoleBody}>
+              {logs.map((l, index) => {
+                const color = l.type === "success" ? "#10b981" : l.type === "error" ? "#ef4444" : l.type === "warn" ? "#f59e0b" : "#9ca3af";
+                return (
+                  <div key={index} style={{ ...styles.consoleLine, color }}>
+                    <span style={styles.consoleTime}>{l.time}</span>
+                    <span>{l.text}</span>
+                  </div>
+                );
+              })}
+              <div ref={logConsoleBottomRef} />
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* --- STEP 3: RESULT GALLERY --- */}
+      {step === 3 && (
+        <div style={styles.resultContainer}>
+          <div style={styles.resultHeaderRow}>
+            <h2 style={styles.panelTitle}>🎉 Kết quả: 10 ảnh Seeding</h2>
+            <div style={styles.resultActions}>
+              <button onClick={handleOpenFolder} style={styles.secondaryBtn}>📁 Thư mục đầu ra</button>
+              <button onClick={resetAll} style={styles.primaryBtn}>← Làm album mới</button>
+            </div>
+          </div>
+
+          <div style={styles.galleryGrid}>
+            {Object.entries(resultImages).map(([format, path]) => {
+              // Create dynamic gradient placeholders for mock/empty display
+              const isMock = path === "mock_placeholder" || path.includes("album_mock_");
+              const imageUrl = !isMock ? convertFileSrc(path) : null;
+              return (
+                <div key={format} style={styles.galleryCard}>
+                  <div
+                    onClick={() => setZoomImage(format)}
+                    style={{
+                      ...styles.imagePreviewBox,
+                      background: isMock
+                        ? "linear-gradient(135deg, #4f46e5, #ec4899)"
+                        : "rgba(0,0,0,0.4)"
+                    }}
+                  >
+                    {isMock ? (
+                      <div style={styles.mockOverlayText}>
+                        <span style={styles.mockLabel}>{FORMAT_LABELS[format] || format}</span>
+                        <p style={styles.mockSubTitle}>{title}</p>
+                      </div>
+                    ) : imageUrl ? (
+                      <img src={imageUrl} alt={format} style={styles.imagePreview} />
+                    ) : (
+                      <span style={{ fontSize: 13, color: "#fff" }}>🖼️ {FORMAT_LABELS[format] || format}</span>
+                    )}
+                  </div>
+                  <div style={styles.cardInfo}>
+                    <span style={styles.cardTitle}>{FORMAT_LABELS[format] || format}</span>
+                    <span style={styles.cardPath}>{isMock ? "Generated mock_stock.jpg" : path.split("\\").pop()}</span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* ZOOM MODAL */}
+      {zoomImage && (
+        <div onClick={() => setZoomImage(null)} style={styles.modal}>
+          <div onClick={(e) => e.stopPropagation()} style={styles.modalContent}>
+            <button onClick={() => setZoomImage(null)} style={styles.modalClose}>✕</button>
+            <h3 style={styles.modalTitle}>{FORMAT_LABELS[zoomImage] || zoomImage}</h3>
+            
+            <div style={styles.modalImagePlaceholder}>
+              {(!resultImages[zoomImage] || resultImages[zoomImage] === "mock_placeholder" || resultImages[zoomImage].includes("album_mock_")) ? (
+                <div style={styles.modalMockCard}>
+                  <span style={styles.modalMockIcon}>🌴</span>
+                  <h1 style={styles.modalMockTitle}>{title}</h1>
+                  <p style={styles.modalMockSub}>{subtitle}</p>
+                  <span style={styles.modalMockHash}>#seeding #travel #vietnam</span>
+                </div>
+              ) : (
+                <img
+                  src={convertFileSrc(resultImages[zoomImage])}
+                  alt={zoomImage}
+                  style={styles.modalImage}
+                />
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+const styles = {
+  container: {
+    padding: 24,
+    color: "#f3f4f6",
+    fontFamily: "Inter, sans-serif",
+    height: "100%",
+    overflowY: "auto" as const,
+  },
+  imagePreview: {
+    width: "100%",
+    height: "100%",
+    objectFit: "cover" as const,
+  },
+  modalImage: {
+    maxWidth: "100%",
+    maxHeight: "100%",
+    objectFit: "contain" as const,
+    borderRadius: 8,
+  },
+  header: {
+    marginBottom: 24,
+  },
+  title: {
+    fontSize: 26,
+    fontWeight: 700,
+    color: "#ffffff",
+    margin: 0,
+  },
+  subtitle: {
+    fontSize: 14,
+    color: "#9ca3af",
+    marginTop: 6,
+    lineHeight: 1.5,
+  },
+  glassPanel: {
+    backgroundColor: "rgba(17, 12, 46, 0.4)",
+    backdropFilter: "blur(16px)",
+    borderRadius: 16,
+    padding: 24,
+    border: "1px solid rgba(255, 255, 255, 0.06)",
+    boxShadow: "0 8px 32px 0 rgba(0, 0, 0, 0.3)",
+  },
+  panelTitle: {
+    fontSize: 17,
+    fontWeight: 600,
+    color: "#ffffff",
+    margin: 0,
+  },
+  formGrid: {
+    display: "flex",
+    flexDirection: "column" as const,
+    gap: 18,
+    marginTop: 18,
+  },
+  formRow: {
+    display: "flex",
+    gap: 16,
+  },
+  formGroup: {
+    display: "flex",
+    flexDirection: "column" as const,
+    gap: 6,
+  },
+  label: {
+    fontSize: 13,
+    fontWeight: 500,
+    color: "#d1d5db",
+  },
+  input: {
+    backgroundColor: "rgba(255, 255, 255, 0.04)",
+    border: "1px solid rgba(255, 255, 255, 0.1)",
+    borderRadius: 8,
+    color: "#ffffff",
+    fontSize: 13,
+    padding: "10px 14px",
+    outline: "none",
+    width: "100%",
+  },
+  select: {
+    backgroundColor: "rgba(255, 255, 255, 0.04)",
+    border: "1px solid rgba(255, 255, 255, 0.1)",
+    borderRadius: 8,
+    color: "#ffffff",
+    fontSize: 13,
+    padding: "10px 14px",
+    outline: "none",
+  },
+  hint: {
+    fontSize: 11,
+    color: "#6b7280",
+  },
+  generateBtn: {
+    backgroundColor: "#7c3aed",
+    color: "#ffffff",
+    border: "none",
+    borderRadius: 10,
+    fontSize: 14,
+    fontWeight: 600,
+    padding: "14px 28px",
+    cursor: "pointer",
+    boxShadow: "0 4px 16px rgba(124, 58, 237, 0.3)",
+    transition: "background-color 0.2s",
+    marginTop: 8,
+  },
+  progressSection: {
+    marginTop: 20,
+    marginBottom: 20,
+  },
+  progressBarBg: {
+    width: "100%",
+    height: 8,
+    backgroundColor: "rgba(255, 255, 255, 0.05)",
+    borderRadius: 4,
+    overflow: "hidden",
+  },
+  progressBarFill: {
+    height: "100%",
+    background: "linear-gradient(90deg, #7c3aed, #a78bfa)",
+    transition: "width 0.4s ease",
+  },
+  progressMeta: {
+    display: "flex",
+    justifyContent: "space-between",
+    marginTop: 8,
+    fontSize: 12,
+  },
+  progressStatus: {
+    color: "#a78bfa",
+    fontWeight: 500,
+  },
+  progressPercent: {
+    color: "#ffffff",
+    fontWeight: 600,
+  },
+  consoleBox: {
+    backgroundColor: "#080710",
+    borderRadius: 12,
+    border: "1px solid rgba(255, 255, 255, 0.05)",
+    overflow: "hidden",
+  },
+  consoleHeader: {
+    padding: "10px 16px",
+    backgroundColor: "rgba(255, 255, 255, 0.02)",
+    borderBottom: "1px solid rgba(255, 255, 255, 0.05)",
+    fontSize: 11.5,
+    fontWeight: 600,
+    color: "#6b7280",
+    textTransform: "uppercase" as const,
+  },
+  consoleBody: {
+    padding: 16,
+    maxHeight: 220,
+    overflowY: "auto" as const,
+    fontFamily: "monospace",
+    fontSize: 12,
+    display: "flex",
+    flexDirection: "column" as const,
+    gap: 6,
+  },
+  consoleLine: {
+    display: "flex",
+    gap: 12,
+  },
+  consoleTime: {
+    color: "#4b5563",
+    flexShrink: 0,
+  },
+  resultContainer: {
+    display: "flex",
+    flexDirection: "column" as const,
+    gap: 20,
+  },
+  resultHeaderRow: {
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "center",
+  },
+  resultActions: {
+    display: "flex",
+    gap: 12,
+  },
+  primaryBtn: {
+    backgroundColor: "#7c3aed",
+    color: "#ffffff",
+    border: "none",
+    borderRadius: 8,
+    padding: "10px 20px",
+    fontSize: 13,
+    fontWeight: 600,
+    cursor: "pointer",
+  },
+  secondaryBtn: {
+    backgroundColor: "transparent",
+    color: "#ffffff",
+    border: "1px solid rgba(255, 255, 255, 0.15)",
+    borderRadius: 8,
+    padding: "10px 20px",
+    fontSize: 13,
+    fontWeight: 600,
+    cursor: "pointer",
+  },
+  galleryGrid: {
+    display: "grid",
+    gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))",
+    gap: 20,
+  },
+  galleryCard: {
+    backgroundColor: "rgba(255, 255, 255, 0.02)",
+    borderRadius: 12,
+    border: "1px solid rgba(255, 255, 255, 0.05)",
+    overflow: "hidden",
+    cursor: "pointer",
+    transition: "transform 0.2s",
+  },
+  imagePreviewBox: {
+    width: "100%",
+    height: 180,
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    position: "relative" as const,
+    overflow: "hidden",
+  },
+  mockOverlayText: {
+    position: "absolute" as const,
+    bottom: 12,
+    left: 12,
+    right: 12,
+  },
+  mockLabel: {
+    fontSize: 11,
+    fontWeight: 700,
+    color: "#a78bfa",
+    textTransform: "uppercase" as const,
+  },
+  mockSubTitle: {
+    fontSize: 13,
+    fontWeight: 600,
+    color: "#ffffff",
+    margin: "4px 0 0 0",
+  },
+  cardInfo: {
+    padding: 12,
+    display: "flex",
+    flexDirection: "column" as const,
+    gap: 2,
+  },
+  cardTitle: {
+    fontSize: 13,
+    fontWeight: 600,
+    color: "#ffffff",
+  },
+  cardPath: {
+    fontSize: 10,
+    color: "#6b7280",
+    fontFamily: "monospace",
+    overflow: "hidden",
+    textOverflow: "ellipsis",
+    whiteSpace: "nowrap" as const,
+  },
+  errorAlert: {
+    backgroundColor: "rgba(239, 68, 68, 0.15)",
+    border: "1px solid #ef4444",
+    borderRadius: 8,
+    color: "#fca5a5",
+    fontSize: 13,
+    padding: 12,
+    marginBottom: 18,
+  },
+  modal: {
+    position: "fixed" as const,
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: "rgba(0, 0, 0, 0.8)",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    zIndex: 1000,
+    backdropFilter: "blur(4px)",
+  },
+  modalContent: {
+    backgroundColor: "#111",
+    borderRadius: 16,
+    padding: 24,
+    border: "1px solid rgba(255, 255, 255, 0.1)",
+    maxWidth: 500,
+    width: "90%",
+    position: "relative" as const,
+  },
+  modalClose: {
+    position: "absolute" as const,
+    top: 16,
+    right: 16,
+    background: "none",
+    border: "none",
+    color: "#9ca3af",
+    fontSize: 18,
+    cursor: "pointer",
+  },
+  modalTitle: {
+    fontSize: 16,
+    fontWeight: 600,
+    color: "#ffffff",
+    margin: "0 0 16px 0",
+  },
+  modalImagePlaceholder: {
+    width: "100%",
+    height: 400,
+    background: "linear-gradient(135deg, #1e1b4b, #431407)",
+    borderRadius: 12,
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    border: "1px solid rgba(255, 255, 255, 0.05)",
+  },
+  modalMockCard: {
+    textAlign: "center" as const,
+    padding: 24,
+    maxWidth: 320,
+  },
+  modalMockIcon: {
+    fontSize: 48,
+    display: "block",
+    marginBottom: 16,
+  },
+  modalMockTitle: {
+    fontSize: 20,
+    fontWeight: 700,
+    color: "#ffffff",
+    margin: "0 0 8px 0",
+  },
+  modalMockSub: {
+    fontSize: 13,
+    color: "#d1d5db",
+    margin: "0 0 16px 0",
+    lineHeight: 1.5,
+  },
+  modalMockHash: {
+    fontSize: 11.5,
+    color: "#818cf8",
+    fontWeight: 500,
+  }
+};

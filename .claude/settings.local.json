@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(node \"D:/Oh-My-Link/dist/hooks/keyword-detector.js\")",
+      "Skill(update-config)"
+    ]
+  }
+}
