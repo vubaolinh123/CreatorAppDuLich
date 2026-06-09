@@ -8,6 +8,7 @@ use commands::{
     get_creators, save_creator, analyze_hook_video, run_personal_pipeline,
     get_seeding, save_seeding, delete_seeding, run_album_pipeline,
     select_folder, select_files, show_in_folder,
+    select_single_file, generate_scene_plan, assemble_from_scenes,
 };
 
 fn main() {
@@ -38,6 +39,9 @@ fn main() {
             select_folder,
             select_files,
             show_in_folder,
+            select_single_file,
+            generate_scene_plan,
+            assemble_from_scenes,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

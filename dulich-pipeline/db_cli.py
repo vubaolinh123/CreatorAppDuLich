@@ -160,6 +160,82 @@ def main():
         except Exception as e:
             print_result(f"Error deleting seeding item: {e}", success=False)
             
+    elif action == "generate_scene_plan":
+        # Args: job_id, creator_id, topic/script_text, scene_mode, template_ratio, scene_count, [custom_scenes_json]
+        if len(sys.argv) < 6:
+            print_result("Missing args: job_id, creator_id, script_text, scene_mode, template_ratio required.", success=False)
+        try:
+            from agents.personal_video_agent import run_research_and_script
+            job_id = sys.argv[2]
+            creator_id = sys.argv[3]
+            script_text = sys.argv[4]
+            scene_mode = sys.argv[5] if len(sys.argv) > 5 else "ai"
+            template_ratio = sys.argv[6] if len(sys.argv) > 6 else "9:16"
+            scene_count = int(sys.argv[7]) if len(sys.argv) > 7 and sys.argv[7].isdigit() else 0
+            hook_style = sys.argv[8] if len(sys.argv) > 8 else ""
+            hook_text = sys.argv[9] if len(sys.argv) > 9 else ""
+            provider_override = sys.argv[10] if len(sys.argv) > 10 else ""
+            custom_scenes_json = sys.argv[11] if len(sys.argv) > 11 else "[]"
+            
+            custom_scenes = json.loads(custom_scenes_json) if custom_scenes_json != "[]" else None
+
+            # Create job entry first
+            from tools.db import get_db, now_utc, new_doc
+            db = get_db()
+            jobs = db["jobs"] if hasattr(db, "__getitem__") else None
+            if jobs is not None:
+                job_doc = new_doc(
+                    _id=job_id,
+                    status="running",
+                    creator_id=creator_id,
+                    script_text=script_text,
+                    created_at=now_utc().isoformat(),
+                )
+                try:
+                    jobs.insert_one(job_doc)
+                except Exception:
+                    jobs.update_one({"_id": job_id}, {"$set": job_doc}, upsert=True)
+
+            result = run_research_and_script(
+                job_id=job_id,
+                creator_id=creator_id,
+                script_text=script_text,
+                hook_style=hook_style,
+                hook_text=hook_text,
+                provider_override=provider_override,
+                template_ratio=template_ratio,
+                scene_mode=scene_mode,
+                custom_scenes=custom_scenes,
+                scene_count=scene_count,
+            )
+            print_result(result)
+        except Exception as e:
+            import traceback
+            print(traceback.format_exc(), file=sys.stderr)
+            print_result(f"Error in generate_scene_plan: {e}", success=False)
+
+    elif action == "assemble_video":
+        # Args: job_id, scene_uploads_json, transition
+        if len(sys.argv) < 4:
+            print_result("Missing args: job_id, scene_uploads_json required.", success=False)
+        try:
+            from agents.personal_video_agent import run_assemble_video
+            job_id = sys.argv[2]
+            scene_uploads_json = sys.argv[3]
+            transition = sys.argv[4] if len(sys.argv) > 4 else "fade"
+
+            scene_uploads = json.loads(scene_uploads_json)
+            result = run_assemble_video(
+                job_id=job_id,
+                scene_uploads=scene_uploads,
+                transition=transition,
+            )
+            print_result(result)
+        except Exception as e:
+            import traceback
+            print(traceback.format_exc(), file=sys.stderr)
+            print_result(f"Error in assemble_video: {e}", success=False)
+
     else:
         print_result(f"Unknown action: {action}", success=False)
 

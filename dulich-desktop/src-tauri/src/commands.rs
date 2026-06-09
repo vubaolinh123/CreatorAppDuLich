@@ -766,4 +766,165 @@ pub fn show_in_folder(path: String) -> Result<(), String> {
     Ok(())
 }
 
+#[tauri::command]
+pub fn select_single_file(allowed_extensions: Vec<String>) -> Result<Option<String>, String> {
+    let mut dialog = rfd::FileDialog::new();
+    if !allowed_extensions.is_empty() {
+        let refs: Vec<&str> = allowed_extensions.iter().map(|s| s.as_str()).collect();
+        dialog = dialog.add_filter("Media", &refs);
+    }
+    let file = dialog.pick_file();
+    Ok(file.map(|path| path.to_string_lossy().to_string()))
+}
 
+/// Stage 1: Run AI research + script generation, returns script + scene plan.
+#[tauri::command]
+pub async fn generate_scene_plan(
+    window: Window,
+    job_id: String,
+    creator_id: String,
+    script_text: String,
+    scene_mode: String,
+    template_ratio: String,
+    scene_count: usize,
+    hook_style: String,
+    hook_text: String,
+    voice_provider: String,
+    custom_scenes_json: String,
+) -> Result<String, String> {
+    let (python_exe, pipeline_dir) = get_python_exe_and_dir()?;
+
+    let args = vec![
+        "db_cli.py".to_string(),
+        "generate_scene_plan".to_string(),
+        job_id,
+        creator_id,
+        script_text,
+        scene_mode,
+        template_ratio,
+        scene_count.to_string(),
+        hook_style,
+        hook_text,
+        voice_provider,
+        custom_scenes_json,
+    ];
+
+    let mut child = StdCommand::new(&python_exe)
+        .args(&args)
+        .current_dir(&pipeline_dir)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .map_err(|e| format!("Failed to start generate_scene_plan: {}", e))?;
+
+    let stdout = child.stdout.take().ok_or("No stdout")?;
+    let stderr = child.stderr.take().ok_or("No stderr")?;
+
+    let win2 = window.clone();
+    let handle_err = tokio::task::spawn_blocking(move || {
+        for line in BufReader::new(stderr).lines() {
+            if let Ok(text) = line {
+                let level = if text.contains("WARNING") || text.contains("⚠") {
+                    "warning"
+                } else if text.contains("ERROR") || text.contains("❌") {
+                    "error"
+                } else if text.contains("✓") || text.contains("✅") {
+                    "success"
+                } else {
+                    "info"
+                };
+                let payload = PipelineLogPayload {
+                    time: chrono::Local::now().format("%H:%M:%S").to_string(),
+                    level: level.to_string(),
+                    text,
+                };
+                let _ = win2.emit("pipeline-log", payload);
+            }
+        }
+    });
+
+    let mut stdout_data = String::new();
+    {
+        use std::io::Read;
+        let mut reader = std::io::BufReader::new(stdout);
+        let _ = reader.read_to_string(&mut stdout_data);
+    }
+
+    let status = child.wait().map_err(|e| e.to_string())?;
+    let _ = handle_err.await;
+
+    if status.success() && !stdout_data.trim().is_empty() {
+        Ok(stdout_data.trim().to_string())
+    } else {
+        Err(format!("generate_scene_plan failed. stdout: {}", stdout_data))
+    }
+}
+
+/// Stage 2: Assemble real video from user-uploaded scene clips using FFmpeg.
+#[tauri::command]
+pub async fn assemble_from_scenes(
+    window: Window,
+    job_id: String,
+    scene_uploads_json: String,
+    transition: String,
+) -> Result<String, String> {
+    let (python_exe, pipeline_dir) = get_python_exe_and_dir()?;
+
+    let args = vec![
+        "db_cli.py".to_string(),
+        "assemble_video".to_string(),
+        job_id,
+        scene_uploads_json,
+        transition,
+    ];
+
+    let mut child = StdCommand::new(&python_exe)
+        .args(&args)
+        .current_dir(&pipeline_dir)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .map_err(|e| format!("Failed to start assemble_from_scenes: {}", e))?;
+
+    let stdout = child.stdout.take().ok_or("No stdout")?;
+    let stderr = child.stderr.take().ok_or("No stderr")?;
+
+    let win2 = window.clone();
+    let handle_err = tokio::task::spawn_blocking(move || {
+        for line in BufReader::new(stderr).lines() {
+            if let Ok(text) = line {
+                let level = if text.contains("WARNING") || text.contains("⚠") {
+                    "warning"
+                } else if text.contains("ERROR") || text.contains("❌") {
+                    "error"
+                } else if text.contains("✓") || text.contains("✅") {
+                    "success"
+                } else {
+                    "info"
+                };
+                let payload = PipelineLogPayload {
+                    time: chrono::Local::now().format("%H:%M:%S").to_string(),
+                    level: level.to_string(),
+                    text,
+                };
+                let _ = win2.emit("pipeline-log", payload);
+            }
+        }
+    });
+
+    let mut stdout_data = String::new();
+    {
+        use std::io::Read;
+        let mut reader = std::io::BufReader::new(stdout);
+        let _ = reader.read_to_string(&mut stdout_data);
+    }
+
+    let status = child.wait().map_err(|e| e.to_string())?;
+    let _ = handle_err.await;
+
+    if status.success() && !stdout_data.trim().is_empty() {
+        Ok(stdout_data.trim().to_string())
+    } else {
+        Err(format!("assemble_from_scenes failed. stdout: {}", stdout_data))
+    }
+}
