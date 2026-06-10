@@ -241,29 +241,138 @@ function PulsingDots() {
 
 // ── File Path Row ──────────────────────────────────────────────────────────
 function FilePathRow({ icon, label, path, ext }: { icon: string; label: string; path: string; ext: string }) {
+  const [copied, setCopied] = React.useState(false);
+  const [opening, setOpening] = React.useState(false);
+  const [openError, setOpenError] = React.useState("");
+
   const handleOpenFolder = async () => {
+    if (!path) return;
+    setOpening(true);
+    setOpenError("");
+
     const isTauri = typeof window !== "undefined" && (window as any).__TAURI_INTERNALS__ !== undefined;
-    if (isTauri && path) {
+
+    if (isTauri) {
       try {
         const { invoke } = await import("@tauri-apps/api/core");
         await invoke("show_in_folder", { path });
-      } catch (err) { console.error(err); }
+      } catch (err) {
+        setOpenError("Tauri error: " + String(err));
+      }
     } else {
-      alert(`Đường dẫn file: ${path}`);
+      // Browser mode: ask Python server to open Explorer
+      try {
+        const res = await fetch("http://localhost:7788/open-folder", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ path }),
+        });
+        if (!res.ok) {
+          const t = await res.text();
+          setOpenError(`Server lỗi: ${t}`);
+        }
+      } catch (err: any) {
+        if (err.message?.includes("fetch") || err.message?.includes("Failed")) {
+          setOpenError("Server chưa chạy. Khởi động: python server.py");
+        } else {
+          setOpenError(String(err));
+        }
+      }
+    }
+    setOpening(false);
+  };
+
+  const handleCopyPath = () => {
+    if (!path) return;
+    navigator.clipboard?.writeText(path).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    });
+  };
+
+  const handleDownload = async () => {
+    // In browser mode: request a download URL from the server
+    if (!path) return;
+    const isTauri = typeof window !== "undefined" && (window as any).__TAURI_INTERNALS__ !== undefined;
+    if (isTauri) {
+      handleOpenFolder(); // In desktop mode, just open the folder
+      return;
+    }
+    try {
+      const res = await fetch("http://localhost:7788/download-file", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ path }),
+      });
+      if (res.ok) {
+        const blob = await res.blob();
+        const fileName = path.split("\\").pop() || path.split("/").pop() || "video.mp4";
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = fileName;
+        a.click();
+        URL.revokeObjectURL(url);
+      } else {
+        setOpenError("Không thể tải file từ server");
+      }
+    } catch {
+      setOpenError("Server chưa chạy. Dùng nút 📋 để copy đường dẫn.");
     }
   };
+
   return (
-    <div style={sty.fileRow}>
-      <span style={sty.fileIcon}>{icon}</span>
-      <div style={sty.fileInfo}>
-        <div style={sty.fileLabel}>{label}</div>
-        <div style={sty.filePath}>{path || "—"}</div>
+    <div>
+      <div style={sty.fileRow}>
+        <span style={sty.fileIcon}>{icon}</span>
+        <div style={sty.fileInfo}>
+          <div style={sty.fileLabel}>{label}</div>
+          <div style={sty.filePath} title={path}>{path || "—"}</div>
+        </div>
+        <span style={sty.fileExt}>{ext}</span>
+
+        {/* Copy path */}
+        <button
+          style={{ ...sty.openFolderBtn, fontSize: 13 }}
+          title="Copy đường dẫn"
+          onClick={handleCopyPath}
+        >
+          {copied ? "✓" : "📋"}
+        </button>
+
+        {/* Download file (browser) / Open folder (Tauri) */}
+        <button
+          style={{ ...sty.openFolderBtn, fontSize: 13, opacity: opening ? 0.5 : 1 }}
+          title="Tải file về"
+          onClick={handleDownload}
+          disabled={opening}
+        >
+          ⬇️
+        </button>
+
+        {/* Open Explorer */}
+        <button
+          style={{ ...sty.openFolderBtn, fontSize: 16, opacity: opening ? 0.5 : 1 }}
+          title="Mở thư mục chứa file"
+          onClick={handleOpenFolder}
+          disabled={opening}
+        >
+          {opening ? "⏳" : "📂"}
+        </button>
       </div>
-      <span style={sty.fileExt}>{ext}</span>
-      <button style={sty.openFolderBtn} title="Mở thư mục" onClick={handleOpenFolder}>📂</button>
+      {openError && (
+        <div style={{
+          fontSize: 11, color: "#f59e0b", background: "rgba(245,158,11,0.08)",
+          border: "1px solid #f59e0b30", borderRadius: 8, padding: "6px 12px",
+          marginTop: 4, display: "flex", alignItems: "center", gap: 6,
+        }}>
+          ⚠️ {openError}
+        </div>
+      )}
     </div>
   );
 }
+
 
 // ── MAIN COMPONENT ─────────────────────────────────────────────────────────
 export default function StudioScreen() {

@@ -583,6 +583,12 @@ def run_assemble_video(
     })
 
     append_job_log(job_id, "INFO", "✅ Job hoàn thành thành công!")
+
+    # Ensure paths are absolute so the browser /open-folder endpoint can use them
+    content_data["video_path"] = str(Path(final_video).resolve())
+    content_data["audio_path"] = str(Path(audio_path).resolve()) if audio_path else ""
+    content_data["srt_path"]   = str(Path(srt_path).resolve())   if srt_path   else ""
+
     return content_data
 
 

@@ -134,6 +134,10 @@ class AssembleHandler(BaseHTTPRequestHandler):
     def do_POST(self):
         if self.path == "/assemble":
             self.handle_assemble()
+        elif self.path == "/open-folder":
+            self.handle_open_folder()
+        elif self.path == "/download-file":
+            self.handle_download_file()
         elif self.path == "/health":
             self._json_response({"status": "ok", "port": PORT})
         else:
@@ -144,6 +148,91 @@ class AssembleHandler(BaseHTTPRequestHandler):
             self._json_response({"status": "ok", "port": PORT})
         else:
             self._json_response({"error": "Not found"}, 404)
+
+    def _read_json_body(self) -> dict:
+        """Read and parse JSON body from request."""
+        length = int(self.headers.get("Content-Length", 0))
+        body = self.rfile.read(length)
+        return json.loads(body.decode("utf-8")) if body else {}
+
+    def handle_open_folder(self):
+        """Open Windows Explorer at the directory containing the given file path."""
+        try:
+            data = self._read_json_body()
+            file_path = data.get("path", "")
+
+            # Resolve relative path against pipeline dir
+            if not os.path.isabs(file_path):
+                file_path = str(Path(__file__).parent / file_path)
+
+            file_path = os.path.normpath(file_path)
+            folder = os.path.dirname(file_path) if os.path.isfile(file_path) else file_path
+
+            print(f"[Server] /open-folder: {folder}", file=sys.stderr)
+
+            if not os.path.exists(folder):
+                self._json_response({"success": False, "error": f"Path not found: {folder}"}, 404)
+                return
+
+            import platform
+            if platform.system() == "Windows":
+                # Use /select to highlight the specific file in Explorer
+                if os.path.isfile(file_path):
+                    subprocess.Popen(["explorer", "/select,", file_path])
+                else:
+                    subprocess.Popen(["explorer", folder])
+            elif platform.system() == "Darwin":
+                subprocess.Popen(["open", "-R", file_path])
+            else:
+                subprocess.Popen(["xdg-open", folder])
+
+            self._json_response({"success": True, "folder": folder})
+        except Exception as e:
+            print(f"[Server] /open-folder error: {e}", file=sys.stderr)
+            self._json_response({"success": False, "error": str(e)}, 500)
+
+    def handle_download_file(self):
+        """Stream a file from the server to the browser for download."""
+        try:
+            data = self._read_json_body()
+            file_path = data.get("path", "")
+
+            # Resolve relative path
+            if not os.path.isabs(file_path):
+                file_path = str(Path(__file__).parent / file_path)
+            file_path = os.path.normpath(file_path)
+
+            print(f"[Server] /download-file: {file_path}", file=sys.stderr)
+
+            if not os.path.isfile(file_path):
+                self._json_response({"error": f"File not found: {file_path}"}, 404)
+                return
+
+            file_size = os.path.getsize(file_path)
+            filename  = os.path.basename(file_path)
+
+            # Detect MIME type
+            ext = os.path.splitext(filename)[1].lower()
+            mime_map = {".mp4": "video/mp4", ".mov": "video/quicktime",
+                        ".wav": "audio/wav", ".mp3": "audio/mpeg",
+                        ".srt": "text/plain"}
+            mime = mime_map.get(ext, "application/octet-stream")
+
+            self.send_response(200)
+            self._cors_headers()
+            self.send_header("Content-Type", mime)
+            self.send_header("Content-Length", str(file_size))
+            self.send_header("Content-Disposition", f'attachment; filename="{filename}"')
+            self.end_headers()
+
+            with open(file_path, "rb") as f:
+                while chunk := f.read(65536):
+                    self.wfile.write(chunk)
+
+        except Exception as e:
+            print(f"[Server] /download-file error: {e}", file=sys.stderr)
+            self._json_response({"error": str(e)}, 500)
+
 
     def handle_assemble(self):
         print("[Server] /assemble — Nhận request ghép video...", file=sys.stderr)
