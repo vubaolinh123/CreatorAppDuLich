@@ -351,6 +351,20 @@ class AssembleHandler(BaseHTTPRequestHandler):
 
 def main():
     import socket
+    import sys
+
+    # Check if running in a virtual environment
+    in_venv = sys.prefix != sys.base_prefix
+    if not in_venv:
+        print("""
+==============================================================
+⚠ CẢNH BÁO: Bạn đang chạy server bằng Python hệ thống (Global)!
+Một số thư viện như 'edge-tts' hay 'pymongo' sẽ báo thiếu.
+Vui lòng chạy server bằng Python của môi trường ảo (.venv):
+
+👉 Chạy lệnh: .venv\\Scripts\\python.exe server.py
+==============================================================
+""", file=sys.stderr)
 
     # Kill any old process still holding port 7788
     # (Handles cases where previous server didn't shut down cleanly)
