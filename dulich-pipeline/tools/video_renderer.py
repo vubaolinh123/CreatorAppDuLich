@@ -299,6 +299,12 @@ class VideoEngine:
         """Generate a gradient placeholder video for missing clips."""
         placeholder_path = self.output_dir / "placeholders" / f"placeholder_{index}.mp4"
         placeholder_path.parent.mkdir(parents=True, exist_ok=True)
+        # Delete existing placeholder file (might be corrupted or dummy from previous failed runs)
+        if placeholder_path.exists():
+            try:
+                placeholder_path.unlink()
+            except Exception:
+                pass
 
         # Cycle through attractive gradient colors
         colors = [
@@ -332,8 +338,26 @@ class VideoEngine:
 
         try:
             subprocess.run(cmd, capture_output=True, timeout=30)
-        except (FileNotFoundError, subprocess.TimeoutExpired):
-            # Fallback: write dummy
+        except Exception:
+            pass
+
+        # Fail-safe: try generating a simple color-only placeholder if drawtext failed
+        if not placeholder_path.exists():
+            print(f"[VideoEngine] ⚠ Drawtext placeholder failed, falling back to simple color placeholder", flush=True)
+            simple_cmd = [
+                "ffmpeg", "-y",
+                "-f", "lavfi", "-i", f"color=c={c1}:s={width}x{height}:d={duration}",
+                "-c:v", "libx264", "-pix_fmt", "yuv420p", "-t", str(duration),
+                str(placeholder_path),
+            ]
+            try:
+                subprocess.run(simple_cmd, capture_output=True, timeout=30)
+            except Exception:
+                pass
+
+        # Last resort: write dummy file if both failed
+        if not placeholder_path.exists():
+            print(f"[VideoEngine] ⚠ FFmpeg placeholder failed entirely, writing dummy file", flush=True)
             with open(str(placeholder_path), "wb") as f:
                 f.write(b"DUMMY PLACEHOLDER VIDEO")
 
