@@ -254,6 +254,8 @@ def run_research_and_script(
     scene_mode: str = "ai",
     custom_scenes: list[dict] = None,
     scene_count: int = 0,
+    video_type: str = "personal",
+    voice_id_override: str = "",
 ) -> dict:
     """
     Stage 1: AI researches the topic, writes the script, then generates scene plan.
@@ -335,7 +337,7 @@ def run_research_and_script(
         creator = DEFAULT_CREATORS[0]
 
     voice_provider = provider_override or creator.get("voice_provider", "vbee")
-    voice_id = creator.get("voice_id", "hn_female_lananh")
+    voice_id = voice_id_override or creator.get("voice_id", "hn_female_lananh")
     chosen_hook_style = hook_style or creator.get("hook_preference", "zoom_in")
 
     # ── 3. Generate Scene Plan ──
@@ -364,6 +366,7 @@ def run_research_and_script(
         "hook_style": chosen_hook_style,
         "hook_text": hook_text or script["hook"],
         "template_ratio": template_ratio,
+        "video_type": video_type,
     })
 
     return {
@@ -375,17 +378,49 @@ def run_research_and_script(
         "voice_id": voice_id,
         "script": script,
         "scenes": scenes,
+        "video_type": video_type,
     }
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Stage 2: Assemble Video from User-uploaded Scenes
-# ─────────────────────────────────────────────────────────────────────────────
+def get_audio_duration(audio_path: str) -> Optional[float]:
+    """Get the duration of an audio/video file using ffprobe, with a wave fallback."""
+    import subprocess
+    cmd = [
+        "ffprobe", "-v", "error",
+        "-show_entries", "format=duration",
+        "-of", "default=noprint_wrappers=1:nokey=1",
+        audio_path,
+    ]
+    try:
+        r = subprocess.run(cmd, capture_output=True, text=True, timeout=10)
+        if r.returncode == 0:
+            return float(r.stdout.strip())
+    except Exception:
+        pass
+
+    if audio_path.endswith(".wav"):
+        import wave
+        try:
+            with wave.open(audio_path, "r") as wf:
+                frames = wf.getnframes()
+                rate = wf.getframerate()
+                return frames / float(rate)
+        except Exception:
+            pass
+    return None
+
 
 def run_assemble_video(
     job_id: str,
     scene_uploads: list[dict],   # [{scene_id, file_path}]
     transition: str = "fade",    # "fade" | "dissolve" | "wipeleft" | "slideright"
+    hook_style: str = "",
+    hook_text: str = "",
+    hook_title: str = "",
+    hook_subtitle: str = "",
+    video_type: str = "",
+    voice_provider: str = "",
+    voice_id: str = "",
 ) -> dict:
     """
     Stage 2: Assemble real video from user-uploaded scene clips.
@@ -394,14 +429,34 @@ def run_assemble_video(
     Returns:
         {video_path, audio_path, srt_path}
     """
-    from tools.db import get_db
+    from tools.db import get_db, update_job
 
     append_job_log(job_id, "INFO", "[Stage 2] Bắt đầu ghép video từ các scene đã upload...")
 
-    # ── Load job state ──
+    # Update job state in DB with any fresh hook/video config
+    update_data = {}
+    if hook_style:
+        update_data["hook_style"] = hook_style
+    if hook_text:
+        update_data["hook_text"] = hook_text
+    if hook_title:
+        update_data["hook_title"] = hook_title
+    if hook_subtitle:
+        update_data["hook_subtitle"] = hook_subtitle
+    if video_type:
+        update_data["video_type"] = video_type
+    if voice_provider:
+        update_data["voice_provider"] = voice_provider
+    if voice_id:
+        update_data["voice_id"] = voice_id
+
     db = get_db()
     jobs = db["jobs"] if hasattr(db, "__getitem__") else None
 
+    if update_data and jobs is not None:
+        jobs.update_one({"_id": job_id}, {"$set": update_data})
+
+    # ── Load job state ──
     job_doc = None
     if jobs is not None:
         job_doc = jobs.find_one({"_id": job_id})
@@ -416,8 +471,11 @@ def run_assemble_video(
     voice_id = job_doc.get("voice_id", "hn_female_lananh")
     hook_style = job_doc.get("hook_style", "zoom_in")
     hook_text = job_doc.get("hook_text", script.get("hook", ""))
+    hook_title = job_doc.get("hook_title", "")
+    hook_subtitle = job_doc.get("hook_subtitle", "")
     scenes_meta = job_doc.get("scenes", [])
     template_ratio = job_doc.get("template_ratio", "9:16")
+    video_type = job_doc.get("video_type", "personal")
 
     # Map scene_id → file_path from uploads
     upload_map = {u["scene_id"]: u.get("file_path", "") for u in scene_uploads}
@@ -426,80 +484,131 @@ def run_assemble_video(
     update_job(job_id, {"progress": 10, "status": "assembling"})
     append_job_log(job_id, "INFO", f"[Voice] Đang tạo giọng nói AI — Provider: {voice_provider}, Voice: {voice_id}")
 
-    full_speech_text = f"{script['hook']}. {script['body']}. {script['cta']}"
+    # Determine actual hook voice text (use hook_title + hook_subtitle if present, else hook_text)
+    if hook_title or hook_subtitle:
+        actual_hook = f"{hook_title} {hook_subtitle}".strip()
+    else:
+        actual_hook = hook_text if hook_text else script.get("hook", "")
+
+    script["hook"] = actual_hook
+
+    # Split voice generation into separate Hook, Body, and CTA segments
+    hook_text = actual_hook.strip()
+    body_text = script.get("body", "").strip()
+    cta_text = script.get("cta", "").strip()
+
+    segments = []
+    if hook_text:
+        segments.append(("hook", hook_text))
+    if body_text:
+        segments.append(("body", body_text))
+    if cta_text:
+        segments.append(("cta", cta_text))
+
     voice_gen = VoiceGenerator(provider=voice_provider)
-    audio_output_name = f"personal_{creator_id}_{job_id[:8]}"
+    audio_output_name = f"personal_{creator_id}_{job_id}"
 
-    try:
-        audio_path = voice_gen.generate_voice(
-            text=full_speech_text,
-            voice_id=voice_id,
-            output_name=audio_output_name,
-        )
-        append_job_log(job_id, "INFO", f"[Voice] ✓ Đã sinh audio: {audio_path}")
-    except Exception as e:
-        append_job_log(job_id, "ERROR", f"[Voice] Lỗi sinh giọng nói: {e}")
-        raise e
+    generated_paths = []
+    durations = {}
+    word_lists = {}
 
-    # Estimate audio duration
-    import wave
-    audio_duration = 10.0
-    exact_timing_loaded = False
-    
-    # Check if we have exact word timing info
-    words_json_path = Path(audio_path).with_suffix(".words.json")
-    if words_json_path.exists():
-        import json
-        import re
+    for name, text in segments:
+        seg_output_name = f"{audio_output_name}_{name}"
         try:
-            with open(words_json_path, "r", encoding="utf-8") as f:
-                words = json.load(f)
+            path = voice_gen.generate_voice(
+                text=text,
+                voice_id=voice_id,
+                output_name=seg_output_name,
+                speed=1.08,
+            )
+            generated_paths.append(path)
             
-            if words:
-                audio_duration = words[-1]["end"]
-                
-                # Split script components into words
-                hook_clean = re.sub(r'[^\w\s]', '', script.get("hook", "").lower()).split()
-                body_clean = re.sub(r'[^\w\s]', '', script.get("body", "").lower()).split()
-                
-                n_hook = len(hook_clean)
-                n_body = len(body_clean)
-                
-                # Default segment offsets
-                hook_end = 5.0
-                body_end = 40.0
-                
-                hook_idx = min(n_hook - 1, len(words) - 1)
-                if hook_idx >= 0:
-                    hook_end = words[hook_idx]["end"]
-                
-                body_idx = min(n_hook + n_body - 1, len(words) - 1)
-                if body_idx >= 0:
-                    body_end = words[body_idx]["end"]
-                
-                exact_timing_loaded = True
-                append_job_log(job_id, "INFO", f"[Subtitle] Căn chỉnh phân đoạn chính xác từ timing: Hook={hook_end:.2f}s, Body={body_end:.2f}s")
+            # Get duration of this segment
+            dur = get_audio_duration(path)
+            if dur is None or dur <= 0:
+                dur = max(1.0, len(text) / 12.0)
+            durations[name] = dur
+            
+            # Check for word timing JSON
+            w_path = Path(path).with_suffix(".words.json")
+            if w_path.exists():
+                try:
+                    with open(w_path, "r", encoding="utf-8") as f:
+                        word_lists[name] = json.load(f)
+                except Exception as ex:
+                    append_job_log(job_id, "WARNING", f"[Subtitle] Không thể đọc word timing segment {name}: {ex}")
+            
+            append_job_log(job_id, "INFO", f"[Voice] ✓ Đã sinh audio segment '{name}': {path} ({dur:.2f}s)")
         except Exception as e:
-            append_job_log(job_id, "WARNING", f"[Subtitle] Lỗi tính phân đoạn từ file timing: {e}. Dùng ước lượng.")
+            append_job_log(job_id, "ERROR", f"[Voice] Lỗi sinh giọng nói segment '{name}': {e}")
+            raise e
 
-    if not exact_timing_loaded:
-        if audio_path.endswith(".wav"):
-            try:
-                with wave.open(audio_path, "r") as wf:
-                    frames = wf.getnframes()
-                    rate = wf.getframerate()
-                    audio_duration = frames / float(rate)
-            except Exception:
-                pass
+    # Concatenate the generated audio segments
+    if not generated_paths:
+        # Fallback if no text segments were generated
+        audio_path = voice_gen._mock_generate(audio_output_name, duration_sec=5)
+        durations["hook"] = 5.0
+        audio_duration = 5.0
+        hook_end = 5.0
+        body_end = 5.0
+    else:
+        suffix = Path(generated_paths[0]).suffix
+        audio_path = str(Path(generated_paths[0]).with_name(f"{audio_output_name}{suffix}"))
+        
+        if len(generated_paths) == 1:
+            shutil.copy2(generated_paths[0], audio_path)
+            w_path = Path(generated_paths[0]).with_suffix(".words.json")
+            if w_path.exists():
+                shutil.copy2(w_path, Path(audio_path).with_suffix(".words.json"))
         else:
-            audio_duration = max(5.0, len(full_speech_text) / 12.0)
+            # Concatenate using FFmpeg concat filter
+            import subprocess
+            cmd = ["ffmpeg", "-y"]
+            for p in generated_paths:
+                cmd.extend(["-i", p])
             
-        hook_len = len(script["hook"])
-        body_len = len(script["body"])
-        cta_len = len(script["cta"])
-        total_len = max(1, hook_len + body_len + cta_len)
-        hook_end = (hook_len / total_len) * audio_duration
-        body_end = ((hook_len + body_len) / total_len) * audio_duration
+            n = len(generated_paths)
+            filter_str = "".join(f"[{i}:a]" for i in range(n)) + f"concat=n={n}:v=0:a=1[a]"
+            cmd.extend(["-filter_complex", filter_str, "-map", "[a]", audio_path])
+            
+            append_job_log(job_id, "INFO", f"[Voice] Đang ghép {n} đoạn audio bằng FFmpeg...")
+            r = subprocess.run(cmd, capture_output=True, text=True)
+            if r.returncode != 0:
+                append_job_log(job_id, "ERROR", f"[Voice] FFmpeg audio concat failed: {r.stderr}")
+                raise RuntimeError(f"FFmpeg audio concat failed: {r.stderr}")
+
+        # Consolidate word timing JSON files if available
+        combined_words = []
+        current_offset = 0.0
+        for name, _ in segments:
+            seg_dur = durations.get(name, 0.0)
+            seg_words = word_lists.get(name)
+            if seg_words:
+                for w in seg_words:
+                    combined_words.append({
+                        "start": w["start"] + current_offset,
+                        "end": w["end"] + current_offset,
+                        "word": w["word"]
+                    })
+            current_offset += seg_dur
+
+        if combined_words:
+            combined_words_path = Path(audio_path).with_suffix(".words.json")
+            try:
+                with open(combined_words_path, "w", encoding="utf-8") as f:
+                    json.dump(combined_words, f, ensure_ascii=False, indent=2)
+                append_job_log(job_id, "INFO", f"[Subtitle] ✓ Đã lưu file timing tổng hợp với {len(combined_words)} từ: {combined_words_path}")
+            except Exception as ex:
+                append_job_log(job_id, "WARNING", f"[Subtitle] Không thể lưu file timing tổng hợp: {ex}")
+
+        # Exact durations and boundary offsets
+        hook_dur = durations.get("hook", 0.0)
+        body_dur = durations.get("body", 0.0)
+        cta_dur = durations.get("cta", 0.0)
+        
+        audio_duration = hook_dur + body_dur + cta_dur
+        hook_end = hook_dur
+        body_end = hook_dur + body_dur
 
     append_job_log(job_id, "INFO", f"[Voice] Thời lượng audio: {audio_duration:.1f}s")
 
@@ -526,31 +635,77 @@ def run_assemble_video(
     update_job(job_id, {"progress": 40})
     append_job_log(job_id, "INFO", f"[Assembly] Đang xây dựng danh sách {len(scenes_meta)} scene để ghép...")
 
-    total_scene_min_dur = sum(s.get("min_duration_sec", 5) for s in scenes_meta) if scenes_meta else audio_duration
-    time_scale = audio_duration / max(1.0, total_scene_min_dur)
-
     clips = []
-    for scene in scenes_meta:
-        sid = scene.get("scene_id", "")
-        file_path = upload_map.get(sid, "")
-        min_dur = scene.get("min_duration_sec", 5)
-        # Scale duration to match audio, unless user uploaded clip is longer
-        scaled_dur = min_dur * time_scale
+    num_clips = len(scenes_meta)
+    td = 0.5  # Transition duration (xfade cap in video_renderer is 0.5s)
+    transition_overhead = (num_clips - 1) * td if num_clips > 1 else 0.0
+    buffer_padding = 0.2  # Safety buffer to ensure video is slightly longer than audio, trimmed by FFmpeg -shortest
 
+    if num_clips > 1:
+        # Cảnh 1 (Hook) luôn có thời lượng bằng đúng thời gian nói phần hook
+        actual_hook_dur = min(hook_end, audio_duration - 1.0)
+        # Bù đắp transition overhead và buffer để video thực tế dài khớp với audio
+        rem_dur = audio_duration + transition_overhead + buffer_padding - actual_hook_dur
+        
+        # Phân bổ thời lượng còn lại cho các cảnh sau (2..N)
+        other_scenes = scenes_meta[1:]
+        total_rem_min_dur = sum(s.get("min_duration_sec", 5) for s in other_scenes)
+        rem_scale = rem_dur / max(1.0, total_rem_min_dur)
+        
+        # Cảnh 1 (Hook)
+        scene1 = scenes_meta[0]
+        sid1 = scene1.get("scene_id", "")
+        file_path1 = upload_map.get(sid1, "")
         clips.append({
-            "scene_id": sid,
-            "path": file_path,            # Empty string → placeholder black screen
-            "duration": scaled_dur,
-            "media_type": scene.get("type", "clip"),  # "clip" or "image"
-            "description": scene.get("description", ""),
+            "scene_id": sid1,
+            "path": file_path1,
+            "duration": actual_hook_dur,
+            "media_type": scene1.get("type", "clip"),
+            "description": scene1.get("description", ""),
         })
-
-        if file_path:
-            append_job_log(job_id, "INFO", f"  ✓ Scene [{sid}]: {os.path.basename(file_path)} ({scaled_dur:.1f}s)")
+        if file_path1:
+            append_job_log(job_id, "INFO", f"  ✓ Scene [{sid1}] (Hook): {os.path.basename(file_path1)} ({actual_hook_dur:.1f}s)")
         else:
-            append_job_log(job_id, "WARNING", f"  ⚠ Scene [{sid}]: Không có file → dùng placeholder")
+            append_job_log(job_id, "WARNING", f"  ⚠ Scene [{sid1}] (Hook): Không có file → dùng placeholder")
+            
+        # Các cảnh còn lại (2..N)
+        for scene in other_scenes:
+            sid = scene.get("scene_id", "")
+            file_path = upload_map.get(sid, "")
+            min_dur = scene.get("min_duration_sec", 5)
+            scaled_dur = min_dur * rem_scale
+            clips.append({
+                "scene_id": sid,
+                "path": file_path,
+                "duration": scaled_dur,
+                "media_type": scene.get("type", "clip"),
+                "description": scene.get("description", ""),
+            })
+            if file_path:
+                append_job_log(job_id, f"INFO", f"  ✓ Scene [{sid}]: {os.path.basename(file_path)} ({scaled_dur:.1f}s)")
+            else:
+                append_job_log(job_id, "WARNING", f"  ⚠ Scene [{sid}]: Không có file → dùng placeholder")
+    else:
+        # Trường hợp chỉ có 1 cảnh hoặc không có cảnh nào
+        total_scene_min_dur = sum(s.get("min_duration_sec", 5) for s in scenes_meta) if scenes_meta else audio_duration
+        time_scale = (audio_duration + buffer_padding) / max(1.0, total_scene_min_dur)
+        for scene in scenes_meta:
+            sid = scene.get("scene_id", "")
+            file_path = upload_map.get(sid, "")
+            min_dur = scene.get("min_duration_sec", 5)
+            scaled_dur = min_dur * time_scale
+            clips.append({
+                "scene_id": sid,
+                "path": file_path,
+                "duration": scaled_dur,
+                "media_type": scene.get("type", "clip"),
+                "description": scene.get("description", ""),
+            })
+            if file_path:
+                append_job_log(job_id, "INFO", f"  ✓ Scene [{sid}]: {os.path.basename(file_path)} ({scaled_dur:.1f}s)")
+            else:
+                append_job_log(job_id, "WARNING", f"  ⚠ Scene [{sid}]: Không có file → dùng placeholder")
 
-    # If no scenes in DB, fall back to empty placeholder
     if not clips:
         clips = [{"path": "", "duration": audio_duration, "media_type": "clip", "scene_id": "scene_1", "description": ""}]
 
@@ -559,7 +714,7 @@ def run_assemble_video(
     append_job_log(job_id, "INFO", f"[FFmpeg] Đang ghép video với transition '{transition}'...")
 
     video_engine = VideoEngine()
-    video_output_name = f"video_personal_{creator_id}_{job_id[:8]}"
+    video_output_name = f"video_personal_{creator_id}_{job_id}"
 
     try:
         raw_video = video_engine.assemble_from_scenes(
@@ -570,6 +725,8 @@ def run_assemble_video(
             hook_text=hook_text,
             transition=transition,
             template_ratio=template_ratio,
+            hook_title=hook_title,
+            hook_subtitle=hook_subtitle,
         )
         append_job_log(job_id, "INFO", f"[FFmpeg] ✓ Video thô: {raw_video}")
     except Exception as e:
@@ -580,10 +737,10 @@ def run_assemble_video(
     update_job(job_id, {"progress": 80})
     final_video = raw_video
 
-    if srt_path:
+    if video_type != "news" and srt_path:
         append_job_log(job_id, "INFO", "[FFmpeg] Đang chèn phụ đề vào video...")
         try:
-            final_video = video_engine.add_subtitles(raw_video, srt_path)
+            final_video = video_engine.add_subtitles(raw_video, srt_path, video_type=video_type)
             append_job_log(job_id, "INFO", f"[FFmpeg] ✓ Video hoàn chỉnh: {final_video}")
         except Exception as e:
             append_job_log(job_id, "WARNING", f"[FFmpeg] Lỗi chèn phụ đề: {e} — Dùng video không phụ đề")
@@ -685,7 +842,7 @@ def _generate_mock_script_with_seeds(topic: str, seeds: list[dict]) -> dict:
         seed_str = " Và đừng quên " + ", ".join(seed_details)
 
     return {
-        "hook": f"Đừng đi du lịch {topic} nếu bạn chưa biết điều này! 😱",
+        "hook": f"Đừng đi du lịch {topic} nếu bạn chưa biết điều này!",
         "body": f"Hôm nay mình sẽ bật mí cho các bạn hành trình review {topic} siêu chất.{seed_str}. Nơi đây phong cảnh siêu đẹp và người dân cực kỳ mến khách luôn. Mình đã dành 3 ngày 2 đêm khám phá từng ngóc ngách và đây là những điều bạn nhất định phải thử khi đến nơi này.",
         "cta": "Nhấn follow kênh mình để nhận thêm nhiều bí kíp du lịch nhé!",
     }

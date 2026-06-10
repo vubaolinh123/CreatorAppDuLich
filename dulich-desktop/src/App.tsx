@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import TitleBar from "./components/TitleBar";
 import Sidebar from "./components/Sidebar";
 import HomeScreen from "./screens/HomeScreen";
@@ -10,10 +10,25 @@ import SeedingManagerScreen from "./screens/SeedingManagerScreen";
 import LibraryScreen from "./screens/LibraryScreen";
 import SettingsScreen from "./screens/SettingsScreen";
 import LogsScreen from "./screens/LogsScreen";
-import type { PageId } from "./stores/appStore";
+import { useAppStore, PageId } from "./stores/appStore";
+import { invoke } from "@tauri-apps/api/core";
 
 export default function App() {
   const [page, setPage] = useState<PageId>("home");
+  const settings = useAppStore((s) => s.settings);
+
+  useEffect(() => {
+    const isTauri = typeof window !== "undefined" && (window as any).__TAURI_INTERNALS__ !== undefined;
+    if (isTauri) {
+      invoke("set_api_keys", {
+        elevenlabsKey: settings.elevenLabsKey || "",
+        vbeeKey: settings.vbeeKey || "",
+        openaiKey: settings.openAiKey || "",
+        anthropicKey: settings.anthropicKey || "",
+      }).catch((err) => console.error("Failed to propagate API keys to Tauri backend:", err));
+    }
+  }, [settings.elevenLabsKey, settings.vbeeKey, settings.openAiKey, settings.anthropicKey]);
+
 
   return (
     <div

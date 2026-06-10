@@ -33,9 +33,11 @@ export default function SettingsScreen() {
   const [anthropicKey, setAnthropicKey] = useState(settings.anthropicKey || "");
   const [elevenLabsKey, setElevenLabsKey] = useState(settings.elevenLabsKey || "");
   const [vbeeKey, setVbeeKey] = useState(settings.vbeeKey || "");
+  const [openAiKey, setOpenAiKey] = useState(settings.openAiKey || "");
   const [showAnthropicKey, setShowAnthropicKey] = useState(false);
   const [showElevenLabsKey, setShowElevenLabsKey] = useState(false);
   const [showVbeeKey, setShowVbeeKey] = useState(false);
+  const [showOpenAiKey, setShowOpenAiKey] = useState(false);
 
   // Resources
   const [maxWorkers, setMaxWorkers] = useState(settings.resources?.maxWorkers ?? 2);
@@ -53,7 +55,7 @@ export default function SettingsScreen() {
   const handleSave = async () => {
     // Persist to Zustand store
     updateSettings({
-      dashboardUrl, anthropicKey, elevenLabsKey, vbeeKey, outputFolder, creators,
+      dashboardUrl, anthropicKey, elevenLabsKey, vbeeKey, openAiKey, outputFolder, creators,
     });
     updateResourceSettings({ maxWorkers, ramGb, cpuCores, voiceProvider, mongoUri });
     setSaved(true);
@@ -245,6 +247,32 @@ export default function SettingsScreen() {
                   {vbeeKey
                     ? "✅ Key đã cài — Tiếng Việt TTS chất lượng cao"
                     : "⚡ Trống → Mock audio (không cần key cho standard voices)"}
+                </div>
+              </div>
+
+              <div style={s.divider} />
+
+              <div style={s.formGroup}>
+                <label style={s.label}>
+                  OpenAI API Key
+                  <span style={{ ...s.mockBadge, background: 'rgba(16,185,129,0.15)', color: '#10b981' }}>ChatGPT TTS</span>
+                </label>
+                <div style={s.passwordRow}>
+                  <input
+                    style={s.input}
+                    type={showOpenAiKey ? "text" : "password"}
+                    value={openAiKey}
+                    onChange={(e) => setOpenAiKey(e.target.value)}
+                    placeholder="sk-proj-..."
+                  />
+                  <button style={s.showHideBtn} onClick={() => setShowOpenAiKey((p) => !p)}>
+                    {showOpenAiKey ? "🙈 Ẩn" : "👁️ Hiện"}
+                  </button>
+                </div>
+                <div style={s.keyHint}>
+                  {openAiKey
+                    ? "✅ Key đã được cài đặt — sẽ dùng OpenAI ChatGPT TTS"
+                    : "⚡ Trống → Dùng mock audio (nếu chọn OpenAI provider)"}
                 </div>
               </div>
 

@@ -14,21 +14,21 @@ function generateFakeData(
       : "Đừng quên thử ẩm thực đường phố cực kỳ đặc sắc tại đây!";
 
   const script = {
-    hook: `Bạn có biết ${topic} đang là điểm đến HOT nhất 2025 không? 🔥`,
-    body: `Hôm nay mình đưa các bạn khám phá toàn bộ ${topic} trong vòng 60 giây!\n\nĐầu tiên là cảnh đẹp không thể bỏ qua — bầu trời xanh ngắt, biển cả mênh mông, con người thân thiện.\n\n${seedMentions}\n\nMình đã ở đây 3 ngày 2 đêm với chi phí chỉ 2 triệu/người — cực kỳ hợp lý cho một chuyến đi đáng nhớ!`,
-    cta: `Thả tim ❤️ nếu bạn muốn mình làm bộ guide ${topic} chi tiết hơn! Follow để không bỏ lỡ video tiếp theo nhé!`,
+    hook: `Bạn có biết ${topic} đang là điểm đến hot nhất năm 2025 không?`,
+    body: `Hôm nay mình đưa các bạn khám phá toàn bộ ${topic} trong vòng 60 giây!\n\nĐầu tiên là cảnh đẹp không thể bỏ qua — bầu trời xanh ngắt, biển cả mênh mông, con người thân thiện.\n\n${seedMentions}\n\nMình đã ở đây 3 ngày 2 đêm với chi phí chỉ 2 triệu một người — cực kỳ hợp lý cho một chuyến đi đáng nhớ!`,
+    cta: `Nhấn thích nếu bạn muốn mình làm bộ guide ${topic} chi tiết hơn! Follow để không bỏ lỡ video tiếp theo nhé!`,
   };
 
   const hooks = [
-    `${topic} đẹp đến mức này?! 😱`,
-    `2 triệu cho 3N2Đ tại ${topic} — CÓ THẬT KHÔNG?`,
+    `${topic} đẹp đến mức này?!`,
+    `2 triệu cho 3 ngày 2 đêm tại ${topic} — có thật không?`,
     `Ai chưa đến ${topic} thì đang bỏ lỡ điều này...`,
   ];
 
   const captions = {
     hooks,
-    caption_short: `🌟 ${topic} — điểm đến HOT 2025! Chi phí chỉ từ 2 triệu/người. #dulich #${topic.replace(/\s+/g, "").toLowerCase()}`,
-    caption_long: `✈️ ${topic} — thiên đường du lịch đang đỉnh nhất 2025!\n\n🏖️ Cảnh đẹp không cần filter\n🍜 Ẩm thực đậm đà bản sắc\n💰 Chi phí cực hợp lý cho mọi ngân sách\n🛏️ Nhiều lựa chọn lưu trú từ budget đến luxury\n\n${seeds.length > 0 ? `📍 Mình đã ghé: ${seeds.join(", ")} — tất cả đều cực đỉnh!\n\n` : ""}Lưu ngay để plan chuyến đi nhé! ❤️\n\n#dulichvietnam #${topic.replace(/\s+/g, "").toLowerCase()} #travel #vietnam #review`,
+    caption_short: `${topic} — điểm đến hot năm 2025! Chi phí chỉ từ 2 triệu một người. #dulich #${topic.replace(/\s+/g, "").toLowerCase()}`,
+    caption_long: `${topic} — thiên đường du lịch đang đỉnh nhất năm 2025!\n\nCảnh đẹp không cần bộ lọc\nẨm thực đậm đà bản sắc\nChi phí cực hợp lý cho mọi ngân sách\nNhiều lựa chọn lưu trú từ bình dân đến cao cấp\n\n${seeds.length > 0 ? `Mình đã ghé: ${seeds.join(", ")} — tất cả đều cực đỉnh!\n\n` : ""}Lưu ngay để lên lịch chuyến đi nhé!\n\n#dulichvietnam #${topic.replace(/\s+/g, "").toLowerCase()} #travel #vietnam #review`,
     hashtags: [
       "#dulichvietnam",
       "#travel",

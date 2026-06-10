@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import os
 import sys
+from pathlib import Path
 from datetime import datetime, timezone
 from typing import Optional, Any
 
@@ -215,35 +216,81 @@ def get_seeding_items(location: str = "", category: str = "", limit: int = 3) ->
 
 # ── MockDB (fallback when MongoDB not running) ────────────────────────────────
 
+import json
+MOCK_DB_FILE = Path(__file__).parent.parent / "output" / "mock_db.json"
+
+def _load_mock_db() -> dict:
+    if MOCK_DB_FILE.exists():
+        try:
+            return json.loads(MOCK_DB_FILE.read_text(encoding="utf-8"))
+        except Exception:
+            pass
+    return {}
+
+def _save_mock_db(data: dict) -> None:
+    try:
+        MOCK_DB_FILE.parent.mkdir(parents=True, exist_ok=True)
+        MOCK_DB_FILE.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+    except Exception:
+        pass
+
 class MockCollection:
-    """In-memory collection that mimics pymongo Collection interface."""
+    """Persistent file-backed mock collection mimicking pymongo Collection interface."""
 
     def __init__(self, name: str):
         self.name = name
-        self._store: list[dict] = []
+
+    def _get_store(self) -> list[dict]:
+        db_data = _load_mock_db()
+        return db_data.get(self.name, [])
+
+    def _save_store(self, store: list[dict]) -> None:
+        db_data = _load_mock_db()
+        db_data[self.name] = store
+        _save_mock_db(db_data)
 
     def insert_one(self, doc: dict):
-        self._store.append(doc)
+        store = self._get_store()
+        store.append(doc)
+        self._save_store(store)
 
     def find(self, query: dict = None, *args, **kwargs):
-        # Very basic filter: just return all for now
-        return _MockCursor(self._store)
+        store = self._get_store()
+        if not query:
+            return _MockCursor(store)
+        filtered = []
+        for doc in store:
+            if all(doc.get(k) == v for k, v in query.items()):
+                filtered.append(doc)
+        return _MockCursor(filtered)
 
     def find_one(self, query: dict):
-        for doc in self._store:
+        store = self._get_store()
+        for doc in store:
             if all(doc.get(k) == v for k, v in (query or {}).items()):
                 return doc
         return None
 
-    def update_one(self, query: dict, update: dict):
-        for doc in self._store:
+    def update_one(self, query: dict, update: dict, upsert: bool = False):
+        store = self._get_store()
+        found = False
+        for doc in store:
             if all(doc.get(k) == v for k, v in query.items()):
+                found = True
                 if "$set" in update:
                     doc.update(update["$set"])
                 if "$push" in update:
                     for field, val in update["$push"].items():
                         doc.setdefault(field, []).append(val)
                 break
+        if not found and upsert:
+            doc = {}
+            if "$set" in update:
+                doc.update(update["$set"])
+            for k, v in query.items():
+                doc[k] = v
+            store.append(doc)
+        self._save_store(store)
 
     def create_index(self, *args, **kwargs):
         pass

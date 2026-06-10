@@ -49,7 +49,7 @@ def run_album_pipeline(
     append_job_log(job_id, "INFO", f"Đang sản xuất hàng loạt 10 định dạng ảnh seeding...")
     
     generated_images = {}
-    output_base_name = f"album_{job_id[:8]}"
+    output_base_name = f"album_{job_id}"
     
     formats_list = list(FORMATS.keys())
     total_formats = len(formats_list)

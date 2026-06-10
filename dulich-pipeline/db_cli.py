@@ -176,6 +176,8 @@ def main():
             hook_text = sys.argv[9] if len(sys.argv) > 9 else ""
             provider_override = sys.argv[10] if len(sys.argv) > 10 else ""
             custom_scenes_json = sys.argv[11] if len(sys.argv) > 11 else "[]"
+            video_type = sys.argv[12] if len(sys.argv) > 12 else "personal"
+            voice_id_override = sys.argv[13] if len(sys.argv) > 13 else ""
             
             custom_scenes = json.loads(custom_scenes_json) if custom_scenes_json != "[]" else None
 
@@ -189,6 +191,7 @@ def main():
                     status="running",
                     creator_id=creator_id,
                     script_text=script_text,
+                    video_type=video_type,
                     created_at=now_utc().isoformat(),
                 )
                 try:
@@ -207,6 +210,8 @@ def main():
                 scene_mode=scene_mode,
                 custom_scenes=custom_scenes,
                 scene_count=scene_count,
+                video_type=video_type,
+                voice_id_override=voice_id_override,
             )
             print_result(result)
         except Exception as e:
@@ -215,7 +220,7 @@ def main():
             print_result(f"Error in generate_scene_plan: {e}", success=False)
 
     elif action == "assemble_video":
-        # Args: job_id, scene_uploads_json, transition
+        # Args: job_id, scene_uploads_json, transition, hook_style, hook_text, hook_title, hook_subtitle, video_type, voice_provider, voice_id
         if len(sys.argv) < 4:
             print_result("Missing args: job_id, scene_uploads_json required.", success=False)
         try:
@@ -223,18 +228,53 @@ def main():
             job_id = sys.argv[2]
             scene_uploads_json = sys.argv[3]
             transition = sys.argv[4] if len(sys.argv) > 4 else "fade"
+            hook_style = sys.argv[5] if len(sys.argv) > 5 else ""
+            hook_text = sys.argv[6] if len(sys.argv) > 6 else ""
+            hook_title = sys.argv[7] if len(sys.argv) > 7 else ""
+            hook_subtitle = sys.argv[8] if len(sys.argv) > 8 else ""
+            video_type = sys.argv[9] if len(sys.argv) > 9 else ""
+            voice_provider = sys.argv[10] if len(sys.argv) > 10 else ""
+            voice_id = sys.argv[11] if len(sys.argv) > 11 else ""
 
             scene_uploads = json.loads(scene_uploads_json)
             result = run_assemble_video(
                 job_id=job_id,
                 scene_uploads=scene_uploads,
                 transition=transition,
+                hook_style=hook_style,
+                hook_text=hook_text,
+                hook_title=hook_title,
+                hook_subtitle=hook_subtitle,
+                video_type=video_type,
+                voice_provider=voice_provider,
+                voice_id=voice_id,
             )
             print_result(result)
         except Exception as e:
             import traceback
             print(traceback.format_exc(), file=sys.stderr)
             print_result(f"Error in assemble_video: {e}", success=False)
+
+    elif action == "preview_voice":
+        if len(sys.argv) < 5:
+            print_result("Missing args: provider, voice_id, text required.", success=False)
+        try:
+            from tools.voice_generator import VoiceGenerator
+            provider = sys.argv[2]
+            voice_id = sys.argv[3]
+            text = sys.argv[4]
+            output_name = sys.argv[5] if len(sys.argv) > 5 else "preview_temp"
+            
+            gen = VoiceGenerator(provider=provider)
+            audio_path = gen.generate_voice(
+                text=text,
+                voice_id=voice_id,
+                output_name=output_name,
+                speed=1.0
+            )
+            print_result({"audio_path": audio_path})
+        except Exception as e:
+            print_result(f"Error in preview_voice: {e}", success=False)
 
     else:
         print_result(f"Unknown action: {action}", success=False)

@@ -23,6 +23,14 @@ import subprocess
 from pathlib import Path
 from http.server import HTTPServer, BaseHTTPRequestHandler
 
+# Configure UTF-8 encoding for Windows console to avoid print crashes
+if sys.platform.startswith("win"):
+    try:
+        sys.stdout.reconfigure(encoding="utf-8")
+        sys.stderr.reconfigure(encoding="utf-8")
+    except Exception:
+        pass
+
 # Add project root to path
 sys.path.insert(0, str(Path(__file__).parent))
 
@@ -135,6 +143,8 @@ class AssembleHandler(BaseHTTPRequestHandler):
     def do_POST(self):
         if self.path == "/assemble":
             self.handle_assemble()
+        elif self.path == "/preview":
+            self.handle_preview()
         elif self.path == "/open-folder":
             self.handle_open_folder()
         elif self.path == "/download-file":
@@ -147,6 +157,31 @@ class AssembleHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         if self.path == "/health":
             self._json_response({"status": "ok", "port": PORT})
+        elif self.path.startswith("/output/"):
+            # Serve output files statically for preview/playback
+            file_path = Path(__file__).parent / self.path.lstrip("/")
+            if file_path.exists() and file_path.is_file():
+                ext = file_path.suffix.lower()
+                mime_map = {".mp4": "video/mp4", ".mov": "video/quicktime",
+                            ".wav": "audio/wav", ".mp3": "audio/mpeg",
+                            ".srt": "text/plain"}
+                mime = mime_map.get(ext, "application/octet-stream")
+                self.send_response(200)
+                self._cors_headers()
+                self.send_header("Content-Type", mime)
+                self.send_header("Content-Length", str(file_path.stat().st_size))
+                self.send_header("Connection", "close")
+                self.end_headers()
+                with open(file_path, "rb") as f:
+                    while chunk := f.read(65536):
+                        self.wfile.write(chunk)
+                self.close_connection = True
+                return
+            else:
+                self.send_response(404)
+                self._cors_headers()
+                self.end_headers()
+                return
         else:
             self._json_response({"error": "Not found"}, 404)
 
@@ -224,15 +259,65 @@ class AssembleHandler(BaseHTTPRequestHandler):
             self.send_header("Content-Type", mime)
             self.send_header("Content-Length", str(file_size))
             self.send_header("Content-Disposition", f'attachment; filename="{filename}"')
+            self.send_header("Connection", "close")
             self.end_headers()
 
             with open(file_path, "rb") as f:
                 while chunk := f.read(65536):
                     self.wfile.write(chunk)
+            self.close_connection = True
 
         except Exception as e:
             print(f"[Server] /download-file error: {e}", file=sys.stderr)
             self._json_response({"error": str(e)}, 500)
+
+    def handle_preview(self):
+        print("[Server] /preview — Nhận request nghe thử...", file=sys.stderr)
+        try:
+            data = self._read_json_body()
+            provider = data.get("provider", "mock")
+            voice_id = data.get("voice_id", "")
+            text = data.get("text", "Xin chào.")
+            
+            # Inject keys
+            el_key = data.get("elevenlabs_api_key", "")
+            if el_key:
+                os.environ["ELEVENLABS_API_KEY"] = el_key
+            vbee_key = data.get("vbee_api_key", "")
+            if vbee_key:
+                os.environ["VBEE_API_KEY"] = vbee_key
+            openai_key = data.get("openai_api_key", "")
+            if openai_key:
+                os.environ["OPENAI_API_KEY"] = openai_key
+            ant_key = data.get("anthropic_api_key", "")
+            if ant_key:
+                os.environ["ANTHROPIC_API_KEY"] = ant_key
+                
+            from tools.voice_generator import VoiceGenerator
+            gen = VoiceGenerator(provider=provider)
+            output_name = f"preview_{provider}_{voice_id}"
+            
+            # Force speed to 1.0 for previews
+            audio_path = gen.generate_voice(
+                text=text,
+                voice_id=voice_id,
+                output_name=output_name,
+                speed=1.0
+            )
+            
+            # Resolve path relative to pipeline root (for static serving)
+            rel_path = os.path.relpath(audio_path, str(Path(__file__).parent))
+            # Format with forward slashes for URLs
+            url_path = "/" + rel_path.replace("\\", "/")
+            
+            self._json_response({
+                "success": True,
+                "audio_path": audio_path,
+                "url_path": url_path
+            })
+        except Exception as e:
+            print(f"[Server] /preview error: {e}", file=sys.stderr)
+            self._json_response({"success": False, "error": str(e)}, 500)
 
 
     def handle_assemble(self):
@@ -252,6 +337,24 @@ class AssembleHandler(BaseHTTPRequestHandler):
         template_ratio = fields.get("template_ratio", "9:16")
         hook_style = fields.get("hook_style", "zoom_in")
         hook_text = fields.get("hook_text", "")
+        hook_title = fields.get("hook_title", "")
+        hook_subtitle = fields.get("hook_subtitle", "")
+        video_type = fields.get("video_type", "personal")
+        voice_id = fields.get("voice_id", "")
+
+        # Inject API keys into environment if provided
+        for key_name in ["elevenlabs_api_key", "vbee_api_key", "openai_api_key", "anthropic_api_key"]:
+            val = fields.get(key_name, "")
+            env_var = key_name.upper()
+            if val:
+                os.environ[env_var] = val
+                print(f"[Server] Key {env_var} set in env (len={len(val)})", file=sys.stderr)
+            else:
+                existing = os.getenv(env_var, "")
+                if existing:
+                    print(f"[Server] Key {env_var} already present in server env (len={len(existing)})", file=sys.stderr)
+                else:
+                    print(f"[Server] Key {env_var} is empty in request and server env", file=sys.stderr)
 
         try:
             script = json.loads(fields.get("script", "{}"))
@@ -302,10 +405,13 @@ class AssembleHandler(BaseHTTPRequestHandler):
                         for s in scenes_meta
                     ],
                     voice_provider=voice_mode,
-                    voice_id="hn_female_lananh",
+                    voice_id=voice_id,
                     hook_style=hook_style,
                     hook_text=hook_text or script.get("hook", ""),
+                    hook_title=hook_title,
+                    hook_subtitle=hook_subtitle,
                     template_ratio=template_ratio,
+                    video_type=video_type,
                     created_at=now_utc().isoformat(),
                 )
                 try:
@@ -317,12 +423,24 @@ class AssembleHandler(BaseHTTPRequestHandler):
 
         # Run assembly
         try:
+            # Force reload agents/tools modules so updates to video_renderer / hook_effects / personal_video_agent take effect without restarting server
+            for m in list(sys.modules.keys()):
+                if m.startswith("agents") or m.startswith("tools"):
+                    sys.modules.pop(m, None)
+
             from agents.personal_video_agent import run_assemble_video
             print(f"[Server] Bắt đầu ghép video với FFmpeg...", file=sys.stderr)
             result = run_assemble_video(
                 job_id=job_id,
                 scene_uploads=scene_uploads,
                 transition=transition,
+                hook_style=hook_style,
+                hook_text=hook_text,
+                hook_title=hook_title,
+                hook_subtitle=hook_subtitle,
+                video_type=video_type,
+                voice_provider=voice_mode,
+                voice_id=voice_id,
             )
             print(f"[Server] ✅ Hoàn tất! Video: {result.get('video_path')}", file=sys.stderr)
             self._json_response({

@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { useAppStore } from "../stores/appStore";
 
 interface Creator {
   id: string;
@@ -21,6 +22,29 @@ interface AnalysisResult {
   analysis_details: string;
 }
 
+const PROVIDER_VOICES: Record<string, { id: string; name: string }[]> = {
+  vbee: [
+    { id: "hn_female_lananh", name: "Lan Anh (Hà Nội Nữ)" },
+    { id: "hn_male_minhtuan", name: "Minh Tuấn (Hà Nội Nam)" },
+    { id: "hn_female_ngocmai", name: "Ngọc Mai (Hà Nội Nữ)" },
+    { id: "hcm_male_ducanh", name: "Đức Anh (HCM Nam)" },
+  ],
+  edge: [
+    { id: "vi-VN-HoaiMyNeural", name: "Hoài My (Nữ)" },
+    { id: "vi-VN-NamMinhNeural", name: "Nam Minh (Nam)" },
+  ],
+  elevenlabs: [
+    { id: "1rqNHUqUbBGpY3OyzPMI", name: "Vietnamese Male (ElevenLabs preset)" },
+    { id: "custom", name: "Custom Voice ID (Nhập mã tự chọn...)" },
+  ],
+  openai: [
+    { id: "custom", name: "Nhập mã giọng đọc OpenAI..." },
+  ],
+  mock: [
+    { id: "mock", name: "Mock Voice (Im lặng)" }
+  ]
+};
+
 export default function CreatorProfileScreen() {
   const [creators, setCreators] = useState<Creator[]>([]);
   const [selectedCreator, setSelectedCreator] = useState<Creator | null>(null);
@@ -33,6 +57,79 @@ export default function CreatorProfileScreen() {
   const [analysisResult, setAnalysisResult] = useState<AnalysisResult | null>(null);
   const [errorMsg, setErrorMsg] = useState("");
   const [successMsg, setSuccessMsg] = useState("");
+  const [previewLoading, setPreviewLoading] = useState(false);
+
+  const handlePlayPreview = async () => {
+    if (!selectedCreator || previewLoading) return;
+    setPreviewLoading(true);
+    setErrorMsg("");
+    
+    const isTauri = typeof window !== "undefined" && (window as any).__TAURI_INTERNALS__ !== undefined;
+    const provider = selectedCreator.voice_provider;
+    const voiceId = selectedCreator.voice_id;
+    const text = "Xin chào, đây là giọng nói thử nghiệm của bạn.";
+    
+    try {
+      if (isTauri) {
+        const settings = useAppStore.getState().settings;
+        await invoke("set_api_keys", {
+          elevenlabsKey: settings.elevenLabsKey || "",
+          vbeeKey: settings.vbeeKey || "",
+          openaiKey: settings.openAiKey || "",
+          anthropicKey: settings.anthropicKey || "",
+        });
+        
+        const resStr = await invoke<string>("preview_voice", {
+          voiceProvider: provider,
+          voiceId: voiceId,
+          text: text,
+        });
+        
+        const res = JSON.parse(resStr);
+        if (res.success && res.data.audio_path) {
+          const { convertFileSrc } = await import("@tauri-apps/api/core");
+          const audioUrl = convertFileSrc(res.data.audio_path);
+          const audio = new Audio(audioUrl);
+          await audio.play();
+        } else {
+          setErrorMsg("Lỗi nghe thử: " + (res.data || "Không rõ nguyên nhân"));
+        }
+      } else {
+        // Browser Mode
+        const settings = useAppStore.getState().settings;
+        const res = await fetch("http://localhost:7788/preview", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            provider,
+            voice_id: voiceId,
+            text,
+            elevenlabs_api_key: settings.elevenLabsKey || "",
+            vbee_api_key: settings.vbeeKey || "",
+            openai_api_key: settings.openAiKey || "",
+            anthropic_api_key: settings.anthropicKey || "",
+          }),
+        });
+        
+        if (!res.ok) {
+          const t = await res.text();
+          throw new Error(t);
+        }
+        
+        const json = await res.json();
+        if (json.success && json.url_path) {
+          const audio = new Audio("http://localhost:7788" + json.url_path);
+          await audio.play();
+        } else {
+          setErrorMsg("Lỗi nghe thử: " + (json.error || "Không rõ nguyên nhân"));
+        }
+      }
+    } catch (err: any) {
+      setErrorMsg("Lỗi kết nối hoặc tạo giọng nói: " + err.message);
+    } finally {
+      setPreviewLoading(false);
+    }
+  };
 
   useEffect(() => {
     fetchCreators();
@@ -46,16 +143,20 @@ export default function CreatorProfileScreen() {
       if (isTauri) {
         resStr = await invoke<string>("get_creators");
       } else {
-        resStr = JSON.stringify({
-          success: true,
-          data: [
+        const localData = localStorage.getItem("dulichapp_creators");
+        if (localData) {
+          resStr = JSON.stringify({ success: true, data: JSON.parse(localData) });
+        } else {
+          const defaultList = [
             { id: "lan_anh", name: "Lan Anh", voice_provider: "vbee", voice_id: "hn_female_lananh", hook_preference: "zoom_in" },
             { id: "minh_tuan", name: "Minh Tuấn", voice_provider: "vbee", voice_id: "hn_male_minhtuan", hook_preference: "glitch" },
             { id: "thu_ha", name: "Thu Hà", voice_provider: "vbee", voice_id: "hn_female_thutrang", hook_preference: "cinematic_vignette" },
             { id: "duc_anh", name: "Đức Anh", voice_provider: "vbee", voice_id: "hcm_male_ducanh", hook_preference: "zoom_out" },
             { id: "ngoc_mai", name: "Ngọc Mai", voice_provider: "vbee", voice_id: "hn_female_ngocmai", hook_preference: "zoom_in" },
-          ]
-        });
+          ];
+          localStorage.setItem("dulichapp_creators", JSON.stringify(defaultList));
+          resStr = JSON.stringify({ success: true, data: defaultList });
+        }
       }
       const res = JSON.parse(resStr);
       if (res.success && Array.isArray(res.data)) {
@@ -88,6 +189,15 @@ export default function CreatorProfileScreen() {
         const payload = JSON.stringify(selectedCreator);
         resStr = await invoke<string>("save_creator", { creatorJson: payload });
       } else {
+        const localData = localStorage.getItem("dulichapp_creators");
+        let list = localData ? JSON.parse(localData) : [];
+        const idx = list.findIndex((c: any) => c.id === selectedCreator.id);
+        if (idx !== -1) {
+          list[idx] = selectedCreator;
+        } else {
+          list.push(selectedCreator);
+        }
+        localStorage.setItem("dulichapp_creators", JSON.stringify(list));
         resStr = JSON.stringify({ success: true, data: "saved" });
       }
       const res = JSON.parse(resStr);
@@ -164,7 +274,12 @@ export default function CreatorProfileScreen() {
     { id: "zoom_out", name: "Zoom Out (Thu nhỏ)" },
     { id: "glitch", name: "RGB Glitch (Nhiễu sóng)" },
     { id: "cinematic_vignette", name: "Cinematic Vignette (Tối góc)" },
-    { id: "text_slide", name: "Animated Text (Chữ chạy)" }
+    { id: "text_slide", name: "Animated Text (Chữ chạy)" },
+    { id: "tiktok_tag_banner_purple", name: "TikTok Tag Banner (Nền Tím)" },
+    { id: "tiktok_tag_banner_pink", name: "TikTok Tag Banner (Nền Hồng)" },
+    { id: "tiktok_tag_banner_green", name: "TikTok Tag Banner (Nền Xanh Lá)" },
+    { id: "tiktok_quote_card", name: "TikTok Quote Card" },
+    { id: "tiktok_floating_box", name: "TikTok Floating Box (Chữ + Nền trôi nổi)" }
   ];
 
   return (
@@ -205,7 +320,7 @@ export default function CreatorProfileScreen() {
                   <div style={styles.creatorInfo}>
                     <span style={styles.creatorName}>{c.name}</span>
                     <span style={styles.creatorVoiceCode}>
-                      {c.voice_provider === "vbee" ? "🎙 Vbee" : c.voice_provider === "edge" ? "🌐 Microsoft Edge" : c.voice_provider === "mock" ? "🤖 Mock" : "✨ ElevenLabs"} - {c.voice_id}
+                      {c.voice_provider === "vbee" ? "🎙 Vbee" : c.voice_provider === "edge" ? "🌐 Microsoft Edge" : c.voice_provider === "openai" ? "🤖 OpenAI TTS" : c.voice_provider === "mock" ? "🤖 Mock" : "✨ ElevenLabs"} - {c.voice_id}
                     </span>
                   </div>
                 </button>
@@ -226,31 +341,101 @@ export default function CreatorProfileScreen() {
                   <label style={styles.label}>Nền tảng Voice Clone</label>
                   <select
                     value={selectedCreator.voice_provider}
-                    onChange={(e) => updateSelectedCreatorField("voice_provider", e.target.value)}
+                    onChange={(e) => {
+                      const prov = e.target.value;
+                      const defaultVoice = PROVIDER_VOICES[prov]?.[0]?.id || "";
+                      setSelectedCreator({
+                        ...selectedCreator,
+                        voice_provider: prov,
+                        voice_id: defaultVoice
+                      });
+                    }}
                     style={styles.select}
                   >
-                    <option value="vbee">Vbee.ai (Tiếng Việt chất lượng cao)</option>
-                    <option value="edge">Microsoft Edge TTS (Miễn phí & Đồng bộ tốt)</option>
-                    <option value="elevenlabs">ElevenLabs (Bilingual / Clone giọng nói)</option>
-                    <option value="mock">Mock Voice (Test offline)</option>
+                    <option style={styles.option} value="vbee">Vbee.ai (Tiếng Việt chất lượng cao)</option>
+                    <option style={styles.option} value="edge">Microsoft Edge TTS (Miễn phí & Đồng bộ tốt)</option>
+                    <option style={styles.option} value="elevenlabs">ElevenLabs (Bilingual / Clone giọng nói)</option>
+                    <option style={styles.option} value="openai">OpenAI TTS (Giọng đọc mượt mà từ ChatGPT)</option>
+                    <option style={styles.option} value="mock">Mock Voice (Test offline)</option>
                   </select>
                 </div>
 
                 <div style={styles.formGroup}>
-                  <label style={styles.label}>Voice ID / Code</label>
-                  <input
-                    type="text"
-                    value={selectedCreator.voice_id}
-                    onChange={(e) => updateSelectedCreatorField("voice_id", e.target.value)}
-                    placeholder="VD: hn_female_lananh hoặc voice_id từ ElevenLabs"
-                    style={styles.input}
-                  >
-                  </input>
-                  <small style={styles.hint}>
-                    Vbee: hn_female_lananh, hn_male_minhtuan, hcm_male_ducanh, hn_female_ngocmai.<br/>
-                    Edge: vi-VN-HoaiMyNeural (Nữ), vi-VN-NamMinhNeural (Nam).
-                  </small>
+                  <label style={styles.label}>Chọn Giọng Đọc</label>
+                  <div style={{ display: "flex", gap: 10 }}>
+                    <select
+                      value={
+                        selectedCreator.voice_provider === "elevenlabs" &&
+                        !PROVIDER_VOICES.elevenlabs.some(v => v.id === selectedCreator.voice_id)
+                          ? "custom"
+                          : selectedCreator.voice_id
+                      }
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        if (val === "custom") {
+                          updateSelectedCreatorField("voice_id", "");
+                        } else {
+                          updateSelectedCreatorField("voice_id", val);
+                        }
+                      }}
+                      style={{ ...styles.select, flex: 1 }}
+                    >
+                      {(PROVIDER_VOICES[selectedCreator.voice_provider] || []).map((v) => (
+                        <option key={v.id} value={v.id} style={styles.option}>
+                          {v.name}
+                        </option>
+                      ))}
+                      {selectedCreator.voice_provider === "elevenlabs" && (
+                        <option value="custom" style={styles.option}>
+                          Custom Voice ID (Nhập mã tự chọn...)
+                        </option>
+                      )}
+                    </select>
+
+                    {selectedCreator.voice_provider !== "mock" && (
+                      <button
+                        onClick={handlePlayPreview}
+                        disabled={previewLoading || !selectedCreator.voice_id}
+                        style={{
+                          backgroundColor: "rgba(99, 102, 241, 0.15)",
+                          border: "1px solid rgba(99, 102, 241, 0.4)",
+                          color: "#a5b4fc",
+                          borderRadius: 8,
+                          padding: "0 16px",
+                          fontSize: 13,
+                          fontWeight: 600,
+                          cursor: (previewLoading || !selectedCreator.voice_id) ? "not-allowed" : "pointer",
+                          display: "flex",
+                          alignItems: "center",
+                          gap: 6,
+                          whiteSpace: "nowrap",
+                          transition: "all 0.2s"
+                        }}
+                      >
+                        {previewLoading ? "⏳ Đang tạo..." : "🔊 Nghe thử"}
+                      </button>
+                    )}
+                  </div>
                 </div>
+
+                {/* Additional custom input for ElevenLabs custom voices */}
+                {selectedCreator.voice_provider === "elevenlabs" && 
+                  (!PROVIDER_VOICES.elevenlabs.some(v => v.id === selectedCreator.voice_id) || 
+                   selectedCreator.voice_id === "custom") && (
+                    <div style={styles.formGroup}>
+                      <label style={styles.label}>Nhập Custom ElevenLabs Voice ID</label>
+                      <input
+                        type="text"
+                        value={selectedCreator.voice_id === "custom" ? "" : selectedCreator.voice_id}
+                        onChange={(e) => updateSelectedCreatorField("voice_id", e.target.value)}
+                        placeholder="Nhập ElevenLabs Voice ID (VD: pNInz6obpgDQGcFmaJgB)"
+                        style={styles.input}
+                      />
+                      <small style={styles.hint}>
+                        Nhập Voice ID từ ElevenLabs Voice Library hoặc dashboard của bạn.
+                      </small>
+                    </div>
+                )}
 
                 {/* Hook Preference */}
                 <div style={styles.formGroup}>
@@ -261,7 +446,7 @@ export default function CreatorProfileScreen() {
                     style={styles.select}
                   >
                     {hookStyles.map((s) => (
-                      <option key={s.id} value={s.id}>{s.name}</option>
+                      <option key={s.id} value={s.id} style={styles.option}>{s.name}</option>
                     ))}
                   </select>
                 </div>
@@ -475,13 +660,17 @@ const styles = {
     color: "#d1d5db",
   },
   select: {
-    backgroundColor: "rgba(255, 255, 255, 0.04)",
-    border: "1px solid rgba(255, 255, 255, 0.1)",
+    backgroundColor: "#161233",
+    border: "1px solid rgba(255, 255, 255, 0.15)",
     borderRadius: 8,
     color: "#ffffff",
     fontSize: 13,
     padding: "10px 14px",
     outline: "none",
+  },
+  option: {
+    backgroundColor: "#161233",
+    color: "#ffffff",
   },
   input: {
     backgroundColor: "rgba(255, 255, 255, 0.04)",

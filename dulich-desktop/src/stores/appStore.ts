@@ -33,6 +33,7 @@ export interface Settings {
   anthropicKey: string;
   elevenLabsKey: string;
   vbeeKey: string;
+  openAiKey: string;
   outputFolder: string;
   creators: Creator[];
   defaultCreatorId: number;
@@ -128,21 +129,21 @@ const DEFAULT_CREATORS: Creator[] = [
   {
     id: 1,
     name: 'Nguyễn Thành Nam',
-    voiceId: 'EXAVITQu4vr4xnSDxMaL',
+    voiceId: 'EXAVITQu4vr4xnSDxMaL', // Sarah (premade)
     avatar: '👨‍💼',
     platform: 'TikTok @namtravel',
   },
   {
     id: 2,
     name: 'Trần Minh Châu',
-    voiceId: 'ErXwobaYiN019PkySvjV',
+    voiceId: 'TX3LPaxmHKxFdv7VOQHJ', // Liam (premade)
     avatar: '👩‍💻',
     platform: 'TikTok @chau_dulich',
   },
   {
     id: 3,
     name: 'Lê Hoàng Phúc',
-    voiceId: 'VR6AewLTigWG4xSOukaG',
+    voiceId: 'pFZP5JQG7iQjIQuC4Bku', // Lily (premade)
     avatar: '🧑‍🎤',
     platform: 'YouTube @phuctravel',
   },
@@ -161,6 +162,7 @@ const DEFAULT_SETTINGS: Settings = {
   anthropicKey: '',
   elevenLabsKey: '',
   vbeeKey: '',
+  openAiKey: '',
   outputFolder: '',
   creators: DEFAULT_CREATORS,
   defaultCreatorId: 1,

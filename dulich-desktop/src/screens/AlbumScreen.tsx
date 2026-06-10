@@ -232,7 +232,7 @@ export default function AlbumScreen() {
                   style={styles.select}
                 >
                   {CREATORS.map(c => (
-                    <option key={c.id} value={c.id}>{c.name}</option>
+                    <option key={c.id} value={c.id} style={styles.option}>{c.name}</option>
                   ))}
                 </select>
               </div>
@@ -459,13 +459,17 @@ const styles = {
     width: "100%",
   },
   select: {
-    backgroundColor: "rgba(255, 255, 255, 0.04)",
-    border: "1px solid rgba(255, 255, 255, 0.1)",
+    backgroundColor: "#161233",
+    border: "1px solid rgba(255, 255, 255, 0.15)",
     borderRadius: 8,
     color: "#ffffff",
     fontSize: 13,
     padding: "10px 14px",
     outline: "none",
+  },
+  option: {
+    backgroundColor: "#161233",
+    color: "#ffffff",
   },
   hint: {
     fontSize: 11,

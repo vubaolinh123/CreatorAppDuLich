@@ -9,6 +9,7 @@ Providers:
 from __future__ import annotations
 
 import os
+import sys
 import wave
 from pathlib import Path
 from typing import Optional
@@ -44,6 +45,21 @@ VBEE_STANDARD_VOICES = {
 
 VBEE_API_BASE = "https://vbee.vn/api/v1/tts"
 
+import re
+
+def clean_text_for_tts(text: str) -> str:
+    """Remove emojis, special characters, and double spaces from text for clean TTS generation."""
+    # Remove emojis and icons
+    pattern = re.compile(
+        r"[\U00010000-\U0010ffff]"  # Emoji range
+        r"|[\u2600-\u27BF]"          # Misc symbols & dingbats
+        r"|[\uE000-\uF8FF]"          # Private use area
+        r"|[\u200D\uFE0F]"           # Zero-width joiner & variation selector
+    )
+    text = pattern.sub("", text)
+    # Replace double spaces with single space
+    text = re.sub(r"\s+", " ", text).strip()
+    return text
 
 class VoiceGenerator:
     """
@@ -74,6 +90,10 @@ class VoiceGenerator:
         Generate TTS audio and save to output/audio/.
         Returns absolute path to generated audio file.
         """
+        text = clean_text_for_tts(text)
+        print(f"[Voice] generate_voice: provider={self.provider}, voice_id={voice_id}, speed={speed}", file=sys.stderr)
+        print(f"[Voice] text (len={len(text)}): {text}", file=sys.stderr)
+
         # Try Vbee first
         if self.provider in ("vbee", "auto"):
             if self._vbee_key:
@@ -86,6 +106,12 @@ class VoiceGenerator:
                 if path:
                     return path
 
+        # Try OpenAI
+        if self.provider == "openai":
+            path = self._openai_generate(text, voice_id, output_name)
+            if path:
+                return path
+
         # Try Edge TTS explicitly
         if self.provider == "edge":
             path = self._edge_generate(text, voice_id, output_name, speed)
@@ -94,7 +120,7 @@ class VoiceGenerator:
 
         # Try ElevenLabs
         if self.provider in ("elevenlabs", "auto") and self._el_client:
-            path = self._elevenlabs_generate(text, voice_id, output_name)
+            path = self._elevenlabs_generate(text, voice_id, output_name, speed)
             if path:
                 return path
 
@@ -187,18 +213,40 @@ class VoiceGenerator:
         text: str,
         voice_id: str,
         output_name: str,
+        speed: float = 1.0,
     ) -> Optional[str]:
         if not self._el_client:
             return None
+
+        if not voice_id or voice_id in ("default", "custom"):
+            voice_id = "1rqNHUqUbBGpY3OyzPMI"
 
         output_path = OUTPUT_DIR / f"{output_name}.mp3"
         try:
             audio = self._el_client.text_to_speech.convert(
                 voice_id=voice_id,
                 text=text,
-                model_id="eleven_multilingual_v2",
+                model_id="eleven_turbo_v2_5",
             )
             save(audio, str(output_path))
+
+            # Post-process speed if needed using FFmpeg atempo filter
+            if speed != 1.0:
+                temp_path = output_path.with_name(f"{output_name}_temp.mp3")
+                if output_path.exists():
+                    output_path.rename(temp_path)
+                    cmd = [
+                        "ffmpeg", "-y",
+                        "-i", str(temp_path),
+                        "-filter:a", f"atempo={speed}",
+                        "-vn",
+                        str(output_path)
+                    ]
+                    import subprocess
+                    subprocess.run(cmd, capture_output=True, check=True)
+                    if temp_path.exists():
+                        temp_path.unlink()
+
             print(f"[Voice] ✓ ElevenLabs TTS saved: {output_path}")
             return str(output_path)
         except Exception as e:
@@ -298,6 +346,56 @@ class VoiceGenerator:
                     output_path.unlink()
                 except Exception:
                     pass
+            return None
+
+    # ── OpenAI TTS ────────────────────────────────────────────────────────────
+
+    def _openai_generate(
+        self,
+        text: str,
+        voice_id: str,
+        output_name: str,
+    ) -> Optional[str]:
+        api_key = os.getenv("OPENAI_API_KEY", "")
+        if not api_key:
+            print("[Voice] OPENAI_API_KEY không có — skip OpenAI, dùng mock.")
+            return None
+
+        # Standard OpenAI voices: alloy, echo, fable, onyx, nova, shimmer
+        # Default to onyx/alloy for male and nova/shimmer for female
+        voice = "alloy"
+        v_id_lower = voice_id.lower()
+        if any(v in v_id_lower for v in ["alloy", "echo", "fable", "onyx", "nova", "shimmer"]):
+            for v in ["alloy", "echo", "fable", "onyx", "nova", "shimmer"]:
+                if v in v_id_lower:
+                    voice = v
+                    break
+        else:
+            if "lananh" in v_id_lower or "female" in v_id_lower:
+                voice = "nova"
+            elif "ngocmai" in v_id_lower:
+                voice = "shimmer"
+            elif "minhtuan" in v_id_lower or "male" in v_id_lower:
+                voice = "onyx"
+            elif "ducanh" in v_id_lower:
+                voice = "echo"
+            else:
+                voice = "alloy"
+
+        output_path = OUTPUT_DIR / f"{output_name}.mp3"
+        try:
+            from openai import OpenAI
+            client = OpenAI(api_key=api_key)
+            response = client.audio.speech.create(
+                model="tts-1",
+                voice=voice,
+                input=text
+            )
+            response.write_to_file(str(output_path))
+            print(f"[Voice] ✓ OpenAI TTS saved: {output_path} (voice={voice})")
+            return str(output_path)
+        except Exception as e:
+            print(f"[Voice] ⚠ OpenAI TTS lỗi: {e}. Fallback.")
             return None
 
     # ── Mock (silent WAV) ────────────────────────────────────────────────────

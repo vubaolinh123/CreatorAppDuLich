@@ -790,7 +790,9 @@ pub async fn generate_scene_plan(
     hook_style: String,
     hook_text: String,
     voice_provider: String,
+    voice_id: String,
     custom_scenes_json: String,
+    video_type: String,
 ) -> Result<String, String> {
     let (python_exe, pipeline_dir) = get_python_exe_and_dir()?;
 
@@ -807,6 +809,8 @@ pub async fn generate_scene_plan(
         hook_text,
         voice_provider,
         custom_scenes_json,
+        video_type,
+        voice_id,
     ];
 
     let mut child = StdCommand::new(&python_exe)
@@ -867,6 +871,13 @@ pub async fn assemble_from_scenes(
     job_id: String,
     scene_uploads_json: String,
     transition: String,
+    hook_style: String,
+    hook_text: String,
+    hook_title: String,
+    hook_subtitle: String,
+    video_type: String,
+    voice_provider: String,
+    voice_id: String,
 ) -> Result<String, String> {
     let (python_exe, pipeline_dir) = get_python_exe_and_dir()?;
 
@@ -876,6 +887,13 @@ pub async fn assemble_from_scenes(
         job_id,
         scene_uploads_json,
         transition,
+        hook_style,
+        hook_text,
+        hook_title,
+        hook_subtitle,
+        video_type,
+        voice_provider,
+        voice_id,
     ];
 
     let mut child = StdCommand::new(&python_exe)
@@ -928,3 +946,50 @@ pub async fn assemble_from_scenes(
         Err(format!("assemble_from_scenes failed. stdout: {}", stdout_data))
     }
 }
+
+#[tauri::command]
+pub fn set_api_keys(
+    elevenlabs_key: String,
+    vbee_key: String,
+    openai_key: String,
+    anthropic_key: String,
+) {
+    std::env::set_var("ELEVENLABS_API_KEY", &elevenlabs_key);
+    std::env::set_var("VBEE_API_KEY", &vbee_key);
+    std::env::set_var("OPENAI_API_KEY", &openai_key);
+    std::env::set_var("ANTHROPIC_API_KEY", &anthropic_key);
+}
+
+#[tauri::command]
+pub async fn preview_voice(
+    voice_provider: String,
+    voice_id: String,
+    text: String,
+) -> Result<String, String> {
+    let (python_exe, pipeline_dir) = get_python_exe_and_dir()?;
+
+    let output_name = format!("preview_{}_{}", voice_provider, voice_id);
+    let args = vec![
+        "db_cli.py".to_string(),
+        "preview_voice".to_string(),
+        voice_provider,
+        voice_id,
+        text,
+        output_name,
+    ];
+
+    let output = StdCommand::new(python_exe)
+        .current_dir(pipeline_dir)
+        .args(&args)
+        .output()
+        .map_err(|e| format!("Failed to run preview command: {}", e))?;
+
+    if output.status.success() {
+        let stdout_str = String::from_utf8_lossy(&output.stdout);
+        Ok(stdout_str.into_owned())
+    } else {
+        let stderr_str = String::from_utf8_lossy(&output.stderr);
+        Err(format!("Preview failed: {}", stderr_str))
+    }
+}
+

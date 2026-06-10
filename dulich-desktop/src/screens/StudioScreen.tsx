@@ -68,7 +68,12 @@ interface LogLine {
 
 type Step = 1 | 2 | 3 | 4 | 5 | 6;
 type SceneMode = "ai" | "preset" | "custom";
-type VoiceMode = "edge" | "api" | "mock";
+type VoiceMode = "edge" | "vbee" | "elevenlabs" | "mock";
+
+const ELEVENLABS_VOICES = [
+  { id: "1rqNHUqUbBGpY3OyzPMI", name: "Vietnamese Male (ElevenLabs preset)" },
+  { id: "custom", name: "Custom Voice ID (Nhập mã tự chọn...)" },
+];
 
 // ── Constants ──────────────────────────────────────────────────────────────
 const CREATORS: Creator[] = [
@@ -152,11 +157,12 @@ function generateMockScenes(
 
 function generateMockScript(topic: string, creatorName: string): ScriptResult {
   return {
-    hook: `Bạn đã biết ${topic} có điều này chưa? 😱 Mình shock thật sự khi lần đầu đến đây!`,
-    body: `Hôm nay ${creatorName} sẽ review toàn bộ hành trình khám phá ${topic} — từ chỗ ăn, chỗ ngủ cho đến những góc chụp cực đẹp. Đây là nơi mình ở 3 ngày 2 đêm và thật sự không muốn về. Thức ăn ngon, người dân thân thiện, phong cảnh thì miễn chê!`,
-    cta: `Follow để không bỏ lỡ series du lịch ${topic} nhé! Link đặt phòng trong bio 👇`,
+    hook: `Bạn đã biết ${topic} có điều này chưa? Mình shock thật sự khi lần đầu tới đây!`,
+    body: `Hôm nay ${creatorName} sẽ review toàn bộ hành trình khám phá ${topic}, từ chỗ ăn, chỗ ngủ cho đến những góc chụp cực đẹp. Đây là nơi mình ở 3 ngày 2 đêm và thật sự không muốn về. Thức ăn ngon, người dân thân thiện, phong cảnh miễn chê luôn!`,
+    cta: `Nhấn follow kênh mình để nhận thêm nhiều bí kíp du lịch nhé! Link đặt phòng trong bio.`,
   };
 }
+
 
 // ── Log Console Component ──────────────────────────────────────────────────
 function LogConsole({ logs }: { logs: LogLine[] }) {
@@ -374,19 +380,180 @@ function FilePathRow({ icon, label, path, ext }: { icon: string; label: string; 
 }
 
 
+// ── Hook style categories
+
+const HOOK_DETAILS: Record<string, { name: string, description: string, image?: string, category: string }> = {
+  // ── Hiệu ứng camera ─────────────────────────────────
+  zoom_in: {
+    name: "Zoom In (Phóng to chậm)",
+    description: "Camera từ từ tiến sát vào tiêu điểm của khung hình với tốc độ cực kì mượt mà. Toàn bộ frame sẽ từ từ phóng to vào tâm điểm trong 3-5 giây đầu, giúp tạo sự tập trung và thu hút người xem ngay lập tức.",
+    image: "/hook_zoom_in.png",
+    category: "effect"
+  },
+  zoom_out: {
+    name: "Zoom Out (Thu nhỏ chậm)",
+    description: "Camera từ từ kéo lùi xa ra, mở rộng góc nhìn toàn cảnh. Hiệu ứng bắt đầu cận cảnh rồi từ từ thu nhỏ để lộ ra toàn bộ khung cảnh rộng lớn — tạo cảm giác kỳ vĩ, bao la đặc trưng cho video du lịch phong cảnh thiên nhiên.",
+    image: "/hook_zoom_out.png",
+    category: "effect"
+  },
+  glitch: {
+    name: "RGB Glitch (Nhiễu sóng màu)",
+    description: "Tạo hiệu ứng nhiễu sóng kênh màu RGB: ba kênh màu đỏ-xanh lá-xanh dương bị lệch nhau tạo ra viền màu neon xung quanh các vật thể, kết hợp với hạt nhiễu kỹ thuật số động. Phù hợp phong cách phượt bụi, phiêu lưu, trẻ trung năng động.",
+    image: "/hook_glitch.png",
+    category: "effect"
+  },
+  cinematic_vignette: {
+    name: "Cinematic Vignette (Tối góc điện ảnh)",
+    description: "Làm tối nhẹ 4 góc của khung hình theo gradient mượt mà đồng thời tăng độ tương phản và bão hòa màu sắc ở vùng trung tâm. Tạo chiều sâu và cảm giác điện ảnh cao cấp, hướng ánh mắt người xem vào chủ thể chính ở trung tâm.",
+    image: "/hook_cinematic_vignette.png",
+    category: "effect"
+  },
+  // ── Chữ trôi nổi ─────────────────────────────────────
+  bubble_title: {
+    name: "Bubble Title (Chữ bong bóng nổi)",
+    description: "Tên địa danh / chủ đề hiển thị ở vùng trên video theo kiểu chữ bong bóng dễ thương màu vàng/cam với viền đen đậm, phía dưới là câu Hook dạng chữ trắng đậm. Phong cách GenZ, vui tươi, rất thịnh hành trên TikTok. Phụ đề sẽ hiển thị ở vùng dưới, cách xa phần hook trên.",
+    image: "/hook_bubble_title.png",
+    category: "text"
+  },
+  neon_glow: {
+    name: "Neon Glow (Chữ neon phát sáng)",
+    description: "Tên địa danh hiển thị ở phần trên video với hiệu ứng chữ neon phát sáng màu cyan/tím rực rỡ như biển quảng cáo neon. Câu Hook phụ bên dưới có viền sáng mờ. Phong cách tối, điện ảnh, huyền bí — phù hợp video du lịch đêm, biển, resort cao cấp.",
+    image: "/hook_neon_glow.png",
+    category: "text"
+  },
+  handwriting: {
+    name: "Handwriting (Chữ viết tay nhẹ nhàng)",
+    description: "Tên địa danh viết bằng font cursive/viết tay màu trắng hoặc vàng nhạt, nhìn như nét bút chalk trên bảng đen, tạo cảm giác nhật ký du lịch cá nhân, chân thực và ấm áp. Phù hợp video làng quê, núi rừng, vùng biên giới.",
+    image: "/hook_handwriting.png",
+    category: "text"
+  },
+  bold_impact: {
+    name: "Bold Impact (Chữ đậm siêu to)",
+    description: "Tên địa danh hiển thị bằng font Impact siêu to, viết hoa toàn bộ với viền đen cực đậm, màu trắng hoặc vàng. Câu Hook phụ bên dưới màu vàng tươi. Cách thể hiện mạnh mẽ, trực tiếp, thu hút ngay lập tức — phù hợp video ẩm thực, đường phố, khám phá.",
+    image: "/hook_bold_impact.png",
+    category: "text"
+  },
+  sticker_pop: {
+    name: "Sticker Pop (Chữ sticker màu sắc)",
+    description: "Tên địa danh hiển thị như một sticker dán với font tròn, nhiều màu sắc (hồng, xanh mint), có hiệu ứng bóng 3D nhẹ và các ngôi sao trang trí xung quanh. Phong cách cute, vui nhộn, Gen Z — cực kỳ phù hợp TikTok và Reels.",
+    image: "/hook_sticker_pop.png",
+    category: "text"
+  },
+  cinematic_title: {
+    name: "Cinematic Title (Tiêu đề điện ảnh)",
+    description: "Tên địa danh hiển thị theo phong cách tiêu đề phim tài liệu: font serif thanh lịch, chữ hoa cách đều, màu vàng kim hoặc trắng, có đường kẻ ngang trang trí. Câu Hook phụ bên dưới bằng font nhỏ hơn. Cảm giác premium, chuyên nghiệp như travel documentary.",
+    image: "/hook_cinematic_title.png",
+    category: "text"
+  },
+  text_slide: {
+    name: "Text Slide (Chữ trượt lên)",
+    description: "Câu Hook toàn bộ trượt từ phía dưới lên vị trí giữa màn hình với hiệu ứng ease-out mượt mà. Chữ màu trắng đậm có bóng đen, render trực tiếp bằng FFmpeg. Thích hợp cho video muốn đặt câu hỏi hoặc reveal thông tin gây tò mò.",
+    image: "/hook_text_slide.png",
+    category: "text"
+  },
+  // ── TikTok Banner ─────────────────────────────────────
+  tiktok_tag_banner_purple: {
+    name: "TikTok Tag Banner (Nền Tím)",
+    description: "Một khối banner màu tím đặc trưng bo góc nằm sát chân video, bên trên hiển thị tên địa danh dưới dạng hashtag màu xanh nổi bật và tiêu đề Hook viết hoa rõ ràng ở trên nền. Phụ đề không dùng khi chọn kiểu tin tức này.",
+    image: "/hook_purple.png",
+    category: "banner"
+  },
+  tiktok_tag_banner_pink: {
+    name: "TikTok Tag Banner (Nền Hồng)",
+    description: "Khối banner màu hồng trẻ trung nằm ở góc dưới video, kết hợp cùng hashtag màu xanh biển nổi bật, tạo cảm giác lôi cuốn, ấm áp và vui tươi. Phụ đề không dùng khi chọn kiểu tin tức này.",
+    image: "/hook_pink.png",
+    category: "banner"
+  },
+  tiktok_tag_banner_green: {
+    name: "TikTok Tag Banner (Nền Xanh Lá)",
+    description: "Khối banner màu xanh lá thẫm tự nhiên nằm ở góc dưới video, mang lại cảm giác thân thiện với thiên nhiên, sinh thái và thư thái cho video du lịch. Phụ đề không dùng khi chọn kiểu tin tức này.",
+    image: "/hook_green.png",
+    category: "banner"
+  },
+  tiktok_quote_card: {
+    name: "TikTok Quote Card (Hộp trích dẫn)",
+    description: "Hộp thoại trích dẫn bán trong suốt nằm chính giữa màn hình với hai dấu ngoặc kép lớn màu trắng bao quanh câu Hook. Phụ đề sẽ hiển thị ở phía dưới video, không chồng chéo với hộp trích dẫn. Thích hợp cho video tâm sự, chia sẻ kinh nghiệm sâu lắng.",
+    image: "/hook_frame_check.png",
+    category: "banner"
+  },
+  tiktok_floating_box: {
+    name: "TikTok Floating Box (Hộp chữ nổi phía trên)",
+    description: "Hộp chữ màu đen bán trong suốt trôi nổi ở phía trên của video (khoảng 1/3 trên), tạo không gian hiển thị thoáng đãng và sang trọng. Phụ đề sẽ hiển thị ở phía dưới, cách xa hộp chữ ở trên, không chồng chéo.",
+    image: "/hook_floating_check.png",
+    category: "banner"
+  }
+};
+
+
 // ── MAIN COMPONENT ─────────────────────────────────────────────────────────
 export default function StudioScreen() {
   const [step, setStep] = useState<Step>(1);
+  const [videoType, setVideoType] = useState<"personal" | "news">("personal");
 
   // ─ Step 1: Basic config ─
   const [topic, setTopic] = useState("");
   const [selectedCreator, setSelectedCreator] = useState("c1");
   const [selectedTemplate, setSelectedTemplate] = useState("9:16");
   const [voiceMode, setVoiceMode] = useState<VoiceMode>("edge");
+  const [elevenLabsVoiceId, setElevenLabsVoiceId] = useState("custom");
+  const [customVoiceId, setCustomVoiceId] = useState("");
+  const [creatorProfile, setCreatorProfile] = useState<any>(null);
+  const [previewLoading, setPreviewLoading] = useState(false);
+
+  const getSelectedVoiceId = () => {
+    if (voiceMode === "elevenlabs") {
+      return elevenLabsVoiceId === "custom" ? customVoiceId : elevenLabsVoiceId;
+    }
+    if (creatorProfile && creatorProfile.voice_provider === voiceMode && creatorProfile.voice_id) {
+      return creatorProfile.voice_id;
+    }
+    // Fallbacks based on selected creator
+    if (voiceMode === "vbee") {
+      const vbeeMap: Record<string, string> = {
+        c1: "hn_female_lananh",
+        c2: "hn_male_minhtuan",
+        c3: "hn_female_thutrang",
+        c4: "hcm_male_ducanh",
+        c5: "hn_female_ngocmai",
+        lan_anh: "hn_female_lananh",
+        minh_tuan: "hn_male_minhtuan",
+        thu_ha: "hn_female_thutrang",
+        duc_anh: "hcm_male_ducanh",
+        ngoc_mai: "hn_female_ngocmai"
+      };
+      return vbeeMap[selectedCreator] || "hn_female_lananh";
+    }
+    if (voiceMode === "edge") {
+      const edgeMap: Record<string, string> = {
+        c1: "vi-VN-HoaiMyNeural",
+        c2: "vi-VN-NamMinhNeural",
+        c3: "vi-VN-HoaiMyNeural",
+        c4: "vi-VN-NamMinhNeural",
+        c5: "vi-VN-HoaiMyNeural",
+        lan_anh: "vi-VN-HoaiMyNeural",
+        minh_tuan: "vi-VN-NamMinhNeural",
+        thu_ha: "vi-VN-HoaiMyNeural",
+        duc_anh: "vi-VN-NamMinhNeural",
+        ngoc_mai: "vi-VN-HoaiMyNeural"
+      };
+      return edgeMap[selectedCreator] || "vi-VN-HoaiMyNeural";
+    }
+    return "";
+  };
   const [hookStyle, setHookStyle] = useState("zoom_in");
   const [hookText, setHookText] = useState("");
+  const [hookTitle, setHookTitle] = useState("");
+  const [hookSubtitle, setHookSubtitle] = useState("");
   const [scriptText, setScriptText] = useState("");
   const [transition, setTransition] = useState("fade");
+
+  useEffect(() => {
+    if (videoType === "news") {
+      if (!["tiktok_tag_banner_purple", "tiktok_tag_banner_pink", "tiktok_tag_banner_green"].includes(hookStyle)) {
+        setHookStyle("tiktok_tag_banner_purple");
+      }
+    }
+  }, [videoType, hookStyle]);
   const [seedingItems, setSeedingItems] = useState<SeedingItem[]>([
     { id: "s1", value: "", type: "restaurant" },
   ]);
@@ -421,23 +588,154 @@ export default function StudioScreen() {
   const [syncStatus, setSyncStatus] = useState<"loading" | "ok" | "error" | null>(null);
   const [syncedUrl, setSyncedUrl] = useState("");
 
-  // Fetch creator hook preference
+  // Fetch creator configuration and sync voice/hook preferences
   useEffect(() => { fetchCreatorSettings(selectedCreator); }, [selectedCreator]);
 
   const fetchCreatorSettings = async (cid: string) => {
     const idMap: Record<string, string> = { c1: "lan_anh", c2: "minh_tuan", c3: "thu_ha", c4: "duc_anh", c5: "ngoc_mai" };
     const mappedId = idMap[cid] || cid;
     const isTauri = typeof window !== "undefined" && (window as any).__TAURI_INTERNALS__ !== undefined;
-    if (!isTauri) return;
+
+    // Fallback creator profiles for browser mode
+    const fallbackProfiles: Record<string, any> = {
+      lan_anh: { voice_provider: "vbee", voice_id: "hn_female_lananh", hook_preference: "zoom_in" },
+      minh_tuan: { voice_provider: "vbee", voice_id: "hn_male_minhtuan", hook_preference: "glitch" },
+      thu_ha: { voice_provider: "vbee", voice_id: "hn_female_thutrang", hook_preference: "cinematic_vignette" },
+      duc_anh: { voice_provider: "vbee", voice_id: "hcm_male_ducanh", hook_preference: "zoom_out" },
+      ngoc_mai: { voice_provider: "vbee", voice_id: "hn_female_ngocmai", hook_preference: "zoom_in" }
+    };
+
     try {
-      const { invoke } = await import("@tauri-apps/api/core");
-      const resStr = await invoke<string>("get_creators");
-      const res = JSON.parse(resStr);
-      if (res.success && Array.isArray(res.data)) {
-        const creator = res.data.find((c: any) => c.id === mappedId);
-        if (creator?.hook_preference) setHookStyle(creator.hook_preference);
+      const localData = localStorage.getItem("dulichapp_creators");
+      if (localData) {
+        const parsed = JSON.parse(localData);
+        if (Array.isArray(parsed)) {
+          parsed.forEach((c: any) => {
+            fallbackProfiles[c.id] = c;
+          });
+        }
       }
-    } catch (e) { /* silent */ }
+    } catch (err) { /* silent */ }
+
+    if (isTauri) {
+      try {
+        const { invoke } = await import("@tauri-apps/api/core");
+        const resStr = await invoke<string>("get_creators");
+        const res = JSON.parse(resStr);
+        if (res.success && Array.isArray(res.data)) {
+          const creator = res.data.find((c: any) => c.id === mappedId);
+          if (creator) {
+            setCreatorProfile(creator);
+            if (creator.hook_preference) setHookStyle(creator.hook_preference);
+            if (creator.voice_provider) {
+              setVoiceMode(creator.voice_provider as VoiceMode);
+              const vId = creator.voice_id || "";
+              if (creator.voice_provider === "elevenlabs") {
+                const matched = ELEVENLABS_VOICES.find(v => v.id === vId);
+                if (matched && vId !== "custom") {
+                  setElevenLabsVoiceId(vId);
+                } else {
+                  setElevenLabsVoiceId("custom");
+                  setCustomVoiceId(vId);
+                }
+              }
+            }
+            return;
+          }
+        }
+      } catch (e) { /* silent */ }
+    }
+
+    // Fallback if browser mode or Tauri call failed
+    const fallback = fallbackProfiles[mappedId];
+    if (fallback) {
+      setCreatorProfile(fallback);
+      setHookStyle(fallback.hook_preference);
+      setVoiceMode(fallback.voice_provider as VoiceMode);
+      if (fallback.voice_provider === "elevenlabs") {
+        const vId = fallback.voice_id || "";
+        const matched = ELEVENLABS_VOICES.find(v => v.id === vId);
+        if (matched && vId !== "custom") {
+          setElevenLabsVoiceId(vId);
+        } else {
+          setElevenLabsVoiceId("custom");
+          setCustomVoiceId(vId);
+        }
+      }
+    }
+  };
+
+  const handlePlayPreview = async () => {
+    if (previewLoading) return;
+    setPreviewLoading(true);
+    
+    const isTauri = typeof window !== "undefined" && (window as any).__TAURI_INTERNALS__ !== undefined;
+    const provider = voiceMode;
+    const voiceId = getSelectedVoiceId();
+    const text = "Xin chào, đây là giọng nói thử nghiệm của bạn.";
+    
+    try {
+      if (isTauri) {
+        const { invoke, convertFileSrc } = await import("@tauri-apps/api/core");
+        
+        // Sync API keys to Rust process env
+        const settings = useAppStore.getState().settings;
+        await invoke("set_api_keys", {
+          elevenlabsKey: settings.elevenLabsKey || "",
+          vbeeKey: settings.vbeeKey || "",
+          openaiKey: settings.openAiKey || "",
+          anthropicKey: settings.anthropicKey || "",
+        });
+        
+        const resStr = await invoke<string>("preview_voice", {
+          voiceProvider: provider,
+          voiceId: voiceId,
+          text: text,
+        });
+        
+        const res = JSON.parse(resStr);
+        if (res.success && res.data.audio_path) {
+          const audioUrl = convertFileSrc(res.data.audio_path);
+          const audio = new Audio(audioUrl);
+          await audio.play();
+        } else {
+          alert("Lỗi nghe thử: " + (res.data || "Không rõ nguyên nhân"));
+        }
+      } else {
+        // Browser Mode
+        const settings = useAppStore.getState().settings;
+        const res = await fetch("http://localhost:7788/preview", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            provider,
+            voice_id: voiceId,
+            text,
+            elevenlabs_api_key: settings.elevenLabsKey || "",
+            vbee_api_key: settings.vbeeKey || "",
+            openai_api_key: settings.openAiKey || "",
+            anthropic_api_key: settings.anthropicKey || "",
+          }),
+        });
+        
+        if (!res.ok) {
+          const t = await res.text();
+          throw new Error(t);
+        }
+        
+        const json = await res.json();
+        if (json.success && json.url_path) {
+          const audio = new Audio("http://localhost:7788" + json.url_path);
+          await audio.play();
+        } else {
+          alert("Lỗi nghe thử: " + (json.error || "Không rõ nguyên nhân"));
+        }
+      }
+    } catch (err: any) {
+      alert("Lỗi kết nối hoặc tạo giọng nói: " + err.message);
+    } finally {
+      setPreviewLoading(false);
+    }
   };
 
   // ── Seeding helpers ──
@@ -504,8 +802,10 @@ export default function StudioScreen() {
           sceneCount: presetSceneCount,
           hookStyle,
           hookText: hookText || "",
-          voiceProvider: voiceMode === "api" ? "" : voiceMode,
+          voiceProvider: voiceMode,
+          voiceId: getSelectedVoiceId(),
           customScenesJson,
+          videoType,
         });
 
         unlisten();
@@ -648,6 +948,13 @@ export default function StudioScreen() {
           jobId,
           sceneUploadsJson: JSON.stringify(sceneUploads),
           transition,
+          hookStyle,
+          hookText: hookText || "",
+          hookTitle: hookTitle || "",
+          hookSubtitle: hookSubtitle || "",
+          videoType,
+          voiceProvider: voiceMode,
+          voiceId: getSelectedVoiceId(),
         });
 
         unlisten();
@@ -682,6 +989,7 @@ export default function StudioScreen() {
         formData.append("job_id", jobId || `job_${Date.now()}`);
         formData.append("transition", transition);
         formData.append("voice_mode", voiceMode);
+        formData.append("voice_id", getSelectedVoiceId());
         formData.append("script", JSON.stringify(generatedScript || { hook: "", body: topic, cta: "" }));
 
         const idMap: Record<string, string> = { c1: "lan_anh", c2: "minh_tuan", c3: "thu_ha", c4: "duc_anh", c5: "ngoc_mai" };
@@ -689,6 +997,16 @@ export default function StudioScreen() {
         formData.append("template_ratio", selectedTemplate);
         formData.append("hook_style", hookStyle);
         formData.append("hook_text", hookText || "");
+        formData.append("hook_title", hookTitle || "");
+        formData.append("hook_subtitle", hookSubtitle || "");
+        formData.append("video_type", videoType);
+
+        // Append API keys for Python local server
+        const settings = useAppStore.getState().settings;
+        formData.append("elevenlabs_api_key", settings.elevenLabsKey || "");
+        formData.append("vbee_api_key", settings.vbeeKey || "");
+        formData.append("openai_api_key", settings.openAiKey || "");
+        formData.append("anthropic_api_key", settings.anthropicKey || "");
 
         // Attach each scene's file
         const scenesMeta = scenes.map((s) => ({
@@ -798,6 +1116,16 @@ export default function StudioScreen() {
     setSyncedUrl(""); setIsCancelled(false); setScenes([]); setGeneratedScript(null); setJobId("");
   };
 
+  const handleRecreate = () => {
+    setStep(3);
+    setAssemblyLogs([]);
+    setAssemblyStep(0);
+    setResult(null);
+    setSyncStatus(null);
+    setSyncedUrl("");
+    setIsCancelled(false);
+  };
+
   // ══════════════════════════════════════════════════════════════
   // RENDER
   // ══════════════════════════════════════════════════════════════
@@ -826,6 +1154,32 @@ export default function StudioScreen() {
               value={topic}
               onChange={(e) => setTopic(e.target.value)}
             />
+          </div>
+
+          {/* Video Type */}
+          <div style={sty.fieldGroup}>
+            <label style={sty.label}>🎬 Loại video</label>
+            <div style={sty.modeToggle}>
+              <button
+                type="button"
+                style={{ ...sty.modeBtn, ...(videoType === "personal" ? sty.modeBtnActive : {}) }}
+                onClick={() => setVideoType("personal")}
+              >
+                👤 Cá nhân
+              </button>
+              <button
+                type="button"
+                style={{ ...sty.modeBtn, ...(videoType === "news" ? sty.modeBtnActive : {}) }}
+                onClick={() => setVideoType("news")}
+              >
+                📺 Tin tức
+              </button>
+            </div>
+            <div style={sty.hint}>
+              {videoType === "personal"
+                ? "Video cá nhân: Lồng tiếng + Phụ đề chữ nhỏ & đẩy cao lên để tránh đè các nút tương tác."
+                : "Video tin tức: Chỉ lồng tiếng (không tạo phụ đề), bắt buộc dùng các mẫu TikTok Tag Banner."}
+            </div>
           </div>
 
           {/* Creator */}
@@ -963,30 +1317,153 @@ export default function StudioScreen() {
             />
           </div>
 
-          {/* Hook Style */}
+
           <div style={sty.fieldGroup}>
-            <label style={sty.label}>🎣 Hiệu ứng Hook (Mở đầu video)</label>
-            <div style={{ display: "flex", gap: 12 }}>
-              <select style={sty.select} value={hookStyle} onChange={(e) => setHookStyle(e.target.value)}>
-                <option value="zoom_in">Zoom In (Phóng to chậm)</option>
-                <option value="zoom_out">Zoom Out (Thu nhỏ chậm)</option>
-                <option value="glitch">RGB Glitch (Nhiễu sóng màu)</option>
-                <option value="cinematic_vignette">Cinematic Vignette (Tối góc điện ảnh)</option>
-                <option value="text_slide">Animated Hook Text (Chữ chạy thu hút)</option>
-              </select>
-            </div>
+            <label style={sty.label}>🎣 Kiểu Hook mở đầu video</label>
+            <select style={sty.select} value={hookStyle} onChange={(e) => setHookStyle(e.target.value)}>
+              {videoType === "personal" ? (
+                <>
+                  <option disabled style={{ color: "#818cf8", background: "#1a1a1a", fontWeight: 700 }}>── Hiệu ứng camera ──</option>
+                  <option value="zoom_in">Zoom In — Phóng to chậm</option>
+                  <option value="zoom_out">Zoom Out — Thu nhỏ chậm</option>
+                  <option value="glitch">RGB Glitch — Nhiễu sóng màu</option>
+                  <option value="cinematic_vignette">Cinematic Vignette — Tối góc điện ảnh</option>
+                  <option disabled style={{ color: "#34d399", background: "#1a1a1a", fontWeight: 700 }}>── Chữ trôi nổi (hook phía trên + sub phía dưới) ──</option>
+                  <option value="bubble_title">Bubble Title — Chữ bong bóng nổi</option>
+                  <option value="neon_glow">Neon Glow — Chữ neon phát sáng</option>
+                  <option value="handwriting">Handwriting — Chữ viết tay nhẹ nhàng</option>
+                  <option value="bold_impact">Bold Impact — Chữ đậm siêu to</option>
+                  <option value="sticker_pop">Sticker Pop — Chữ sticker màu sắc</option>
+                  <option value="cinematic_title">Cinematic Title — Tiêu đề điện ảnh</option>
+                  <option value="text_slide">Text Slide — Chữ trượt lên</option>
+                  <option disabled style={{ color: "#fb923c", background: "#1a1a1a", fontWeight: 700 }}>── Banner TikTok (chỉ chữ hook, không sub) ──</option>
+                  <option value="tiktok_quote_card">TikTok Quote Card — Hộp trích dẫn</option>
+                  <option value="tiktok_floating_box">TikTok Floating Box — Hộp chữ nổi phía trên</option>
+                </>
+              ) : (
+                <>
+                  <option disabled style={{ color: "#f59e0b", background: "#1a1a1a", fontWeight: 700 }}>── Banner Tin Tức ──</option>
+                  <option value="tiktok_tag_banner_purple">TikTok Tag Banner — Nền Tím</option>
+                  <option value="tiktok_tag_banner_pink">TikTok Tag Banner — Nền Hồng</option>
+                  <option value="tiktok_tag_banner_green">TikTok Tag Banner — Nền Xanh Lá</option>
+                </>
+              )}
+            </select>
+
+            {/* Hook Preview Panel */}
+            {hookStyle && HOOK_DETAILS[hookStyle] && (() => {
+              const h = HOOK_DETAILS[hookStyle];
+              const cat = h.category;
+              const isText   = cat === "text";
+              const isBanner = cat === "banner";
+              const isEffect = cat === "effect";
+              const accentColor = isText ? "#34d399" : isBanner ? "#fb923c" : "#818cf8";
+              const bgColor     = isText ? "rgba(52,211,153,0.06)" : isBanner ? "rgba(251,146,60,0.06)" : "rgba(129,140,248,0.06)";
+              const borderColor = isText ? "#34d39930" : isBanner ? "#fb923c30" : "#818cf830";
+              const catLabel    = isText ? "Chữ trôi nổi" : isBanner ? "Banner / Overlay" : "Hiệu ứng camera";
+              return (
+                <div style={{ marginTop: 12, background: "#1c1c1e", borderRadius: 14, border: "1px solid #2c2c2e", overflow: "hidden" }}>
+                  {/* Title bar */}
+                  <div style={{ padding: "10px 16px", display: "flex", alignItems: "center", gap: 8, borderBottom: "1px solid #2c2c2e" }}>
+                    <span style={{ fontSize: 13, fontWeight: 700, color: "#e5e7eb", flex: 1 }}>
+                      Xem trước: {h.name}
+                    </span>
+                    <span style={{ fontSize: 10, fontWeight: 600, color: accentColor, padding: "3px 10px", background: bgColor, borderRadius: 20, border: `1px solid ${borderColor}` }}>
+                      {catLabel}
+                    </span>
+                  </div>
+                  {/* Content */}
+                  <div style={{ display: "flex", gap: 0, alignItems: "stretch" }}>
+                    {/* Left: phone mockup */}
+                    <div style={{ width: 130, flexShrink: 0, background: "#000", position: "relative" as const, minHeight: 230 }}>
+                      <img
+                        src={h.image}
+                        alt={h.name}
+                        style={{ width: "100%", height: "100%", objectFit: "cover", position: "absolute" as const, inset: 0 }}
+                        onError={(e) => { (e.target as HTMLImageElement).style.opacity = "0"; }}
+                      />
+                      {/* Layout zones visualized */}
+                      {isText && (
+                        <>
+                          <div style={{ position: "absolute" as const, top: 8, left: 8, right: 8, padding: "4px 6px", background: "rgba(52,211,153,0.25)", borderRadius: 4, border: "1px dashed #34d399", fontSize: 8, color: "#34d399", textAlign: "center" as const, fontWeight: 700 }}>
+                            HOOK TEXT
+                          </div>
+                          <div style={{ position: "absolute" as const, bottom: 28, left: 8, right: 8, padding: "4px 6px", background: "rgba(99,102,241,0.25)", borderRadius: 4, border: "1px dashed #818cf8", fontSize: 8, color: "#818cf8", textAlign: "center" as const, fontWeight: 700 }}>
+                            SUBTITLE (SUB)
+                          </div>
+                        </>
+                      )}
+                      <div style={{ position: "absolute" as const, bottom: 0, left: 0, right: 0, padding: "5px 6px", background: "linear-gradient(transparent,rgba(0,0,0,0.85))", fontSize: 8, color: "#fff", fontWeight: 700, textAlign: "center" as const, letterSpacing: 0.8, textTransform: "uppercase" as const }}>
+                        PREVIEW
+                      </div>
+                    </div>
+                    {/* Right: description */}
+                    <div style={{ flex: 1, padding: "14px 16px", display: "flex", flexDirection: "column" as const, gap: 10 }}>
+                      <p style={{ fontSize: 12, color: "#d1d5db", margin: 0, lineHeight: 1.6 }}>
+                        {h.description}
+                      </p>
+                      {isText && (
+                        <div style={{ fontSize: 11, color: "#34d399", padding: "8px 12px", background: "rgba(52,211,153,0.08)", borderRadius: 8, borderLeft: "3px solid #34d399" }}>
+                          Layout: Hook text hiện ở vùng trên cùng video. Phụ đề (subtitle) sẽ tự động chạy ở vùng phía dưới, cách xa viền button điều khiển.
+                        </div>
+                      )}
+                      {isEffect && (
+                        <div style={{ fontSize: 11, color: "#818cf8", padding: "8px 12px", background: "rgba(129,140,248,0.08)", borderRadius: 8, borderLeft: "3px solid #818cf8" }}>
+                          Hiệu ứng chạy trực tiếp trên cảnh đầu tiên. Phụ đề hiện phía dưới, không chồng chéo hiệu ứng.
+                        </div>
+                      )}
+                      {isBanner && (
+                        <div style={{ fontSize: 11, color: "#fb923c", padding: "8px 12px", background: "rgba(251,146,60,0.08)", borderRadius: 8, borderLeft: "3px solid #fb923c" }}>
+                          {hookStyle.startsWith("tiktok_tag_banner")
+                            ? "Dành cho video tin tức: không có phụ đề, chỉ có hook banner và giọng đọc."
+                            : "Hộp chữ hook phía trên, phụ đề tự động chạy phía dưới cách xa."}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              );
+            })()}
           </div>
 
           {/* Hook Text */}
-          <div style={sty.fieldGroup}>
-            <label style={sty.label}>🔤 Chữ chạy Hook (Tiêu đề nổi bật)</label>
-            <input
-              style={sty.topicInput}
-              placeholder="VD: Đừng đi Đà Nẵng nếu chưa biết điều này! (Mặc định dùng Hook của kịch bản)"
-              value={hookText}
-              onChange={(e) => setHookText(e.target.value)}
-            />
-          </div>
+          {["bubble_title", "neon_glow", "handwriting", "bold_impact", "sticker_pop", "cinematic_title"].includes(hookStyle) ? (
+            <div style={{ display: "flex", flexDirection: "column" as const, width: "100%", gap: 6 }}>
+              <div style={{ display: "flex", gap: 16, width: "100%" }}>
+                <div style={{ ...sty.fieldGroup, flex: 1, marginBottom: 0 }}>
+                  <label style={sty.label}>🔤 Tiêu đề chính của Hook (Title)</label>
+                  <input
+                    style={sty.topicInput}
+                    placeholder="VD: ĐÀ LẠT"
+                    value={hookTitle}
+                    onChange={(e) => setHookTitle(e.target.value)}
+                  />
+                </div>
+                <div style={{ ...sty.fieldGroup, flex: 2, marginBottom: 0 }}>
+                  <label style={sty.label}>📝 Nội dung phụ của Hook (Subtitle)</label>
+                  <input
+                    style={sty.topicInput}
+                    placeholder="VD: nếu chưa biết điều này..."
+                    value={hookSubtitle}
+                    onChange={(e) => setHookSubtitle(e.target.value)}
+                  />
+                </div>
+              </div>
+              <div style={{ fontSize: 11, color: "#9ca3af", marginTop: 4, marginBottom: 12 }}>
+                💡 Nếu bỏ trống, hệ thống sẽ tự động tách Tiêu đề và Nội dung phụ từ câu Hook của kịch bản (1-2 từ đầu tiên làm tiêu đề chính).
+              </div>
+            </div>
+          ) : (
+            <div style={sty.fieldGroup}>
+              <label style={sty.label}>🔤 Chữ chạy Hook (Tiêu đề nổi bật)</label>
+              <input
+                style={sty.topicInput}
+                placeholder="VD: Đừng đi Đà Nẵng nếu chưa biết điều này! (Mặc định dùng Hook của kịch bản)"
+                value={hookText}
+                onChange={(e) => setHookText(e.target.value)}
+              />
+            </div>
+          )}
 
           {/* Transition */}
           <div style={sty.fieldGroup}>
@@ -999,23 +1476,84 @@ export default function StudioScreen() {
           {/* Voice mode */}
           <div style={sty.fieldGroup}>
             <label style={sty.label}>🎙️ Giọng đọc AI</label>
-            <div style={sty.modeToggle}>
-              <button style={{ ...sty.modeBtn, ...(voiceMode === "edge" ? sty.modeBtnActive : {}) }} onClick={() => setVoiceMode("edge")}>
+            <div style={{ ...sty.modeToggle, display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 8 }}>
+              <button style={{ ...sty.modeBtn, margin: 0, ...(voiceMode === "edge" ? sty.modeBtnActive : {}) }} onClick={() => setVoiceMode("edge")}>
                 🌐 Edge TTS (Miễn phí)
               </button>
-              <button style={{ ...sty.modeBtn, ...(voiceMode === "api" ? sty.modeBtnActive : {}) }} onClick={() => setVoiceMode("api")}>
-                🔑 Vbee / ElevenLabs API
+              <button style={{ ...sty.modeBtn, margin: 0, ...(voiceMode === "vbee" ? sty.modeBtnActive : {}) }} onClick={() => setVoiceMode("vbee")}>
+                🎙️ Vbee API
               </button>
-              <button style={{ ...sty.modeBtn, ...(voiceMode === "mock" ? sty.modeBtnActive : {}) }} onClick={() => setVoiceMode("mock")}>
+              <button style={{ ...sty.modeBtn, margin: 0, ...(voiceMode === "elevenlabs" ? sty.modeBtnActive : {}) }} onClick={() => setVoiceMode("elevenlabs")}>
+                ✨ ElevenLabs API
+              </button>
+              <button style={{ ...sty.modeBtn, margin: 0, ...(voiceMode === "mock" ? sty.modeBtnActive : {}) }} onClick={() => setVoiceMode("mock")}>
                 🔇 Mock (Không tiếng)
               </button>
             </div>
-            <div style={sty.hint}>
-              {voiceMode === "edge" ? "Sử dụng Microsoft Edge TTS miễn phí để lồng tiếng chất lượng cao & phụ đề đồng bộ chính xác." :
-               voiceMode === "api" ? "Sử dụng Vbee.ai hoặc ElevenLabs để tạo giọng đọc AI thật (cần API key trong Cài đặt)." :
-               "Mock mode: video ghép từ các file thô của bạn nhưng không lồng tiếng (im lặng)."}
+            <div style={{ ...sty.hint, display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 4 }}>
+              <span style={{ flex: 1 }}>
+                {voiceMode === "edge" && "Sử dụng Microsoft Edge TTS miễn phí để lồng tiếng chất lượng cao & phụ đề đồng bộ chính xác."}
+                {voiceMode === "vbee" && "Sử dụng Vbee.ai để tạo giọng đọc tiếng Việt chất lượng cao (cần Vbee API key trong Cài đặt)."}
+                {voiceMode === "elevenlabs" && "Sử dụng ElevenLabs Multilingual để tạo giọng nói tiếng Việt tự nhiên (cần ElevenLabs API key)."}
+                {voiceMode === "mock" && "Mock mode: video ghép từ các file thô của bạn nhưng không lồng tiếng (im lặng)."}
+              </span>
+              {voiceMode !== "mock" && (
+                <button
+                  style={{
+                    backgroundColor: "rgba(99, 102, 241, 0.15)",
+                    border: "1px solid rgba(99, 102, 241, 0.35)",
+                    color: "#a5b4fc",
+                    borderRadius: 6,
+                    padding: "6px 12px",
+                    fontSize: 11,
+                    fontWeight: 600,
+                    cursor: previewLoading ? "not-allowed" : "pointer",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 5,
+                    transition: "all 0.2s ease",
+                    marginLeft: 12,
+                    whiteSpace: "nowrap"
+                  }}
+                  onClick={handlePlayPreview}
+                  disabled={previewLoading}
+                >
+                  {previewLoading ? "⏳ Đang tạo..." : "🔊 Nghe thử giọng"}
+                </button>
+              )}
             </div>
           </div>
+
+          {/* ElevenLabs Voice Selection */}
+          {voiceMode === "elevenlabs" && (
+            <div style={{ ...sty.fieldGroup, marginTop: 10 }}>
+              <label style={sty.label}>🗣️ Chọn giọng đọc ElevenLabs (Vietnamese)</label>
+              <select
+                style={sty.select}
+                value={elevenLabsVoiceId}
+                onChange={(e) => setElevenLabsVoiceId(e.target.value)}
+              >
+                {ELEVENLABS_VOICES.map((v) => (
+                  <option key={v.id} value={v.id}>
+                    {v.name}
+                  </option>
+                ))}
+              </select>
+              {elevenLabsVoiceId === "custom" && (
+                <div style={{ marginTop: 8 }}>
+                  <input
+                    style={sty.topicInput}
+                    placeholder="Nhập ElevenLabs Voice ID của bạn (VD: pNInz6obpgDQGcFmaJgB)"
+                    value={customVoiceId}
+                    onChange={(e) => setCustomVoiceId(e.target.value)}
+                  />
+                  <div style={{ ...sty.hint, marginTop: 4 }}>
+                    Lấy Voice ID từ ElevenLabs Voice Library hoặc My Voices dashboard.
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
 
           {/* Seeding */}
           <div style={sty.fieldGroup}>
@@ -1052,7 +1590,7 @@ export default function StudioScreen() {
             <div style={sty.cancelledBox}>
               <div style={{ fontSize: 48, marginBottom: 16 }}>🛑</div>
               <div style={{ fontSize: 18, fontWeight: 700, color: "#ef4444", marginBottom: 8 }}>Đã dừng</div>
-              <button style={sty.secondaryBtn} onClick={resetAll}>← Quay lại bước 1</button>
+              <button style={sty.secondaryBtn} onClick={() => { setStep(1); setIsCancelled(false); }}>← Quay lại bước 1</button>
             </div>
           ) : (
             <>
@@ -1307,7 +1845,7 @@ export default function StudioScreen() {
           </div>
 
           <div style={sty.step3Actions}>
-            <button style={sty.secondaryBtn} onClick={resetAll}>🔄 Tạo lại</button>
+            <button style={sty.secondaryBtn} onClick={handleRecreate}>🔄 Tạo lại</button>
             <button style={sty.primaryBtn} onClick={syncDashboard}>📤 Đồng bộ lên Dashboard</button>
           </div>
         </div>

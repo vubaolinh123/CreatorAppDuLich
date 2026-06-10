@@ -56,7 +56,7 @@ def main():
                         choices=["personal", "news"],
                         help="Channel type: personal | news")
     parser.add_argument("--provider", type=str, default=config.voice_provider,
-                        choices=["vbee", "elevenlabs", "mock"],
+                        choices=["vbee", "elevenlabs", "openai", "mock"],
                         help="Voice provider")
     parser.add_argument("--sheet-id", type=str, default="", help="Google Sheet ID")
 

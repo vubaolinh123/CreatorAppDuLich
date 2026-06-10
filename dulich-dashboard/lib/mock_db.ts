@@ -40,18 +40,18 @@ const defaultVideos: VideoItem[] = [
     templateId: "default",
     seeds: ["Nhà hàng Bé Mặn"],
     script: {
-      hook: "Bạn có biết Đà Nẵng đang là điểm đến HOT nhất 2025 không? 🔥",
-      body: "Hôm nay mình đưa các bạn khám phá toàn bộ Đà Nẵng trong vòng 60 giây!\n\nĐầu tiên là cảnh đẹp không thể bỏ qua — bầu trời xanh ngắt, biển cả mênh mông, con người thân thiện.\n\nGhé qua Nhà hàng Bé Mặn thưởng thức đặc sản địa phương ngay nhé!\n\nMình đã ở đây 3 ngày 2 đêm với chi phí chỉ 2 triệu/người — cực kỳ hợp lý cho một chuyến đi đáng nhớ!",
-      cta: "Thả tim ❤️ nếu bạn muốn mình làm bộ guide Đà Nẵng chi tiết hơn! Follow để không bỏ lỡ video tiếp theo nhé!"
+      hook: "Bạn có biết Đà Nẵng đang là điểm đến hot nhất năm 2025 không?",
+      body: "Hôm nay mình đưa các bạn khám phá toàn bộ Đà Nẵng trong vòng 60 giây!\n\nĐầu tiên là cảnh đẹp không thể bỏ qua — bầu trời xanh ngắt, biển cả mênh mông, con người thân thiện.\n\nGhé qua Nhà hàng Bé Mặn thưởng thức đặc sản địa phương ngay nhé!\n\nMình đã ở đây 3 ngày 2 đêm với chi phí chỉ 2 triệu một người — cực kỳ hợp lý cho một chuyến đi đáng nhớ!",
+      cta: "Nhấn thích nếu bạn muốn mình làm bộ guide Đà Nẵng chi tiết hơn! Follow để không bỏ lỡ video tiếp theo nhé!"
     },
     captions: {
       hooks: [
-        "Đà Nẵng đẹp đến mức này?! 😱",
-        "2 triệu cho 3N2Đ tại Đà Nẵng — CÓ THẬT KHÔNG?",
+        "Đà Nẵng đẹp đến mức này?!",
+        "2 triệu cho 3 ngày 2 đêm tại Đà Nẵng — có thật không?",
         "Ai chưa đến Đà Nẵng thì đang bỏ lỡ điều này..."
       ],
-      caption_short: "🌟 Đà Nẵng — điểm đến HOT 2025! Chi phí chỉ từ 2 triệu/người. #dulich #danang",
-      caption_long: "✈️ Đà Nẵng — thiên đường du lịch đang đỉnh nhất 2025!\n\n🏖️ Cảnh đẹp không cần filter\n🍜 Ẩm thực đậm đà bản sắc\n💰 Chi phí cực hợp lý cho mọi ngân sách\n🛏️ Nhiều lựa chọn lưu trú từ budget đến luxury\n\n📍 Mình đã ghé: Nhà hàng Bé Mặn — tất cả đều cực đỉnh!\n\nLưu ngay để plan chuyến đi nhé! ❤️\n\n#dulichvietnam #danang #travel #vietnam #review",
+      caption_short: "Đà Nẵng — điểm đến hot năm 2025! Chi phí chỉ từ 2 triệu một người. #dulich #danang",
+      caption_long: "Đà Nẵng — thiên đường du lịch đang đỉnh nhất năm 2025!\n\nCảnh đẹp không cần bộ lọc\nẨm thực đậm đà bản sắc\nChi phí cực hợp lý cho mọi ngân sách\nNhiều lựa chọn lưu trú từ bình dân đến cao cấp\n\nMình đã ghé: Nhà hàng Bé Mặn — tất cả đều cực đỉnh!\n\nLưu ngay để lên lịch chuyến đi nhé!\n\n#dulichvietnam #danang #travel #vietnam #review",
       hashtags: ["#dulichvietnam", "#travel", "#vietnam", "#reviewdulich", "#danang"]
     },
     images: {
@@ -75,13 +75,13 @@ const defaultVideos: VideoItem[] = [
     templateId: "default",
     seeds: [],
     script: {
-      hook: "Bạn đã nghe ẩm thực phố cổ Hà Nội chưa? 🍜",
+      hook: "Bạn đã nghe ẩm thực phố cổ Hà Nội chưa?",
       body: "Hôm nay mình sẽ dắt bạn đi ăn sập 5 món ngon nhất Hà Nội chỉ với 100k.\n\nĐầu tiên là phở gia truyền thơm nức mũi, sau đó là bún chả nướng than hoa thơm phức.\n\nKhông thể thiếu cốc cafe trứng béo ngậy để kết thúc hành trình ẩm thực thú vị này!",
       cta: "Bình luận món ăn Hà Nội bạn thích nhất bên dưới nhé! Đăng ký kênh ngay!"
     },
     captions: {
-      hooks: ["Ăn sập Hà Nội chỉ với 100k! 🤤", "Món ngon phố cổ bạn phải thử", "Hà Nội foodtour 1 ngày"],
-      caption_short: "🍜 Cầm 100k ăn sập phố cổ Hà Nội! Bạn tin được không? #hanoifood #foodtour",
+      hooks: ["Ăn sập Hà Nội chỉ với 100k!", "Món ngon phố cổ bạn phải thử", "Hà Nội foodtour 1 ngày"],
+      caption_short: "Cầm 100k ăn sập phố cổ Hà Nội! Bạn tin được không? #hanoifood #foodtour",
       caption_long: "Ăn sập Hà Nội chỉ trong 1 ngày với danh sách các món ngon bổ rẻ nhất!\n\nXem video và lưu lại địa chỉ nhé các bạn.\n\n#hanoi #foodtour #streetfood #vietnam",
       hashtags: ["#hanoi", "#foodtour", "#streetfood", "#vietnam", "#amthuc"]
     },
@@ -104,13 +104,13 @@ const defaultVideos: VideoItem[] = [
     templateId: "default",
     seeds: [],
     script: {
-      hook: "Review khách sạn sát biển cực chill tại Phú Quốc! 🌊",
+      hook: "Review khách sạn sát biển cực chill tại Phú Quốc!",
       body: "Mở cửa phòng ra là thấy ngay bãi cát trắng mịn và biển xanh ngọc bích.\n\nPhòng ốc rộng rãi, dịch vụ 5 sao, đặc biệt bể bơi vô cực ngắm hoàng hôn siêu đẹp.",
       cta: "Tag ngay cạ cứng vào đây để lên kèo đi Phú Quốc thôi!"
     },
     captions: {
       hooks: ["Khách sạn sát biển đỉnh nhất Phú Quốc", "Ngủ dậy thấy ngay biển xanh Phú Quốc", "Resort vô cực siêu chill"],
-      caption_short: "🌊 Sáng thức dậy ở một nơi xa view biển Phú Quốc cực xịn! #phuquoc #resort",
+      caption_short: "Sáng thức dậy ở một nơi xa view biển Phú Quốc cực xịn! #phuquoc #resort",
       caption_long: "Một trải nghiệm nghỉ dưỡng tuyệt vời tại Phú Quốc.\n\nGiá cực tốt mùa này, dịch vụ chuẩn chỉnh.\n\n#phuquoc #resort #travel #vietnam",
       hashtags: ["#phuquoc", "#resort", "#travel", "#vietnam", "#holiday"]
     },

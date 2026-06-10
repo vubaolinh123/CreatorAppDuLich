@@ -8,10 +8,12 @@ use commands::{
     get_creators, save_creator, analyze_hook_video, run_personal_pipeline,
     get_seeding, save_seeding, delete_seeding, run_album_pipeline,
     select_folder, select_files, show_in_folder,
-    select_single_file, generate_scene_plan, assemble_from_scenes,
+    select_single_file, generate_scene_plan, assemble_from_scenes, set_api_keys,
+    preview_voice,
 };
 
 fn main() {
+    std::env::set_var("PYTHONUTF8", "1");
     tauri::Builder::default()
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_shell::init())
@@ -42,6 +44,8 @@ fn main() {
             select_single_file,
             generate_scene_plan,
             assemble_from_scenes,
+            set_api_keys,
+            preview_voice,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

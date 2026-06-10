@@ -49,6 +49,8 @@ class VideoEngine:
         transition: str = "fade",
         transition_duration: float = 0.5,
         template_ratio: str = "9:16",
+        hook_title: str = "",
+        hook_subtitle: str = "",
     ) -> str:
         """
         Assemble video from scene clips with xfade transitions.
@@ -122,6 +124,42 @@ class VideoEngine:
 
             # Measure actual duration of normalised clip
             actual_dur = self._probe_duration(norm_path) or target_dur
+
+            # Apply hook effect to the first clip (i == 0) if specified
+            if i == 0 and hook_style:
+                print(f"[VideoEngine] Đang áp dụng hiệu ứng Hook: '{hook_style}' cho Cảnh 1...", flush=True)
+                temp_hook_path = str(norm_dir / f"norm_000_hook.mp4")
+                try:
+                    from tools.hook_effects import apply_hook_effect
+                    filter_str = apply_hook_effect(
+                        input_label="0:v",
+                        output_label="vout",
+                        style=hook_style,
+                        duration_sec=actual_dur,
+                        hook_text=hook_text,
+                        hook_title=hook_title,
+                        hook_subtitle=hook_subtitle,
+                    )
+                    
+                    cmd = [
+                        "ffmpeg", "-y",
+                        "-i", norm_path,
+                        "-filter_complex", filter_str,
+                        "-map", "[vout]",
+                        "-c:v", "libx264", "-preset", "fast", "-crf", "23",
+                        "-pix_fmt", "yuv420p",
+                        temp_hook_path
+                    ]
+                    
+                    r = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
+                    if r.returncode == 0 and os.path.exists(temp_hook_path) and os.path.getsize(temp_hook_path) > 1000:
+                        os.replace(temp_hook_path, norm_path)
+                        print(f"[VideoEngine] ✓ Đã áp dụng thành công hiệu ứng Hook lên Cảnh 1.", flush=True)
+                    else:
+                        print(f"[VideoEngine] ⚠ Lỗi áp dụng hiệu ứng Hook (FFmpeg): {r.stderr[-300:]}", flush=True)
+                except Exception as e:
+                    print(f"[VideoEngine] ⚠ Lỗi áp dụng hiệu ứng Hook: {e}", flush=True)
+
             normalized.append({"path": norm_path, "duration": actual_dur, "scene_id": scene_id})
             print(f"[VideoEngine] ✓ norm_{i:03d}.mp4 — {actual_dur:.1f}s  ({scene_id})", flush=True)
 
@@ -132,7 +170,7 @@ class VideoEngine:
             cmd = ["ffmpeg", "-y", "-i", single]
             if voiceover_path and os.path.exists(voiceover_path):
                 cmd += ["-i", voiceover_path,
-                        "-filter_complex", "[0:v]copy[vout];[1:a]acopy[aout]",
+                        "-filter_complex", "[0:v]copy[vout];[1:a]anull[aout]",
                         "-map", "[vout]", "-map", "[aout]"]
             else:
                 cmd += ["-vn" if False else "-map", "0:v"]
@@ -171,7 +209,7 @@ class VideoEngine:
             if voiceover_path and os.path.exists(voiceover_path):
                 vo_idx = len(normalized)
                 input_args += ["-i", voiceover_path]
-                audio_filter = f";[{vo_idx}:a]acopy[aout]"
+                audio_filter = f";[{vo_idx}:a]anull[aout]"
                 audio_map   = ["-map", "[aout]"]
             else:
                 # No voiceover — silence
@@ -254,8 +292,8 @@ class VideoEngine:
         """Convert a static image to a MP4 clip with zoompan (ken burns) effect."""
         vf = (
             f"scale={w*2}:{h*2},"
-            f"zoompan=z='if(lte(zoom,1.0),1.0,zoom-0.0005)':d={int(duration*25)}:"
-            f"x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':s={w}x{h}:fps=25,"
+            f"zoompan=z='if(lte(zoom,1.0),1.0,zoom-0.0005)':d={int(duration*30)}:"
+            f"x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':s={w}x{h}:fps=30,"
             f"setsar=1,setpts=PTS-STARTPTS"
         )
         cmd = [
@@ -388,14 +426,85 @@ class VideoEngine:
             hook_text=hook_text,
         )
 
-    def add_subtitles(self, video_path: str, subtitle_path: str) -> str:
+    def _convert_srt_to_ass(self, srt_path: str, ass_path: str, is_personal: bool = True) -> bool:
+        try:
+            import re
+            with open(srt_path, "r", encoding="utf-8") as f:
+                content = f.read()
+
+            def clean_timestamp(ts: str) -> str:
+                ts = ts.replace(",", ".")
+                parts = ts.split(".")
+                time_part = parts[0]
+                ms_part = parts[1] if len(parts) > 1 else "000"
+                centis = ms_part[:2]
+                if time_part.startswith("0") and len(time_part) > 5:
+                    time_part = time_part[1:]
+                return f"{time_part}.{centis}"
+
+            # SRT regex pattern to extract indices, timestamps, and texts
+            pattern = re.compile(
+                r"(\d+)\n"
+                r"(\d{2}:\d{2}:\d{2},\d{3}) --> (\d{2}:\d{2}:\d{2},\d{3})\n"
+                r"((?:.|\n)*?)(?=\n\d+\n|\Z)",
+                re.MULTILINE
+            )
+            matches = pattern.findall(content)
+            
+            dialogues = []
+            for m in matches:
+                start = clean_timestamp(m[1])
+                end = clean_timestamp(m[2])
+                # ASS uses \N for newline, strip outer spaces/newlines
+                text = m[3].strip().replace("\n", "\\N")
+                dialogues.append(f"Dialogue: 0,{start},{end},Default,,0,0,0,,{text}")
+
+            if is_personal:
+                font_size = 52       # Font size a bit smaller
+                margin_v = 280       # higher up, safe from TikTok controls but clearly at bottom
+                outline = 4.0
+                shadow = 1.0
+            else:
+                font_size = 64
+                margin_v = 150       # lower down
+                outline = 3.0
+                shadow = 0.0
+
+            ass_content = (
+                "[Script Info]\n"
+                "ScriptType: v4.00+\n"
+                "PlayResX: 1080\n"
+                "PlayResY: 1920\n\n"
+                "[V4+ Styles]\n"
+                "Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding\n"
+                f"Style: Default,Arial,{font_size},&H00FFFFFF,&H000000FF,&H00000000,&H80000000,-1,0,0,0,100,100,0,0,1,{outline},{shadow},2,80,80,{margin_v},1\n\n"
+                "[Events]\n"
+                "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\n"
+            ) + "\n".join(dialogues)
+
+            with open(ass_path, "w", encoding="utf-8") as f:
+                f.write(ass_content)
+            return True
+        except Exception as e:
+            print(f"[VideoEngine] ⚠ Lỗi chuyển đổi SRT sang ASS: {e}", flush=True)
+            return False
+
+    def add_subtitles(self, video_path: str, subtitle_path: str, video_type: str = "personal") -> str:
         output_path = video_path.replace(".mp4", "_subtitled.mp4")
-        # Escape Windows paths for FFmpeg subtitle filter
-        safe_srt = subtitle_path.replace("\\", "/").replace(":", "\\:")
+        temp_ass_path = subtitle_path.replace(".srt", "_temp.ass")
+
+        # Convert SRT to ASS to ensure correct scaling/margins relative to 1080x1920 canvas
+        is_personal = (video_type == "personal")
+        success = self._convert_srt_to_ass(subtitle_path, temp_ass_path, is_personal=is_personal)
+        
+        # Determine path to render
+        render_path = temp_ass_path if success else subtitle_path
+        safe_render = render_path.replace("\\", "/").replace(":", "\\:")
+
         cmd = [
             "ffmpeg", "-y",
             "-i", video_path,
-            "-vf", f"subtitles='{safe_srt}':force_style='FontSize=14,PrimaryColour=&HFFFFFF,OutlineColour=&H000000,Outline=2'",
+            "-vf", f"subtitles='{safe_render}'",
             "-c:a", "copy",
             output_path,
         ]
@@ -403,4 +512,11 @@ class VideoEngine:
             subprocess.run(cmd, capture_output=True, text=True, timeout=120)
         except (FileNotFoundError, subprocess.TimeoutExpired):
             return video_path  # Return original if subtitles fail
+        finally:
+            if success and os.path.exists(temp_ass_path):
+                try:
+                    os.remove(temp_ass_path)
+                except Exception:
+                    pass
         return output_path
+

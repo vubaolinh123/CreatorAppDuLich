@@ -240,3 +240,106 @@ def test_voice_generator_edge_tts(monkeypatch):
         os.remove(audio_path)
     if os.path.exists(words_path):
         os.remove(words_path)
+
+
+# ─── HookEffects and VideoEngine Hook tests ───────────────────────────────────
+
+from tools.hook_effects import apply_hook_effect, get_hashtag, HOOK_PRESETS
+from tools.video_renderer import VideoEngine
+
+
+def test_get_hashtag():
+    assert get_hashtag("Chào mừng bạn đến với Đà Lạt đẹp mộng mơ!") == "#toiladandalat"
+    assert get_hashtag("Hành trình khám phá Phú Quốc 3 ngày 2 đêm") == "#khamphaphuquoc"
+    assert get_hashtag("Chào các bạn!") == "#trending"
+
+
+def test_apply_hook_effect_presets():
+    # Test standard preset
+    filter_expr = apply_hook_effect("0:v", "vout", "zoom_in", duration_sec=3.0)
+    assert "[0:v]scale=" in filter_expr
+    assert "zoompan" in filter_expr
+    assert "[vout]" in filter_expr
+
+    # Test new tiktok styles
+    filter_tag = apply_hook_effect("0:v", "vout", "tiktok_tag_banner", duration_sec=3.0, hook_text="Đà Lạt có gì ngon?")
+    assert "drawbox" in filter_tag
+    assert "#toiladandalat" in filter_tag
+    assert "drawtext" in filter_tag
+    assert "textfile" in filter_tag
+
+    filter_tag_pink = apply_hook_effect("0:v", "vout", "tiktok_tag_banner_pink", duration_sec=3.0, hook_text="Đà Lạt có gì ngon?")
+    assert "color=0xD81B60@0.85" in filter_tag_pink
+
+    filter_tag_green = apply_hook_effect("0:v", "vout", "tiktok_tag_banner_green", duration_sec=3.0, hook_text="Đà Lạt có gì ngon?")
+    assert "color=0x005A36@0.85" in filter_tag_green
+
+    filter_quote = apply_hook_effect("0:v", "vout", "tiktok_quote_card", duration_sec=3.0, hook_text="Đà Lạt có gì ngon?")
+    assert "“" in filter_quote
+    assert "”" in filter_quote
+    assert "drawbox" in filter_quote
+    assert "textfile" in filter_quote
+
+    filter_floating = apply_hook_effect("0:v", "vout", "tiktok_floating_box", duration_sec=3.0, hook_text="Đà Lạt có gì ngon?")
+    assert "box=1" in filter_floating
+    assert "boxcolor=black@0.7" in filter_floating
+    assert "textfile" in filter_floating
+
+
+
+def test_video_engine_assemble_with_hook(tmp_path, monkeypatch):
+    # Mock subprocess.run to verify FFmpeg is called with the hook filter complex
+    called_cmds = []
+
+    def mock_run(cmd, *args, **kwargs):
+        called_cmds.append(cmd)
+        
+        # Return mock process success
+        from unittest.mock import MagicMock
+        r = MagicMock()
+        r.returncode = 0
+        r.stdout = "3.0"  # mock duration probe
+        r.stderr = ""
+        
+        # If the command is writing a normalized output, we should write a dummy file
+        # to satisfy the "file exists and size > 1000" check in _normalize_clip/_normalize_image
+        output_file = cmd[-1]
+        if isinstance(output_file, str) and (output_file.endswith(".mp4") or output_file.endswith(".wav")):
+            os.makedirs(os.path.dirname(output_file), exist_ok=True)
+            with open(output_file, "wb") as f:
+                f.write(b"DUMMY_MP4_CONTENT_DUMMY_MP4_CONTENT" * 100) # > 1000 bytes
+        return r
+
+    import subprocess
+    monkeypatch.setattr(subprocess, "run", mock_run)
+
+    # Instantiate video engine
+    engine = VideoEngine(output_dir=str(tmp_path))
+
+    clips = [
+        {"path": "", "duration": 3.0, "media_type": "clip", "scene_id": "scene_1", "description": "Hook Scene"},
+        {"path": "", "duration": 4.0, "media_type": "clip", "scene_id": "scene_2", "description": "Body Scene"},
+    ]
+
+    out_path = engine.assemble_from_scenes(
+        clips=clips,
+        voiceover_path=None,
+        output_name="test_hook_assemble",
+        hook_style="tiktok_tag_banner",
+        hook_text="Chào Đà Lạt!",
+    )
+
+    # Check that a path was returned
+    assert os.path.exists(out_path)
+
+    # Verify that apply_hook_effect was called and ffmpeg was spawned for it
+    # We expect an ffmpeg command containing -filter_complex and the tag banner drawbox filter
+    hook_apply_call = False
+    for cmd in called_cmds:
+        cmd_str = " ".join(cmd)
+        if "-filter_complex" in cmd_str and "drawbox" in cmd_str and "#toiladandalat" in cmd_str:
+            hook_apply_call = True
+            break
+            
+    assert hook_apply_call, "FFmpeg was not called with the hook filter complex"
+

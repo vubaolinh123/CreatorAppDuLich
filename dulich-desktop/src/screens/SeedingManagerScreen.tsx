@@ -191,10 +191,10 @@ export default function SeedingManagerScreen() {
                   onChange={(e) => setCategory(e.target.value)}
                   style={styles.select}
                 >
-                  <option value="restaurant">🍜 Nhà hàng / Quán ăn</option>
-                  <option value="hotel">🏨 Khách sạn / Resort</option>
-                  <option value="sightseeing">🏔️ Điểm tham quan</option>
-                  <option value="other">🏕️ Khác</option>
+                  <option style={styles.option} value="restaurant">🍜 Nhà hàng / Quán ăn</option>
+                  <option style={styles.option} value="hotel">🏨 Khách sạn / Resort</option>
+                  <option style={styles.option} value="sightseeing">🏔️ Điểm tham quan</option>
+                  <option style={styles.option} value="other">🏕️ Khác</option>
                 </select>
               </div>
 
@@ -362,13 +362,17 @@ const styles = {
     width: "100%",
   },
   select: {
-    backgroundColor: "rgba(255, 255, 255, 0.04)",
-    border: "1px solid rgba(255, 255, 255, 0.1)",
+    backgroundColor: "#161233",
+    border: "1px solid rgba(255, 255, 255, 0.15)",
     borderRadius: 8,
     color: "#ffffff",
     fontSize: 13,
     padding: "10px 14px",
     outline: "none",
+  },
+  option: {
+    backgroundColor: "#161233",
+    color: "#ffffff",
   },
   textarea: {
     backgroundColor: "rgba(255, 255, 255, 0.04)",
