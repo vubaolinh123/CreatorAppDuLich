@@ -33,36 +33,76 @@ UPLOAD_TEMP_DIR.mkdir(parents=True, exist_ok=True)
 def parse_multipart(handler: BaseHTTPRequestHandler):
     """
     Parse multipart/form-data from the request.
-    Returns (fields: dict, files: dict[field_name -> (filename, bytes)])
+    Pure-Python, no `cgi` module — works on Python 3.13+.
+    Returns (fields: dict[str, str], files: dict[str, tuple[filename, bytes]])
     """
-    import cgi
-    import io
-
     content_type = handler.headers.get("Content-Type", "")
     content_length = int(handler.headers.get("Content-Length", 0))
     body = handler.rfile.read(content_length)
 
-    environ = {
-        "REQUEST_METHOD": "POST",
-        "CONTENT_TYPE": content_type,
-        "CONTENT_LENGTH": str(content_length),
-    }
+    # Extract boundary from Content-Type header
+    # e.g. "multipart/form-data; boundary=----FormBoundaryXYZ"
+    boundary = None
+    for part in content_type.split(";"):
+        part = part.strip()
+        if part.startswith("boundary="):
+            boundary = part[len("boundary="):].strip().strip('"')
+            break
 
-    storage = cgi.FieldStorage(
-        fp=io.BytesIO(body),
-        environ=environ,
-        keep_blank_values=True,
-    )
+    if not boundary:
+        raise ValueError(f"Cannot find multipart boundary in Content-Type: {content_type}")
 
-    fields = {}
-    files = {}
+    # Delimiters as bytes
+    delimiter = b"--" + boundary.encode()
+    delimiter_end = delimiter + b"--"
 
-    for key in storage.keys():
-        item = storage[key]
-        if item.filename:
-            files[key] = (item.filename, item.file.read())
+    fields: dict = {}
+    files: dict = {}
+
+    # Split body by boundary
+    parts = body.split(delimiter)
+    for raw_part in parts:
+        # Skip preamble / epilogue
+        if raw_part in (b"", b"\r\n", b"--\r\n", b"--"):
+            continue
+        raw_part = raw_part.lstrip(b"\r\n")
+        if raw_part.startswith(b"--"):
+            continue  # final boundary marker
+
+        # Split headers from body — separated by \r\n\r\n
+        if b"\r\n\r\n" not in raw_part:
+            continue
+        raw_headers, _, part_body = raw_part.partition(b"\r\n\r\n")
+        # Strip trailing \r\n from body
+        part_body = part_body.rstrip(b"\r\n")
+
+        # Parse part headers
+        header_lines = raw_headers.decode("utf-8", errors="replace").splitlines()
+        part_headers: dict = {}
+        for line in header_lines:
+            if ":" in line:
+                k, _, v = line.partition(":")
+                part_headers[k.strip().lower()] = v.strip()
+
+        # Parse Content-Disposition
+        disposition = part_headers.get("content-disposition", "")
+        disp_params: dict = {}
+        for token in disposition.split(";"):
+            token = token.strip()
+            if "=" in token:
+                k, _, v = token.partition("=")
+                disp_params[k.strip()] = v.strip().strip('"')
+
+        field_name = disp_params.get("name", "")
+        filename = disp_params.get("filename", None)
+
+        if not field_name:
+            continue
+
+        if filename:
+            files[field_name] = (filename, part_body)
         else:
-            fields[key] = item.value
+            fields[field_name] = part_body.decode("utf-8", errors="replace")
 
     return fields, files
 
