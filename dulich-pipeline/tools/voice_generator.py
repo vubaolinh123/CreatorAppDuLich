@@ -236,22 +236,34 @@ class VoiceGenerator:
         rate_str = f"{rate_percent:+d}%"
 
         async def run_tts():
-            communicate = edge_tts.Communicate(text, edge_voice, rate=rate_str, boundary="WordBoundary")
-            words = []
-            
-            with open(output_path, "wb") as fp:
-                async for chunk in communicate.stream():
-                    if chunk["type"] == "audio":
-                        fp.write(chunk["data"])
-                    elif chunk["type"] == "WordBoundary":
-                        start_sec = chunk["offset"] / 10000000.0
-                        dur_sec = chunk["duration"] / 10000000.0
-                        words.append({
-                            "start": start_sec,
-                            "end": start_sec + dur_sec,
-                            "word": chunk["text"]
-                        })
-            return words
+            import time
+            last_err = None
+            for attempt in range(3):
+                try:
+                    communicate = edge_tts.Communicate(text, edge_voice, rate=rate_str, boundary="WordBoundary")
+                    words = []
+                    
+                    with open(output_path, "wb") as fp:
+                        async for chunk in communicate.stream():
+                            if chunk["type"] == "audio":
+                                fp.write(chunk["data"])
+                            elif chunk["type"] == "WordBoundary":
+                                start_sec = chunk["offset"] / 10000000.0
+                                dur_sec = chunk["duration"] / 10000000.0
+                                words.append({
+                                    "start": start_sec,
+                                    "end": start_sec + dur_sec,
+                                    "word": chunk["text"]
+                                })
+                    if len(words) > 0:
+                        return words
+                    raise Exception("No words timings generated.")
+                except Exception as e:
+                    last_err = e
+                    print(f"[Voice] Edge TTS attempt {attempt + 1} failed: {e}")
+                    if attempt < 2:
+                        await asyncio.sleep(1.0)
+            raise last_err
 
         # Execute async task synchronously
         import asyncio

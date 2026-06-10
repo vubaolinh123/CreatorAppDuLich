@@ -19,6 +19,7 @@ import uuid
 import shutil
 import tempfile
 import threading
+import subprocess
 from pathlib import Path
 from http.server import HTTPServer, BaseHTTPRequestHandler
 
