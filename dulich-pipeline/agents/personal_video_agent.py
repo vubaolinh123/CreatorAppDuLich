@@ -444,29 +444,68 @@ def run_assemble_video(
     # Estimate audio duration
     import wave
     audio_duration = 10.0
-    if audio_path.endswith(".wav"):
+    exact_timing_loaded = False
+    
+    # Check if we have exact word timing info
+    words_json_path = Path(audio_path).with_suffix(".words.json")
+    if words_json_path.exists():
+        import json
+        import re
         try:
-            with wave.open(audio_path, "r") as wf:
-                frames = wf.getnframes()
-                rate = wf.getframerate()
-                audio_duration = frames / float(rate)
-        except Exception:
-            pass
-    else:
-        audio_duration = max(5.0, len(full_speech_text) / 12.0)
+            with open(words_json_path, "r", encoding="utf-8") as f:
+                words = json.load(f)
+            
+            if words:
+                audio_duration = words[-1]["end"]
+                
+                # Split script components into words
+                hook_clean = re.sub(r'[^\w\s]', '', script.get("hook", "").lower()).split()
+                body_clean = re.sub(r'[^\w\s]', '', script.get("body", "").lower()).split()
+                
+                n_hook = len(hook_clean)
+                n_body = len(body_clean)
+                
+                # Default segment offsets
+                hook_end = 5.0
+                body_end = 40.0
+                
+                hook_idx = min(n_hook - 1, len(words) - 1)
+                if hook_idx >= 0:
+                    hook_end = words[hook_idx]["end"]
+                
+                body_idx = min(n_hook + n_body - 1, len(words) - 1)
+                if body_idx >= 0:
+                    body_end = words[body_idx]["end"]
+                
+                exact_timing_loaded = True
+                append_job_log(job_id, "INFO", f"[Subtitle] Căn chỉnh phân đoạn chính xác từ timing: Hook={hook_end:.2f}s, Body={body_end:.2f}s")
+        except Exception as e:
+            append_job_log(job_id, "WARNING", f"[Subtitle] Lỗi tính phân đoạn từ file timing: {e}. Dùng ước lượng.")
+
+    if not exact_timing_loaded:
+        if audio_path.endswith(".wav"):
+            try:
+                with wave.open(audio_path, "r") as wf:
+                    frames = wf.getnframes()
+                    rate = wf.getframerate()
+                    audio_duration = frames / float(rate)
+            except Exception:
+                pass
+        else:
+            audio_duration = max(5.0, len(full_speech_text) / 12.0)
+            
+        hook_len = len(script["hook"])
+        body_len = len(script["body"])
+        cta_len = len(script["cta"])
+        total_len = max(1, hook_len + body_len + cta_len)
+        hook_end = (hook_len / total_len) * audio_duration
+        body_end = ((hook_len + body_len) / total_len) * audio_duration
 
     append_job_log(job_id, "INFO", f"[Voice] Thời lượng audio: {audio_duration:.1f}s")
 
     # ── 2. Generate Subtitles ──
     update_job(job_id, {"progress": 25})
     append_job_log(job_id, "INFO", "[Subtitle] Đang tạo phụ đề SRT...")
-
-    hook_len = len(script["hook"])
-    body_len = len(script["body"])
-    cta_len = len(script["cta"])
-    total_len = max(1, hook_len + body_len + cta_len)
-    hook_end = (hook_len / total_len) * audio_duration
-    body_end = ((hook_len + body_len) / total_len) * audio_duration
 
     try:
         srt_path = generate_srt(
@@ -476,6 +515,7 @@ def run_assemble_video(
             hook_end=hook_end,
             body_end=body_end,
             cta_end=audio_duration,
+            audio_path=audio_path,
         )
         append_job_log(job_id, "INFO", f"[Subtitle] ✓ Đã sinh SRT: {srt_path}")
     except Exception as e:

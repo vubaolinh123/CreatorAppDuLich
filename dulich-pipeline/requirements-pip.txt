@@ -21,3 +21,4 @@ pymongo>=4.8.0
 motor>=3.5.0
 # Subtitle & Image
 Pillow>=10.0.0
+edge-tts>=6.1.3

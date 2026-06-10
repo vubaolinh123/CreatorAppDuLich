@@ -83,6 +83,54 @@ def _split_into_cues(text: str, start_sec: float) -> list[dict]:
     return cues
 
 
+def group_words_into_cues(words: list[dict], min_words: int = 3, max_words: int = 5) -> list[dict]:
+    """
+    Gom nhóm danh sách từ (words với timing) thành các cue phụ đề.
+    Mỗi cue chứa từ 3-5 từ, ngắt nghỉ hợp lý dựa trên dấu câu tiếng Việt.
+    """
+    cues = []
+    current_words = []
+    
+    for word_info in words:
+        current_words.append(word_info)
+        text = word_info["word"].strip()
+        
+        # Ngắt theo dấu câu mạnh (. ? !) hoặc dấu phẩy (nếu đã gom đủ min_words)
+        has_strong_punctuation = any(text.endswith(p) for p in ('.', '!', '?', ':', ';'))
+        has_comma = text.endswith(',')
+        
+        should_split = False
+        if len(current_words) >= max_words:
+            should_split = True
+        elif has_strong_punctuation:
+            should_split = True
+        elif has_comma and len(current_words) >= min_words:
+            should_split = True
+            
+        if should_split and current_words:
+            cue_text = " ".join([w["word"] for w in current_words])
+            start_time = current_words[0]["start"]
+            end_time = current_words[-1]["end"]
+            cues.append({
+                "start": start_time,
+                "end": end_time,
+                "text": cue_text
+            })
+            current_words = []
+            
+    if current_words:
+        cue_text = " ".join([w["word"] for w in current_words])
+        start_time = current_words[0]["start"]
+        end_time = current_words[-1]["end"]
+        cues.append({
+            "start": start_time,
+            "end": end_time,
+            "text": cue_text
+        })
+        
+    return cues
+
+
 def generate_srt(
     script: dict,
     output_name: str = "subtitles",
@@ -90,6 +138,7 @@ def generate_srt(
     hook_end: float = 5.0,
     body_end: float = 40.0,
     cta_end: float = 60.0,
+    audio_path: Optional[str] = None,
 ) -> str:
     """
     Build a .srt file from a script dict.
@@ -101,51 +150,71 @@ def generate_srt(
         hook_end: expected end time (sec) for hook segment
         body_end: expected end time (sec) for body segment
         cta_end: expected end time (sec) for cta segment
+        audio_path: path to the voice audio file (checks for .words.json timings)
 
     Returns:
         Absolute path to the .srt file.
     """
-    hook_text = script.get("hook", "").strip()
-    body_text = script.get("body", "").strip()
-    cta_text = script.get("cta", "").strip()
+    words_json_path = None
+    if audio_path:
+        p = Path(audio_path).with_suffix(".words.json")
+        if p.exists():
+            words_json_path = p
 
     all_cues: list[dict] = []
 
-    # --- Hook (0 → hook_end) ---
-    if hook_text:
-        all_cues.extend(_split_into_cues(hook_text, start_sec=0.0))
-        # Clamp last hook cue end to hook_end
-        if all_cues:
-            all_cues[-1]["end"] = hook_end
+    if words_json_path:
+        import json
+        try:
+            with open(words_json_path, "r", encoding="utf-8") as f:
+                words = json.load(f)
+            print(f"[Subtitle] Tìm thấy timing chi tiết từ file: {words_json_path}. Tạo phụ đề chính xác...")
+            all_cues = group_words_into_cues(words, min_words=3, max_words=5)
+        except Exception as e:
+            print(f"[Subtitle] Lỗi parse file timing: {e}. Fallback sang thuật toán ước lượng.")
+            words_json_path = None
 
-    # --- Body (hook_end → body_end) ---
-    if body_text:
-        body_cues = _split_into_cues(body_text, start_sec=hook_end)
-        # Scale cues to fit within body_end
-        body_duration = body_end - hook_end
-        natural_duration = sum(c["end"] - c["start"] for c in body_cues)
-        if natural_duration > 0:
-            scale = body_duration / natural_duration
-            for cue in body_cues:
-                length = cue["end"] - cue["start"]
-                cue["start"] = hook_end + (cue["start"] - hook_end) * scale
-                cue["end"] = cue["start"] + length * scale
-        all_cues.extend(body_cues)
+    # Fallback to character-based estimation if timing file is not available
+    if not words_json_path:
+        hook_text = script.get("hook", "").strip()
+        body_text = script.get("body", "").strip()
+        cta_text = script.get("cta", "").strip()
 
-    # --- CTA (body_end → cta_end) ---
-    if cta_text:
-        cta_cues = _split_into_cues(cta_text, start_sec=body_end)
-        all_cues.extend(cta_cues)
-        if all_cues:
-            all_cues[-1]["end"] = cta_end
+        # --- Hook (0 → hook_end) ---
+        if hook_text:
+            all_cues.extend(_split_into_cues(hook_text, start_sec=0.0))
+            # Clamp last hook cue end to hook_end
+            if all_cues:
+                all_cues[-1]["end"] = hook_end
 
-    # Scale all timestamps if actual voice duration is provided
-    if voice_duration_sec and voice_duration_sec > 0:
-        script_end = cta_end
-        scale = voice_duration_sec / script_end
-        for cue in all_cues:
-            cue["start"] *= scale
-            cue["end"] *= scale
+        # --- Body (hook_end → body_end) ---
+        if body_text:
+            body_cues = _split_into_cues(body_text, start_sec=hook_end)
+            # Scale cues to fit within body_end
+            body_duration = body_end - hook_end
+            natural_duration = sum(c["end"] - c["start"] for c in body_cues)
+            if natural_duration > 0:
+                scale = body_duration / natural_duration
+                for cue in body_cues:
+                    length = cue["end"] - cue["start"]
+                    cue["start"] = hook_end + (cue["start"] - hook_end) * scale
+                    cue["end"] = cue["start"] + length * scale
+            all_cues.extend(body_cues)
+
+        # --- CTA (body_end → cta_end) ---
+        if cta_text:
+            cta_cues = _split_into_cues(cta_text, start_sec=body_end)
+            all_cues.extend(cta_cues)
+            if all_cues:
+                all_cues[-1]["end"] = cta_end
+
+        # Scale all timestamps if actual voice duration is provided
+        if voice_duration_sec and voice_duration_sec > 0:
+            script_end = cta_end
+            scale = voice_duration_sec / script_end
+            for cue in all_cues:
+                cue["start"] *= scale
+                cue["end"] *= scale
 
     # --- Write .srt ---
     srt_lines = []

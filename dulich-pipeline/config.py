@@ -16,7 +16,7 @@ class PipelineConfig:
 
     # --- Voice ---
     vbee_api_key: str = ""          # Vbee.ai API key (tiếng Việt TTS)
-    voice_provider: str = "vbee"    # "vbee" | "elevenlabs" | "mock"
+    voice_provider: str = "vbee"    # "vbee" | "edge" | "elevenlabs" | "mock"
 
     # --- Google ---
     google_sheet_id: str = ""

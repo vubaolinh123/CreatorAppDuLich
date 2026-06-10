@@ -167,6 +167,9 @@ def test_voice_generator_no_key_no_client(monkeypatch):
 def test_voice_generator_falls_back_to_mock(monkeypatch):
     monkeypatch.delenv("VBEE_API_KEY", raising=False)
     monkeypatch.delenv("ELEVENLABS_API_KEY", raising=False)
+    # Mock _edge_generate to return None to force fallback to mock WAV
+    monkeypatch.setattr(VoiceGenerator, "_edge_generate", lambda self, *args, **kwargs: None)
+    
     gen = VoiceGenerator()
     # Should fall back to generating a mock silent wav file
     audio_path = gen.generate_voice("Đây là bản thử nghiệm", "default", "test_fallback_audio")
@@ -182,3 +185,58 @@ def test_voice_generator_clone_no_client(monkeypatch):
     gen = VoiceGenerator()
     voice_id = gen.clone_voice(["sample.wav"], "new-voice")
     assert voice_id.startswith("mock_clone_")
+
+
+def test_voice_generator_edge_tts(monkeypatch):
+    # Mock edge_tts.Communicate
+    class MockCommunicateStream:
+        def __init__(self, text, voice, rate, boundary):
+            self.text = text
+            self.voice = voice
+
+        async def stream(self):
+            # Yield dummy audio and word boundary events
+            yield {"type": "audio", "data": b"dummy_audio_bytes"}
+            yield {
+                "type": "WordBoundary",
+                "offset": 1000000,    # 0.1s
+                "duration": 5000000,  # 0.5s
+                "text": "test"
+            }
+            yield {
+                "type": "WordBoundary",
+                "offset": 7000000,    # 0.7s
+                "duration": 4000000,  # 0.4s
+                "text": "word"
+            }
+
+    import edge_tts
+    monkeypatch.setattr(edge_tts, "Communicate", MockCommunicateStream)
+
+    gen = VoiceGenerator(provider="edge")
+    audio_path = gen.generate_voice("test word", "vi-VN-HoaiMyNeural", "test_edge_mock")
+    
+    assert audio_path.endswith(".mp3")
+    assert os.path.exists(audio_path)
+    
+    words_path = audio_path.replace(".mp3", ".words.json")
+    assert os.path.exists(words_path)
+    
+    # Verify word timing file contents
+    import json
+    with open(words_path, "r", encoding="utf-8") as f:
+        words = json.load(f)
+    
+    assert len(words) == 2
+    assert words[0]["word"] == "test"
+    assert words[0]["start"] == 0.1
+    assert words[0]["end"] == 0.6
+    assert words[1]["word"] == "word"
+    assert words[1]["start"] == 0.7
+    assert words[1]["end"] == 1.1
+    
+    # Clean up
+    if os.path.exists(audio_path):
+        os.remove(audio_path)
+    if os.path.exists(words_path):
+        os.remove(words_path)

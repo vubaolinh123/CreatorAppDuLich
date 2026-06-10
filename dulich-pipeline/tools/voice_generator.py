@@ -76,7 +76,19 @@ class VoiceGenerator:
         """
         # Try Vbee first
         if self.provider in ("vbee", "auto"):
-            path = self._vbee_generate(text, voice_id, output_name, speed)
+            if self._vbee_key:
+                path = self._vbee_generate(text, voice_id, output_name, speed)
+                if path:
+                    return path
+            else:
+                print("[Voice] VBEE_API_KEY không có — Tự động fallback sang Microsoft Edge TTS (free).")
+                path = self._edge_generate(text, voice_id, output_name, speed)
+                if path:
+                    return path
+
+        # Try Edge TTS explicitly
+        if self.provider == "edge":
+            path = self._edge_generate(text, voice_id, output_name, speed)
             if path:
                 return path
 
@@ -86,7 +98,13 @@ class VoiceGenerator:
             if path:
                 return path
 
-        # Fallback: silent mock WAV
+        # Fallback: edge-tts (free) first, then mock WAV
+        print("[Voice] Thử tạo giọng nói với Microsoft Edge TTS làm fallback...")
+        path = self._edge_generate(text, voice_id, output_name, speed)
+        if path:
+            return path
+
+        # Last resort: silent mock WAV
         return self._mock_generate(output_name, duration_sec=max(5, len(text) // 10))
 
     def clone_voice(self, audio_samples: list[str], name: str) -> str:
@@ -185,6 +203,89 @@ class VoiceGenerator:
             return str(output_path)
         except Exception as e:
             print(f"[Voice] ⚠ ElevenLabs lỗi: {e}. Fallback sang mock.")
+            return None
+
+    # ── Microsoft Edge TTS (Free) ───────────────────────────────────────────
+
+    def _edge_generate(
+        self,
+        text: str,
+        voice_id: str,
+        output_name: str,
+        speed: float = 1.0,
+    ) -> Optional[str]:
+        output_path = OUTPUT_DIR / f"{output_name}.mp3"
+        try:
+            import edge_tts
+        except ImportError:
+            print("[Voice] edge-tts package not installed! Can't generate voice.")
+            return None
+
+        # Resolve voice mapping
+        edge_voice = "vi-VN-HoaiMyNeural"
+        v_id_lower = voice_id.lower()
+        if any(k in v_id_lower for k in ["namminh", "minhtuan", "ducanh", "male"]):
+            edge_voice = "vi-VN-NamMinhNeural"
+        elif any(k in v_id_lower for k in ["hoaimy", "lananh", "ngocmai", "female"]):
+            edge_voice = "vi-VN-HoaiMyNeural"
+        else:
+            edge_voice = "vi-VN-HoaiMyNeural"
+
+        # Rate representation in edge-tts: e.g. "+10%", "-5%"
+        rate_percent = int((speed - 1.0) * 100)
+        rate_str = f"{rate_percent:+d}%"
+
+        async def run_tts():
+            communicate = edge_tts.Communicate(text, edge_voice, rate=rate_str, boundary="WordBoundary")
+            words = []
+            
+            with open(output_path, "wb") as fp:
+                async for chunk in communicate.stream():
+                    if chunk["type"] == "audio":
+                        fp.write(chunk["data"])
+                    elif chunk["type"] == "WordBoundary":
+                        start_sec = chunk["offset"] / 10000000.0
+                        dur_sec = chunk["duration"] / 10000000.0
+                        words.append({
+                            "start": start_sec,
+                            "end": start_sec + dur_sec,
+                            "word": chunk["text"]
+                        })
+            return words
+
+        # Execute async task synchronously
+        import asyncio
+        import concurrent.futures
+        import json
+
+        # Loop checking
+        try:
+            loop = asyncio.get_running_loop()
+            is_running = True
+        except RuntimeError:
+            is_running = False
+
+        try:
+            if is_running:
+                with concurrent.futures.ThreadPoolExecutor() as executor:
+                    future = executor.submit(asyncio.run, run_tts())
+                    words = future.result()
+            else:
+                words = asyncio.run(run_tts())
+
+            # Write word timings JSON file
+            words_path = output_path.with_suffix(".words.json")
+            words_path.write_text(json.dumps(words, ensure_ascii=False, indent=2), encoding="utf-8")
+            print(f"[Voice] ✓ Edge TTS saved: {output_path} and timing details: {words_path}")
+            return str(output_path.resolve())
+
+        except Exception as e:
+            print(f"[Voice] ⚠ Edge TTS error: {e}")
+            if output_path.exists():
+                try:
+                    output_path.unlink()
+                except Exception:
+                    pass
             return None
 
     # ── Mock (silent WAV) ────────────────────────────────────────────────────

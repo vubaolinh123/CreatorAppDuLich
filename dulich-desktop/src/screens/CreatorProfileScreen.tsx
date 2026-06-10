@@ -205,7 +205,7 @@ export default function CreatorProfileScreen() {
                   <div style={styles.creatorInfo}>
                     <span style={styles.creatorName}>{c.name}</span>
                     <span style={styles.creatorVoiceCode}>
-                      {c.voice_provider === "vbee" ? "🎙 Vbee" : "✨ ElevenLabs"} - {c.voice_id}
+                      {c.voice_provider === "vbee" ? "🎙 Vbee" : c.voice_provider === "edge" ? "🌐 Microsoft Edge" : c.voice_provider === "mock" ? "🤖 Mock" : "✨ ElevenLabs"} - {c.voice_id}
                     </span>
                   </div>
                 </button>
@@ -230,6 +230,7 @@ export default function CreatorProfileScreen() {
                     style={styles.select}
                   >
                     <option value="vbee">Vbee.ai (Tiếng Việt chất lượng cao)</option>
+                    <option value="edge">Microsoft Edge TTS (Miễn phí & Đồng bộ tốt)</option>
                     <option value="elevenlabs">ElevenLabs (Bilingual / Clone giọng nói)</option>
                     <option value="mock">Mock Voice (Test offline)</option>
                   </select>
@@ -243,9 +244,11 @@ export default function CreatorProfileScreen() {
                     onChange={(e) => updateSelectedCreatorField("voice_id", e.target.value)}
                     placeholder="VD: hn_female_lananh hoặc voice_id từ ElevenLabs"
                     style={styles.input}
-                  />
+                  >
+                  </input>
                   <small style={styles.hint}>
-                    Đối với Vbee: hn_female_lananh, hn_male_minhtuan, hcm_male_ducanh, hn_female_ngocmai.
+                    Vbee: hn_female_lananh, hn_male_minhtuan, hcm_male_ducanh, hn_female_ngocmai.<br/>
+                    Edge: vi-VN-HoaiMyNeural (Nữ), vi-VN-NamMinhNeural (Nam).
                   </small>
                 </div>
 
