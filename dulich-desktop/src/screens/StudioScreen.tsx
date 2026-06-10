@@ -68,7 +68,7 @@ interface LogLine {
 
 type Step = 1 | 2 | 3 | 4 | 5 | 6;
 type SceneMode = "ai" | "preset" | "custom";
-type VoiceMode = "mock" | "api";
+type VoiceMode = "edge" | "api" | "mock";
 
 // ── Constants ──────────────────────────────────────────────────────────────
 const CREATORS: Creator[] = [
@@ -382,7 +382,7 @@ export default function StudioScreen() {
   const [topic, setTopic] = useState("");
   const [selectedCreator, setSelectedCreator] = useState("c1");
   const [selectedTemplate, setSelectedTemplate] = useState("9:16");
-  const [voiceMode, setVoiceMode] = useState<VoiceMode>("mock");
+  const [voiceMode, setVoiceMode] = useState<VoiceMode>("edge");
   const [hookStyle, setHookStyle] = useState("zoom_in");
   const [hookText, setHookText] = useState("");
   const [scriptText, setScriptText] = useState("");
@@ -504,7 +504,7 @@ export default function StudioScreen() {
           sceneCount: presetSceneCount,
           hookStyle,
           hookText: hookText || "",
-          voiceProvider: voiceMode === "mock" ? "mock" : "",
+          voiceProvider: voiceMode === "api" ? "" : voiceMode,
           customScenesJson,
         });
 
@@ -1000,15 +1000,20 @@ export default function StudioScreen() {
           <div style={sty.fieldGroup}>
             <label style={sty.label}>🎙️ Giọng đọc AI</label>
             <div style={sty.modeToggle}>
-              <button style={{ ...sty.modeBtn, ...(voiceMode === "mock" ? sty.modeBtnActive : {}) }} onClick={() => setVoiceMode("mock")}>
-                ⚡ Mock (Không cần API)
+              <button style={{ ...sty.modeBtn, ...(voiceMode === "edge" ? sty.modeBtnActive : {}) }} onClick={() => setVoiceMode("edge")}>
+                🌐 Edge TTS (Miễn phí)
               </button>
               <button style={{ ...sty.modeBtn, ...(voiceMode === "api" ? sty.modeBtnActive : {}) }} onClick={() => setVoiceMode("api")}>
                 🔑 Vbee / ElevenLabs API
               </button>
+              <button style={{ ...sty.modeBtn, ...(voiceMode === "mock" ? sty.modeBtnActive : {}) }} onClick={() => setVoiceMode("mock")}>
+                🔇 Mock (Không tiếng)
+              </button>
             </div>
             <div style={sty.hint}>
-              {voiceMode === "mock" ? "Mock mode: video thật từ clip của bạn, không có giọng đọc AI (silent)" : "Sử dụng Vbee.ai hoặc ElevenLabs để tạo giọng đọc AI thật (cần API key trong Cài đặt)"}
+              {voiceMode === "edge" ? "Sử dụng Microsoft Edge TTS miễn phí để lồng tiếng chất lượng cao & phụ đề đồng bộ chính xác." :
+               voiceMode === "api" ? "Sử dụng Vbee.ai hoặc ElevenLabs để tạo giọng đọc AI thật (cần API key trong Cài đặt)." :
+               "Mock mode: video ghép từ các file thô của bạn nhưng không lồng tiếng (im lặng)."}
             </div>
           </div>
 
