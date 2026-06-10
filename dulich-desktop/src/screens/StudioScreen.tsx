@@ -492,8 +492,10 @@ export default function StudioScreen() {
     ));
   };
 
-  const uploadedCount = scenes.filter((s) => s.uploaded && s.file_path).length;
+  // Check cả file_path (Tauri mode) lẫn file_object (browser mode)
+  const uploadedCount = scenes.filter((s) => s.uploaded && (s.file_path || s.file_object)).length;
   const allUploaded = scenes.length > 0 && uploadedCount === scenes.length;
+
 
   // ── Stage 2: Assemble video ──
   const runAssembleVideo = async (_skipMissing = false) => {
