@@ -29,7 +29,9 @@ interface SceneSpec {
   min_duration_sec: number;
   type: "clip" | "image";
   uploaded: boolean;
-  file_path: string | null;
+  file_path: string | null;      // Absolute path (Tauri mode)
+  file_object?: File | null;     // Actual File object (browser mode)
+  file_name?: string | null;     // Display name
 }
 
 interface CustomSceneDraft {
@@ -442,33 +444,51 @@ export default function StudioScreen() {
   };
 
   // ── Pick file for a specific scene ──
-  const handlePickSceneFile = async (sceneId: string) => {
+  const handlePickSceneFile = (sceneId: string) => {
     const isTauri = typeof window !== "undefined" && (window as any).__TAURI_INTERNALS__ !== undefined;
+
     if (isTauri) {
-      try {
-        const { invoke } = await import("@tauri-apps/api/core");
-        const file = await invoke<string | null>("select_single_file", {
+      // Tauri: use native file dialog to get absolute path
+      import("@tauri-apps/api/core").then(({ invoke }) => {
+        invoke<string | null>("select_single_file", {
           allowedExtensions: ["mp4", "mkv", "avi", "mov", "webm", "jpg", "jpeg", "png", "gif"],
-        });
+        }).then((file) => {
+          if (file) {
+            setScenes((prev) => prev.map((s) =>
+              s.scene_id === sceneId
+                ? { ...s, uploaded: true, file_path: file, file_name: file.split("\\").pop() || file.split("/").pop() || file }
+                : s
+            ));
+          }
+        }).catch(console.error);
+      });
+    } else {
+      // Browser: trigger a real <input type="file"> — no fake paths
+      const scene = scenes.find(s => s.scene_id === sceneId);
+      const accept = scene?.type === "image"
+        ? "image/jpeg,image/png,image/gif,image/webp"
+        : "video/mp4,video/x-matroska,video/avi,video/quicktime,video/webm";
+
+      const input = document.createElement("input");
+      input.type = "file";
+      input.accept = accept;
+      input.onchange = (e) => {
+        const file = (e.target as HTMLInputElement).files?.[0];
         if (file) {
           setScenes((prev) => prev.map((s) =>
-            s.scene_id === sceneId ? { ...s, uploaded: true, file_path: file } : s
+            s.scene_id === sceneId
+              ? { ...s, uploaded: true, file_path: null, file_object: file, file_name: file.name }
+              : s
           ));
         }
-      } catch (err) { console.error(err); }
-    } else {
-      // Mock: assign a fake path
-      const ext = scenes.find(s => s.scene_id === sceneId)?.type === "image" ? "jpg" : "mp4";
-      const mockPath = `D:\\MockClips\\${sceneId}_clip.${ext}`;
-      setScenes((prev) => prev.map((s) =>
-        s.scene_id === sceneId ? { ...s, uploaded: true, file_path: mockPath } : s
-      ));
+      };
+      input.click();
     }
   };
 
   const handleRemoveSceneFile = (sceneId: string) => {
     setScenes((prev) => prev.map((s) =>
-      s.scene_id === sceneId ? { ...s, uploaded: false, file_path: null } : s
+      s.scene_id === sceneId ? { ...s, uploaded: false, file_path: null, file_object: null, file_name: null } : s
     ));
   };
 
@@ -533,41 +553,94 @@ export default function StudioScreen() {
         setIsCancelled(true);
       }
     } else {
-      // Mock assembly logs
-      const mockAssemblyLogs = [
-        { type: "info" as const,    text: "[Stage 2] Bắt đầu ghép video từ các scene đã upload..." },
-        { type: "info" as const,    text: `[Voice] Đang tạo giọng nói AI — Provider: mock, Voice: hn_female_lananh` },
-        { type: "success" as const, text: "[Voice] ✓ Đã sinh audio: output/audio/personal_lan_anh_mock.wav" },
-        { type: "info" as const,    text: "[Subtitle] Đang tạo phụ đề SRT..." },
-        { type: "success" as const, text: "[Subtitle] ✓ Đã sinh SRT: output/subtitles/sub_personal_mock.srt" },
-        { type: "info" as const,    text: `[Assembly] Đang xây dựng danh sách ${scenes.length} scene để ghép...` },
-        ...scenes.map((s) => ({
-          type: (s.uploaded ? "info" : "warn") as LogLine["type"],
-          text: s.uploaded
-            ? `  ✓ Scene [${s.scene_id}]: ${s.file_path?.split("\\").pop() || "clip"}`
-            : `  ⚠ Scene [${s.scene_id}]: Không có file → dùng placeholder`,
-        })),
-        { type: "info" as const,    text: `[FFmpeg] Đang ghép video với transition '${transition}'...` },
-        { type: "success" as const, text: "[FFmpeg] ✓ Video thô: output/videos/video_personal_lan_anh_mock_raw.mp4" },
-        { type: "info" as const,    text: "[FFmpeg] Đang chèn phụ đề vào video..." },
-        { type: "success" as const, text: "[FFmpeg] ✓ Video hoàn chỉnh: output/videos/video_personal_lan_anh_mock.mp4" },
-        { type: "success" as const, text: "✅ Job hoàn thành thành công!" },
-      ];
+      // Browser mode: send real files to Python local server for actual FFmpeg processing
+      addLog("info", "[Browser Mode] Đang chuẩn bị upload files lên Python server local...");
+      setAssemblyStep(1);
 
-      const stepBreaks: Record<number, number> = { 0: 1, 2: 2, 3: 3, 5: 4, 11: 5 };
-      for (let i = 0; i < mockAssemblyLogs.length; i++) {
-        if (cancelRef.current) { setIsCancelled(true); return; }
-        await new Promise((r) => setTimeout(r, 300 + Math.random() * 200));
-        addLog(mockAssemblyLogs[i].type, mockAssemblyLogs[i].text);
-        if (stepBreaks[i] !== undefined) setAssemblyStep(stepBreaks[i]);
+      // Check if any scene has a real File object
+      const hasRealFiles = scenes.some(s => s.file_object);
+      if (!hasRealFiles && scenes.every(s => !s.file_path)) {
+        addLog("error", "❌ Không có file nào được upload. Vui lòng chọn file video/ảnh cho từng scene trước.");
+        setIsCancelled(true);
+        return;
       }
 
-      await new Promise((r) => setTimeout(r, 400));
-      finishWithResult(
-        `D:\\ProjectWeb\\DuLichAppWeb\\dulich-pipeline\\output\\videos\\video_personal_mock.mp4`,
-        `D:\\ProjectWeb\\DuLichAppWeb\\dulich-pipeline\\output\\audio\\personal_mock.wav`,
-        creatorName
-      );
+      try {
+        // Build FormData with real files + metadata
+        const formData = new FormData();
+        formData.append("job_id", jobId || `job_${Date.now()}`);
+        formData.append("transition", transition);
+        formData.append("voice_mode", voiceMode);
+        formData.append("script", JSON.stringify(generatedScript || { hook: "", body: topic, cta: "" }));
+
+        const idMap: Record<string, string> = { c1: "lan_anh", c2: "minh_tuan", c3: "thu_ha", c4: "duc_anh", c5: "ngoc_mai" };
+        formData.append("creator_id", idMap[selectedCreator] || selectedCreator);
+        formData.append("template_ratio", selectedTemplate);
+        formData.append("hook_style", hookStyle);
+        formData.append("hook_text", hookText || "");
+
+        // Attach each scene's file
+        const scenesMeta = scenes.map((s) => ({
+          scene_id: s.scene_id,
+          description: s.description,
+          min_duration_sec: s.min_duration_sec,
+          type: s.type,
+          has_file: !!(s.file_object || s.file_path),
+        }));
+        formData.append("scenes_meta", JSON.stringify(scenesMeta));
+
+        for (const s of scenes) {
+          if (s.file_object) {
+            formData.append(s.scene_id, s.file_object, s.file_object.name);
+            addLog("info", `  📎 Scene [${s.scene_id}]: ${s.file_object.name} (${(s.file_object.size / 1024 / 1024).toFixed(1)}MB)`);
+          } else if (s.file_path) {
+            // Already a local path (shouldn't happen in browser mode, but handle gracefully)
+            addLog("warn", `  ⚠ Scene [${s.scene_id}]: path-only, không thể upload trong browser mode`);
+          } else {
+            addLog("warn", `  ⚠ Scene [${s.scene_id}]: Không có file → sẽ dùng placeholder màu đen`);
+          }
+        }
+
+        addLog("info", "[Server] Đang gửi lên Python server tại http://localhost:7788/assemble ...");
+        setAssemblyStep(2);
+
+        const response = await fetch("http://localhost:7788/assemble", {
+          method: "POST",
+          body: formData,
+        });
+
+        if (!response.ok) {
+          const errText = await response.text();
+          throw new Error(`Server trả về lỗi ${response.status}: ${errText}`);
+        }
+
+        setAssemblyStep(3);
+        addLog("info", "[Server] ✓ Upload thành công, đang chờ FFmpeg xử lý...");
+
+        // Poll for progress / wait for result
+        const result = await response.json();
+
+        if (result.success && result.video_path) {
+          setAssemblyStep(5);
+          addLog("success", `[FFmpeg] ✅ Video hoàn chỉnh: ${result.video_path}`);
+          finishWithResult(result.video_path, result.audio_path || "", creatorName);
+        } else {
+          throw new Error(result.error || "Server không trả về video path");
+        }
+
+      } catch (err: any) {
+        const msg = err.message || String(err);
+        if (msg.includes("fetch") || msg.includes("NetworkError") || msg.includes("Failed to fetch")) {
+          addLog("error", "❌ Không thể kết nối đến Python server tại http://localhost:7788");
+          addLog("warn",  "💡 Để ghép video thật, hãy khởi động Python server:");
+          addLog("info",  "   cd dulich-pipeline");
+          addLog("info",  "   python server.py");
+          addLog("warn",  "💡 Hoặc build và chạy Desktop App (Tauri) để dùng FFmpeg trực tiếp.");
+        } else {
+          addLog("error", `❌ Lỗi ghép video: ${msg}`);
+        }
+        setIsCancelled(true);
+      }
     }
   };
 
@@ -977,13 +1050,23 @@ export default function StudioScreen() {
 
                 <p style={sty.sceneDesc}>{scene.description}</p>
 
-                {scene.uploaded && scene.file_path ? (
+                {scene.uploaded && (scene.file_path || scene.file_object || scene.file_name) ? (
                   <div style={sty.sceneFilePill}>
                     <span style={{ fontSize: 14 }}>{scene.type === "image" ? "🖼️" : "🎞️"}</span>
-                    <span style={{ fontSize: 12, color: "#d1d5db", flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" as const }}>
-                      {scene.file_path.split("\\").pop() || scene.file_path.split("/").pop()}
-                    </span>
-                    <span style={{ fontSize: 10, color: "#10b981", fontWeight: 700 }}>✓</span>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 12, color: "#d1d5db", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" as const }}>
+                        {scene.file_name
+                          || scene.file_path?.split("\\").pop()
+                          || scene.file_path?.split("/").pop()
+                          || "file đã chọn"}
+                      </div>
+                      {scene.file_object && (
+                        <div style={{ fontSize: 10, color: "#6b7280", marginTop: 2 }}>
+                          {(scene.file_object.size / 1024 / 1024).toFixed(1)} MB
+                        </div>
+                      )}
+                    </div>
+                    <span style={{ fontSize: 10, color: "#10b981", fontWeight: 700, flexShrink: 0 }}>✓</span>
                   </div>
                 ) : (
                   <button style={sty.sceneUploadBtn} onClick={() => handlePickSceneFile(scene.scene_id)}>
