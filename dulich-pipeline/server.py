@@ -260,22 +260,40 @@ class AssembleHandler(BaseHTTPRequestHandler):
 
 
 def main():
-    print(f"""
-╔══════════════════════════════════════════════════════╗
-║    DuLich Pipeline — Local Assembly Server          ║
-║    Port: http://localhost:{PORT}                       ║
-║    Endpoint: POST /assemble                         ║
-╚══════════════════════════════════════════════════════╝
+    import socket
+
+    # Kill any old process still holding port 7788
+    # (Handles cases where previous server didn't shut down cleanly)
+    try:
+        test_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        test_sock.connect(("127.0.0.1", PORT))
+        test_sock.close()
+        print(f"[Server] WARNING: Port {PORT} already in use! Kill the old process first.", file=sys.stderr)
+        print(f"[Server] Run: netstat -ano | findstr :{PORT}   then   taskkill /F /PID <pid>", file=sys.stderr)
+        sys.exit(1)
+    except ConnectionRefusedError:
+        pass  # Port is free, good
+
+    class ReusableHTTPServer(HTTPServer):
+        allow_reuse_address = True
+
+    print("""
++------------------------------------------------------+
+|    DuLich Pipeline -- Local Assembly Server          |
+|    Endpoint: POST http://localhost:7788/assemble     |
++------------------------------------------------------+
 """, file=sys.stderr)
 
-    server = HTTPServer(("127.0.0.1", PORT), AssembleHandler)
-    print(f"[Server] Đang lắng nghe tại http://localhost:{PORT}", file=sys.stderr)
-    print(f"[Server] Nhấn Ctrl+C để dừng server.", file=sys.stderr)
+    server = ReusableHTTPServer(("127.0.0.1", PORT), AssembleHandler)
+    print(f"[Server] Listening at http://localhost:{PORT}", file=sys.stderr)
+    print(f"[Server] Press Ctrl+C to stop.", file=sys.stderr)
     try:
         server.serve_forever()
     except KeyboardInterrupt:
-        print("\n[Server] Đã dừng.", file=sys.stderr)
+        print("\n[Server] Shutting down...", file=sys.stderr)
+        server.shutdown()
         server.server_close()
+        print("[Server] Stopped.", file=sys.stderr)
 
 
 if __name__ == "__main__":
