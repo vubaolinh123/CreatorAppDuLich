@@ -46,6 +46,10 @@ fn main() {
             assemble_from_scenes,
             set_api_keys,
             preview_voice,
+            upload_canva_frames,
+            list_learned_frames,
+            analyze_single_frame,
+            delete_learned_frame,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -9,6 +9,20 @@ interface LogLine {
   text: string;
 }
 
+interface FrameTemplate {
+  frame_id: string;
+  name: string;
+  thumbnail_path: string;
+  width: number;
+  height: number;
+  aspect_ratio: string;
+  compatible_formats: string[];
+  style_tags: string[];
+  color_palette: string[];
+  usage_count: number;
+  uploaded_by: string;
+}
+
 const CREATORS = [
   { id: "lan_anh", name: "Lan Anh" },
   { id: "minh_tuan", name: "Minh Tuấn" },
@@ -31,12 +45,15 @@ const FORMAT_LABELS: Record<string, string> = {
 };
 
 export default function AlbumScreen() {
+  const [activeTab, setActiveTab] = useState<"create" | "manage">("create");
   const [step, setStep] = useState<1 | 2 | 3>(1); // 1: Input, 2: Running, 3: Result
   const [topic, setTopic] = useState("");
   const [title, setTitle] = useState("Review Phú Quốc Cực Chất");
   const [subtitle, setSubtitle] = useState("Trải nghiệm thiên đường đảo ngọc cùng Lan Anh");
   const [selectedCreator, setSelectedCreator] = useState("lan_anh");
   const [canvaFrame, setCanvaFrame] = useState("");
+  const [selectedFrameId, setSelectedFrameId] = useState<string>("auto");
+  const [learnedFrames, setLearnedFrames] = useState<any[]>([]);
 
   const [logs, setLogs] = useState<LogLine[]>([]);
   const [progress, setProgress] = useState(0);
@@ -52,6 +69,74 @@ export default function AlbumScreen() {
       logConsoleBottomRef.current.scrollIntoView({ behavior: "smooth" });
     }
   }, [logs.length]);
+
+  // Load learned frames on mount + when tab switches to manage
+  useEffect(() => {
+    if (activeTab === "manage" || activeTab === "create") {
+      loadLearnedFrames();
+    }
+  }, [activeTab]);
+
+  const loadLearnedFrames = async () => {
+    const isTauri = typeof window !== "undefined" && (window as any).__TAURI_INTERNALS__ !== undefined;
+    if (!isTauri) return;
+    try {
+      setLoadingFrames(true);
+      const resultStr = await invoke<string>("list_learned_frames", {
+        creatorId: "",
+        formatName: "",
+      });
+      const parsed = JSON.parse(resultStr);
+      if (parsed.success && Array.isArray(parsed.data)) {
+        setLearnedFrames(parsed.data);
+      }
+    } catch (e) {
+      console.warn("Could not load learned frames:", e);
+    } finally {
+      setLoadingFrames(false);
+    }
+  };
+
+  const handleUploadFrames = async () => {
+    try {
+      const { invoke } = await import("@tauri-apps/api/core");
+      const selected = await invoke<string | null>("select_single_file", {
+        allowedExtensions: ["zip", "png"],
+      });
+      if (!selected) return;
+
+      const resultStr = await invoke<string>("upload_canva_frames", {
+        zipPath: selected,
+        creatorId: selectedCreator,
+      });
+      const parsed = JSON.parse(resultStr);
+      if (parsed.success) {
+        await loadLearnedFrames();
+        alert(`Đã học ${parsed.data.total || 1} khung ảnh thành công!`);
+      } else {
+        alert("Lỗi: " + (parsed.data || "Không rõ"));
+      }
+    } catch (e: any) {
+      alert("Lỗi upload: " + e.message);
+    }
+  };
+
+  const handleDeleteFrame = async (frameId: string) => {
+    try {
+      const { invoke } = await import("@tauri-apps/api/core");
+      await invoke<string>("delete_learned_frame", { frameId });
+      setLearnedFrames((prev) => prev.filter((f) => f.frame_id !== frameId));
+    } catch (e: any) {
+      alert("Lỗi xóa: " + e.message);
+    }
+  };
+
+  const getFrameThumbUrl = (frame: FrameTemplate): string => {
+    if (frame.thumbnail_path) {
+      return convertFileSrc(frame.thumbnail_path);
+    }
+    return "";
+  };
 
   const runAlbumPipeline = async () => {
     if (!topic.trim()) {
@@ -105,6 +190,7 @@ export default function AlbumScreen() {
           subtitle,
           frame: canvaFrame,
           creatorId: selectedCreator,
+          frameId: selectedFrameId === "auto" ? "" : selectedFrameId,
         });
 
         unlisten();
@@ -194,11 +280,37 @@ export default function AlbumScreen() {
 
       {errorMsg && <div style={styles.errorAlert}>⚠ {errorMsg}</div>}
 
-      {/* --- STEP 1: INPUT --- */}
+      {/* --- TABS --- */}
       {step === 1 && (
+        <div style={styles.tabBar}>
+          <button
+            onClick={() => setActiveTab("create")}
+            style={{
+              ...styles.tabButton,
+              borderBottom: activeTab === "create" ? "2px solid #7c3aed" : "2px solid transparent",
+              color: activeTab === "create" ? "#ffffff" : "#6b7280",
+            }}
+          >
+            📸 Tạo Album
+          </button>
+          <button
+            onClick={() => setActiveTab("manage")}
+            style={{
+              ...styles.tabButton,
+              borderBottom: activeTab === "manage" ? "2px solid #7c3aed" : "2px solid transparent",
+              color: activeTab === "manage" ? "#ffffff" : "#6b7280",
+            }}
+          >
+            🎨 Quản lý Khung Ảnh
+          </button>
+        </div>
+      )}
+
+      {/* --- STEP 1: INPUT --- */}
+      {step === 1 && activeTab === "create" && (
         <div style={styles.glassPanel}>
           <h2 style={styles.panelTitle}>Thông số thiết kế Album</h2>
-          
+
           <div style={styles.formGrid}>
             <div style={styles.formGroup}>
               <label style={styles.label}>🗺️ Chủ đề hình ảnh (Từ khoá để AI tìm ảnh nền)</label>
@@ -250,12 +362,46 @@ export default function AlbumScreen() {
             </div>
 
             <div style={styles.formGroup}>
-              <label style={styles.label}>🎨 Khung Canva tùy chọn (Đường dẫn ảnh PNG rỗng ở giữa)</label>
+              <label style={styles.label}>🎨 Khung ảnh</label>
+              <div style={styles.frameSelectorRow}>
+                <select
+                  value={selectedFrameId}
+                  onChange={(e) => setSelectedFrameId(e.target.value)}
+                  style={{ ...styles.select, flex: 1 }}
+                >
+                  <option value="auto">🤖 AI Tự Chọn Khung (Khuyên dùng)</option>
+                  <option value="">🔲 Khung mặc định (Mock)</option>
+                  {learnedFrames.map((f) => (
+                    <option key={f.frame_id} value={f.frame_id}>
+                      🖼️ {f.name} ({f.width}x{f.height})
+                    </option>
+                  ))}
+                </select>
+                {learnedFrames.length > 0 && selectedFrameId !== "auto" && selectedFrameId && (
+                  <div style={styles.framePreview}>
+                    {(() => {
+                      const frame = learnedFrames.find(f => f.frame_id === selectedFrameId);
+                      return frame ? (
+                        <div>
+                          <img src={convertFileSrc(frame.thumbnail_path)} alt={frame.name} style={styles.frameThumb} />
+                          <div style={styles.frameTags}>
+                            {frame.style_tags?.map(t => <span key={t} style={styles.tag}>#{t}</span>)}
+                          </div>
+                        </div>
+                      ) : null;
+                    })()}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <div style={styles.formGroup}>
+              <label style={styles.label}>🎨 Khung Canva tùy chọn (Đường dẫn ảnh PNG)</label>
               <input
                 type="text"
                 value={canvaFrame}
                 onChange={(e) => setCanvaFrame(e.target.value)}
-                placeholder="VD: D:\Design\frame_dulich.png (Bỏ trống để tự động sinh frame mockup viền neon)"
+                placeholder="VD: D:\Design\frame_dulich.png (Bỏ trống để dùng khung AI chọn)"
                 style={styles.input}
               />
             </div>
@@ -264,6 +410,68 @@ export default function AlbumScreen() {
               ✨ Bắt đầu xuất 10 ảnh Seeding
             </button>
           </div>
+        </div>
+      )}
+
+      {/* --- FRAME MANAGEMENT TAB --- */}
+      {step === 1 && activeTab === "manage" && (
+        <div style={styles.glassPanel}>
+          <h2 style={styles.panelTitle}>🎨 Quản lý Khung Ảnh Canva</h2>
+          <p style={{ ...styles.hint, marginBottom: 16 }}>
+            Upload file ZIP chứa nhiều PNG khung Canva hoặc từng file PNG riêng lẻ. AI sẽ tự động phân tích và lưu làm template.
+          </p>
+
+          <button onClick={handleUploadFrames} style={styles.generateBtn}>
+            📤 Upload Khung Ảnh (ZIP/PNG)
+          </button>
+
+          <div style={{ height: 20 }} />
+
+          {loadingFrames ? (
+            <div style={{ textAlign: "center", padding: 40, color: "#9ca3af" }}>
+              Đang tải danh sách khung ảnh...
+            </div>
+          ) : learnedFrames.length === 0 ? (
+            <div style={{ textAlign: "center", padding: 40, color: "#6b7280" }}>
+              <p>Chưa có khung ảnh nào được học.</p>
+              <p style={{ fontSize: 12 }}>Upload file ZIP chứa PNG khung Canva để bắt đầu.</p>
+            </div>
+          ) : (
+            <div style={styles.frameGrid}>
+              {learnedFrames.map((frame) => (
+                <div key={frame.frame_id} style={styles.frameCard}>
+                  <div style={styles.frameCardPreview}>
+                    {frame.thumbnail_path ? (
+                      <img
+                        src={convertFileSrc(frame.thumbnail_path)}
+                        alt={frame.name}
+                        style={styles.frameCardThumb}
+                      />
+                    ) : (
+                      <div style={{ color: "#6b7280", fontSize: 12 }}>No preview</div>
+                    )}
+                  </div>
+                  <div style={styles.frameCardInfo}>
+                    <span style={styles.frameCardName}>{frame.name}</span>
+                    <span style={styles.frameCardDims}>{frame.width}x{frame.height}</span>
+                    <div style={styles.frameCardTags}>
+                      {frame.style_tags?.slice(0, 3).map(t => (
+                        <span key={t} style={styles.tag}>#{t}</span>
+                      ))}
+                    </div>
+                    <span style={styles.frameCardUsage}>Đã dùng: {frame.usage_count} lần</span>
+                  </div>
+                  <button
+                    onClick={() => handleDeleteFrame(frame.frame_id)}
+                    style={styles.frameCardDelete}
+                    title="Xóa khung"
+                  >
+                    ✕
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
 
@@ -727,5 +935,123 @@ const styles = {
     fontSize: 11.5,
     color: "#818cf8",
     fontWeight: 500,
-  }
+  },
+
+  // ── NEW: Tab bar ──
+  tabBar: {
+    display: "flex",
+    gap: 0,
+    marginBottom: 0,
+  },
+  tabButton: {
+    background: "none",
+    border: "none",
+    padding: "12px 24px",
+    fontSize: 14,
+    fontWeight: 600,
+    cursor: "pointer",
+    color: "#6b7280",
+    transition: "all 0.2s",
+  },
+
+  // ── NEW: Frame selector ──
+  frameSelectorRow: {
+    display: "flex",
+    flexDirection: "column" as const,
+    gap: 12,
+  },
+  framePreview: {
+    backgroundColor: "rgba(0,0,0,0.2)",
+    borderRadius: 8,
+    padding: 8,
+    display: "flex",
+    alignItems: "center",
+    gap: 8,
+  },
+  frameThumb: {
+    width: 60,
+    height: 60,
+    objectFit: "contain" as const,
+    borderRadius: 4,
+  },
+  frameTags: {
+    display: "flex",
+    flexWrap: "wrap" as const,
+    gap: 4,
+  },
+  tag: {
+    fontSize: 10,
+    color: "#818cf8",
+    backgroundColor: "rgba(129, 140, 248, 0.1)",
+    padding: "2px 6px",
+    borderRadius: 4,
+  },
+
+  // ── NEW: Frame management gallery ──
+  frameGrid: {
+    display: "grid",
+    gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))",
+    gap: 16,
+    marginTop: 16,
+  },
+  frameCard: {
+    backgroundColor: "rgba(255, 255, 255, 0.02)",
+    borderRadius: 12,
+    border: "1px solid rgba(255, 255, 255, 0.06)",
+    overflow: "hidden",
+    position: "relative" as const,
+  },
+  frameCardPreview: {
+    width: "100%",
+    height: 140,
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "rgba(0,0,0,0.3)",
+  },
+  frameCardThumb: {
+    maxWidth: "100%",
+    maxHeight: "100%",
+    objectFit: "contain" as const,
+  },
+  frameCardInfo: {
+    padding: 10,
+    display: "flex",
+    flexDirection: "column" as const,
+    gap: 4,
+  },
+  frameCardName: {
+    fontSize: 12,
+    fontWeight: 600,
+    color: "#ffffff",
+  },
+  frameCardDims: {
+    fontSize: 10,
+    color: "#6b7280",
+  },
+  frameCardTags: {
+    display: "flex",
+    flexWrap: "wrap" as const,
+    gap: 3,
+  },
+  frameCardUsage: {
+    fontSize: 10,
+    color: "#6b7280",
+  },
+  frameCardDelete: {
+    position: "absolute" as const,
+    top: 6,
+    right: 6,
+    background: "rgba(239, 68, 68, 0.8)",
+    border: "none",
+    color: "#ffffff",
+    width: 24,
+    height: 24,
+    borderRadius: "50%",
+    cursor: "pointer",
+    fontSize: 12,
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+  },
 };

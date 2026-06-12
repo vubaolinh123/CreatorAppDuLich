@@ -408,47 +408,17 @@ const HOOK_DETAILS: Record<string, { name: string, description: string, image?: 
     image: "/hook_cinematic_vignette.png",
     category: "effect"
   },
-  // ── Chữ trôi nổi ─────────────────────────────────────
-  bubble_title: {
-    name: "Bubble Title (Chữ bong bóng nổi)",
-    description: "Tên địa danh / chủ đề hiển thị ở vùng trên video theo kiểu chữ bong bóng dễ thương màu vàng/cam với viền đen đậm, phía dưới là câu Hook dạng chữ trắng đậm. Phong cách GenZ, vui tươi, rất thịnh hành trên TikTok. Phụ đề sẽ hiển thị ở vùng dưới, cách xa phần hook trên.",
-    image: "/hook_bubble_title.png",
-    category: "text"
-  },
-  neon_glow: {
-    name: "Neon Glow (Chữ neon phát sáng)",
-    description: "Tên địa danh hiển thị ở phần trên video với hiệu ứng chữ neon phát sáng màu cyan/tím rực rỡ như biển quảng cáo neon. Câu Hook phụ bên dưới có viền sáng mờ. Phong cách tối, điện ảnh, huyền bí — phù hợp video du lịch đêm, biển, resort cao cấp.",
-    image: "/hook_neon_glow.png",
-    category: "text"
-  },
-  handwriting: {
-    name: "Handwriting (Chữ viết tay nhẹ nhàng)",
-    description: "Tên địa danh viết bằng font cursive/viết tay màu trắng hoặc vàng nhạt, nhìn như nét bút chalk trên bảng đen, tạo cảm giác nhật ký du lịch cá nhân, chân thực và ấm áp. Phù hợp video làng quê, núi rừng, vùng biên giới.",
-    image: "/hook_handwriting.png",
-    category: "text"
-  },
-  bold_impact: {
-    name: "Bold Impact (Chữ đậm siêu to)",
-    description: "Tên địa danh hiển thị bằng font Impact siêu to, viết hoa toàn bộ với viền đen cực đậm, màu trắng hoặc vàng. Câu Hook phụ bên dưới màu vàng tươi. Cách thể hiện mạnh mẽ, trực tiếp, thu hút ngay lập tức — phù hợp video ẩm thực, đường phố, khám phá.",
-    image: "/hook_bold_impact.png",
-    category: "text"
-  },
-  sticker_pop: {
-    name: "Sticker Pop (Chữ sticker màu sắc)",
-    description: "Tên địa danh hiển thị như một sticker dán với font tròn, nhiều màu sắc (hồng, xanh mint), có hiệu ứng bóng 3D nhẹ và các ngôi sao trang trí xung quanh. Phong cách cute, vui nhộn, Gen Z — cực kỳ phù hợp TikTok và Reels.",
-    image: "/hook_sticker_pop.png",
-    category: "text"
-  },
-  cinematic_title: {
-    name: "Cinematic Title (Tiêu đề điện ảnh)",
-    description: "Tên địa danh hiển thị theo phong cách tiêu đề phim tài liệu: font serif thanh lịch, chữ hoa cách đều, màu vàng kim hoặc trắng, có đường kẻ ngang trang trí. Câu Hook phụ bên dưới bằng font nhỏ hơn. Cảm giác premium, chuyên nghiệp như travel documentary.",
-    image: "/hook_cinematic_title.png",
-    category: "text"
-  },
   text_slide: {
     name: "Text Slide (Chữ trượt lên)",
     description: "Câu Hook toàn bộ trượt từ phía dưới lên vị trí giữa màn hình với hiệu ứng ease-out mượt mà. Chữ màu trắng đậm có bóng đen, render trực tiếp bằng FFmpeg. Thích hợp cho video muốn đặt câu hỏi hoặc reveal thông tin gây tò mò.",
     image: "/hook_text_slide.png",
+    category: "text"
+  },
+  // ── Hook Overlay ─────────────────────────────────────
+  hook_overlay: {
+    name: "Da Lat Hook Overlay — Chữ vàng bong bóng + chữ viết tay",
+    description: "Overlay Đà Lạt review đặc trưng với 3 lớp chữ: (1) tiêu đề màu vàng bong bóng, từng chữ xoay nhẹ và có hiệu ứng lấp lánh; (2) chữ trắng viết tay mềm mại; (3) caption màu trắng có viền đen ở cuối. Phù hợp cho các video review địa điểm du lịch phong cách GenZ, viral TikTok.",
+    image: "/hook_overlay.png",
     category: "text"
   },
   // ── TikTok Banner ─────────────────────────────────────
@@ -685,6 +655,7 @@ export default function StudioScreen() {
           vbeeKey: settings.vbeeKey || "",
           openaiKey: settings.openAiKey || "",
           anthropicKey: settings.anthropicKey || "",
+          geminiKey: settings.geminiKey || "",
         });
         
         const resStr = await invoke<string>("preview_voice", {
@@ -715,6 +686,7 @@ export default function StudioScreen() {
             vbee_api_key: settings.vbeeKey || "",
             openai_api_key: settings.openAiKey || "",
             anthropic_api_key: settings.anthropicKey || "",
+            gemini_api_key: settings.geminiKey || "",
           }),
         });
         
@@ -1329,13 +1301,8 @@ export default function StudioScreen() {
                   <option value="glitch">RGB Glitch — Nhiễu sóng màu</option>
                   <option value="cinematic_vignette">Cinematic Vignette — Tối góc điện ảnh</option>
                   <option disabled style={{ color: "#34d399", background: "#1a1a1a", fontWeight: 700 }}>── Chữ trôi nổi (hook phía trên + sub phía dưới) ──</option>
-                  <option value="bubble_title">Bubble Title — Chữ bong bóng nổi</option>
-                  <option value="neon_glow">Neon Glow — Chữ neon phát sáng</option>
-                  <option value="handwriting">Handwriting — Chữ viết tay nhẹ nhàng</option>
-                  <option value="bold_impact">Bold Impact — Chữ đậm siêu to</option>
-                  <option value="sticker_pop">Sticker Pop — Chữ sticker màu sắc</option>
-                  <option value="cinematic_title">Cinematic Title — Tiêu đề điện ảnh</option>
                   <option value="text_slide">Text Slide — Chữ trượt lên</option>
+                  <option value="hook_overlay">Da Lat Overlay — Chữ vàng bong bóng + chữ viết tay</option>
                   <option disabled style={{ color: "#fb923c", background: "#1a1a1a", fontWeight: 700 }}>── Banner TikTok (chỉ chữ hook, không sub) ──</option>
                   <option value="tiktok_quote_card">TikTok Quote Card — Hộp trích dẫn</option>
                   <option value="tiktok_floating_box">TikTok Floating Box — Hộp chữ nổi phía trên</option>
@@ -1402,11 +1369,15 @@ export default function StudioScreen() {
                       <p style={{ fontSize: 12, color: "#d1d5db", margin: 0, lineHeight: 1.6 }}>
                         {h.description}
                       </p>
-                      {isText && (
+                      {isText && hookStyle === "hook_overlay" ? (
+                        <div style={{ fontSize: 11, color: "#fbbf24", padding: "8px 12px", background: "rgba(251,191,36,0.08)", borderRadius: 8, borderLeft: "3px solid #fbbf24" }}>
+                          Layout 3 lớp: Tiêu đề vàng bong bóng ở trên cùng (~11%). Chữ viết tay trắng mềm mại ở ngay bên dưới. Caption trắng có viền đen ở phía dưới video (~66%).
+                        </div>
+                      ) : isText ? (
                         <div style={{ fontSize: 11, color: "#34d399", padding: "8px 12px", background: "rgba(52,211,153,0.08)", borderRadius: 8, borderLeft: "3px solid #34d399" }}>
                           Layout: Hook text hiện ở vùng trên cùng video. Phụ đề (subtitle) sẽ tự động chạy ở vùng phía dưới, cách xa viền button điều khiển.
                         </div>
-                      )}
+                      ) : null}
                       {isEffect && (
                         <div style={{ fontSize: 11, color: "#818cf8", padding: "8px 12px", background: "rgba(129,140,248,0.08)", borderRadius: 8, borderLeft: "3px solid #818cf8" }}>
                           Hiệu ứng chạy trực tiếp trên cảnh đầu tiên. Phụ đề hiện phía dưới, không chồng chéo hiệu ứng.
@@ -1427,7 +1398,7 @@ export default function StudioScreen() {
           </div>
 
           {/* Hook Text */}
-          {["bubble_title", "neon_glow", "handwriting", "bold_impact", "sticker_pop", "cinematic_title"].includes(hookStyle) ? (
+          {["hook_overlay"].includes(hookStyle) ? (
             <div style={{ display: "flex", flexDirection: "column" as const, width: "100%", gap: 6 }}>
               <div style={{ display: "flex", gap: 16, width: "100%" }}>
                 <div style={{ ...sty.fieldGroup, flex: 1, marginBottom: 0 }}>

@@ -81,6 +81,11 @@ def _ensure_indexes(db: Any) -> None:
         db["content"].create_index("creator_id")
         db["content"].create_index("status")
         db["seeding"].create_index("category")
+        db["frame_templates"].create_index("frame_id")
+        db["frame_templates"].create_index("compatible_formats")
+        db["frame_templates"].create_index("uploaded_by")
+        db["frame_feedback"].create_index("frame_id")
+        db["frame_feedback"].create_index("creator_id")
     except Exception:
         pass
 
@@ -125,6 +130,12 @@ def seeding_col():
 
 def templates_col():
     return get_db()["templates"]
+
+def frame_templates_col():
+    return get_db()["frame_templates"]
+
+def frame_feedback_col():
+    return get_db()["frame_feedback"]
 
 
 # ── Job helpers ───────────────────────────────────────────────────────────────
@@ -282,11 +293,17 @@ class MockCollection:
                 if "$push" in update:
                     for field, val in update["$push"].items():
                         doc.setdefault(field, []).append(val)
+                if "$inc" in update:
+                    for field, val in update["$inc"].items():
+                        doc[field] = doc.get(field, 0) + val
                 break
         if not found and upsert:
             doc = {}
             if "$set" in update:
                 doc.update(update["$set"])
+            if "$inc" in update:
+                for field, val in update["$inc"].items():
+                    doc[field] = val
             for k, v in query.items():
                 doc[k] = v
             store.append(doc)

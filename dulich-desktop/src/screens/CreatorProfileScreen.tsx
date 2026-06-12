@@ -275,6 +275,7 @@ export default function CreatorProfileScreen() {
     { id: "glitch", name: "RGB Glitch (Nhiễu sóng)" },
     { id: "cinematic_vignette", name: "Cinematic Vignette (Tối góc)" },
     { id: "text_slide", name: "Animated Text (Chữ chạy)" },
+    { id: "hook_overlay", name: "Da Lat Overlay — Chữ vàng bong bóng + chữ viết tay" },
     { id: "tiktok_tag_banner_purple", name: "TikTok Tag Banner (Nền Tím)" },
     { id: "tiktok_tag_banner_pink", name: "TikTok Tag Banner (Nền Hồng)" },
     { id: "tiktok_tag_banner_green", name: "TikTok Tag Banner (Nền Xanh Lá)" },

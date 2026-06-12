@@ -13,6 +13,8 @@ class PipelineConfig:
     # --- AI Models ---
     anthropic_api_key: str = ""
     elevenlabs_api_key: str = ""
+    openai_api_key: str = ""            # GPT-4o Vision
+    gemini_api_key: str = ""            # Gemini Vision
 
     # --- Voice ---
     vbee_api_key: str = ""          # Vbee.ai API key (tiếng Việt TTS)
@@ -45,7 +47,11 @@ class PipelineConfig:
             self.elevenlabs_api_key = os.getenv("ELEVENLABS_API_KEY", "")
         if not self.vbee_api_key:
             self.vbee_api_key = os.getenv("VBEE_API_KEY", "")
-        
+        if not self.openai_api_key:
+            self.openai_api_key = os.getenv("OPENAI_API_KEY", "")
+        if not self.gemini_api_key:
+            self.gemini_api_key = os.getenv("GEMINI_API_KEY", "")
+
         # Override defaults with env only if they match their dataclass default values
         if self.voice_provider == "vbee":
             self.voice_provider = os.getenv("VOICE_PROVIDER", "vbee")

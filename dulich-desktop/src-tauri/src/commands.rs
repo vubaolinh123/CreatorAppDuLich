@@ -614,9 +614,10 @@ pub async fn run_album_pipeline(
     subtitle: String,
     frame: String,
     creator_id: String,
+    frame_id: String,
 ) -> Result<String, String> {
     let (python_exe, pipeline_dir) = get_python_exe_and_dir()?;
-    
+
     let mut args = vec![
         "main.py".to_string(),
         "--action".to_string(), "album".to_string(),
@@ -625,10 +626,15 @@ pub async fn run_album_pipeline(
         "--subtitle".to_string(), subtitle,
         "--creator".to_string(), creator_id,
     ];
-    
+
     if !frame.trim().is_empty() {
         args.push("--frame".to_string());
         args.push(frame);
+    }
+
+    if !frame_id.trim().is_empty() {
+        args.push("--frame-id".to_string());
+        args.push(frame_id);
     }
     
     let mut child = StdCommand::new(&python_exe)
@@ -953,11 +959,125 @@ pub fn set_api_keys(
     vbee_key: String,
     openai_key: String,
     anthropic_key: String,
+    gemini_key: String,
 ) {
     std::env::set_var("ELEVENLABS_API_KEY", &elevenlabs_key);
     std::env::set_var("VBEE_API_KEY", &vbee_key);
     std::env::set_var("OPENAI_API_KEY", &openai_key);
     std::env::set_var("ANTHROPIC_API_KEY", &anthropic_key);
+    std::env::set_var("GEMINI_API_KEY", &gemini_key);
+}
+
+#[tauri::command]
+pub async fn upload_canva_frames(
+    zip_path: String,
+    creator_id: String,
+) -> Result<String, String> {
+    let (python_exe, pipeline_dir) = get_python_exe_and_dir()?;
+
+    let output = StdCommand::new(&python_exe)
+        .current_dir(&pipeline_dir)
+        .args(&[
+            "db_cli.py".to_string(),
+            "learn_frames".to_string(),
+            zip_path,
+            creator_id,
+        ])
+        .output()
+        .map_err(|e| format!("Failed to run learn_frames: {}", e))?;
+
+    if output.status.success() {
+        let stdout_str = String::from_utf8_lossy(&output.stdout);
+        Ok(stdout_str.into_owned())
+    } else {
+        let stderr_str = String::from_utf8_lossy(&output.stderr);
+        Err(format!("learn_frames failed: {}", stderr_str))
+    }
+}
+
+#[tauri::command]
+pub async fn list_learned_frames(
+    creator_id: String,
+    format_name: String,
+) -> Result<String, String> {
+    let (python_exe, pipeline_dir) = get_python_exe_and_dir()?;
+
+    let mut args = vec![
+        "db_cli.py".to_string(),
+        "list_frames".to_string(),
+    ];
+
+    if !creator_id.trim().is_empty() {
+        args.push("--creator".to_string());
+        args.push(creator_id);
+    }
+    if !format_name.trim().is_empty() {
+        args.push("--format".to_string());
+        args.push(format_name);
+    }
+
+    let output = StdCommand::new(&python_exe)
+        .current_dir(&pipeline_dir)
+        .args(&args)
+        .output()
+        .map_err(|e| format!("Failed to list frames: {}", e))?;
+
+    if output.status.success() {
+        let stdout_str = String::from_utf8_lossy(&output.stdout);
+        Ok(stdout_str.into_owned())
+    } else {
+        let stderr_str = String::from_utf8_lossy(&output.stderr);
+        Err(format!("list_frames failed: {}", stderr_str))
+    }
+}
+
+#[tauri::command]
+pub async fn analyze_single_frame(
+    frame_path: String,
+) -> Result<String, String> {
+    let (python_exe, pipeline_dir) = get_python_exe_and_dir()?;
+
+    let output = StdCommand::new(&python_exe)
+        .current_dir(&pipeline_dir)
+        .args(&[
+            "db_cli.py".to_string(),
+            "analyze_frame".to_string(),
+            frame_path,
+        ])
+        .output()
+        .map_err(|e| format!("Failed to analyze frame: {}", e))?;
+
+    if output.status.success() {
+        let stdout_str = String::from_utf8_lossy(&output.stdout);
+        Ok(stdout_str.into_owned())
+    } else {
+        let stderr_str = String::from_utf8_lossy(&output.stderr);
+        Err(format!("analyze_frame failed: {}", stderr_str))
+    }
+}
+
+#[tauri::command]
+pub async fn delete_learned_frame(
+    frame_id: String,
+) -> Result<String, String> {
+    let (python_exe, pipeline_dir) = get_python_exe_and_dir()?;
+
+    let output = StdCommand::new(&python_exe)
+        .current_dir(&pipeline_dir)
+        .args(&[
+            "db_cli.py".to_string(),
+            "delete_frame".to_string(),
+            frame_id,
+        ])
+        .output()
+        .map_err(|e| format!("Failed to delete frame: {}", e))?;
+
+    if output.status.success() {
+        Ok("ok".to_string())
+    } else {
+        let stderr_str = String::from_utf8_lossy(&output.stderr);
+        Err(format!("delete_frame failed: {}", stderr_str))
+    }
 }
 
 #[tauri::command]

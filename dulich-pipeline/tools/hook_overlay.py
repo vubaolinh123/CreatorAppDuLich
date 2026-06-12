@@ -121,6 +121,29 @@ def _draw_centered_lines(canvas, lines, font, top, fill, gap, stroke=0,
     return y
 
 
+def _wrap_lines(text: str, font: ImageFont.FreeTypeFont, max_width: int) -> list[str]:
+    """Wrap a line of text to fit within max_width pixels using the given font.
+    Uses PIL's getbbox to measure actual rendered width for accurate wrapping."""
+    if font.getbbox(text)[2] <= max_width:
+        return [text]
+
+    import textwrap
+    # Estimate chars per line from average char width of the Latin alphabet
+    sample = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
+    avg_char_w = font.getbbox(sample)[2] / len(sample)
+    est_chars = max(1, int(max_width / avg_char_w))
+
+    wrapped = textwrap.wrap(text, width=est_chars)
+    # Refine: merge short adjacent lines if they fit together
+    refined: list[str] = []
+    for part in wrapped:
+        if refined and font.getbbox(refined[-1] + " " + part)[2] <= max_width:
+            refined[-1] += " " + part
+        else:
+            refined.append(part)
+    return refined
+
+
 def build_overlay(
     title: str = "ĐÀ LẠT",
     script_lines: tuple[str, ...] = ("Review và chấm điểm", "các quán mà anh đã đi"),
@@ -141,9 +164,14 @@ def build_overlay(
     _sparkle(dd, r + 5, int(H * 0.10), 18, wdt=5)
     _sparkle(dd, l + 20, b - 10, 16, wdt=5)
 
-    # 2) Handwriting script — white Caveat, just below the title
-    script_font = _load(SCRIPT_FONT, 96, weight=700)
-    y2 = _draw_centered_lines(canvas, list(script_lines), script_font,
+    # 2) Handwriting script — white Caveat, just below the title, with wrapping
+    script_font = _load(SCRIPT_FONT, 80, weight=700)
+    script_margin = 80
+    script_max_w = W - 2 * script_margin
+    wrapped_script: list[str] = []
+    for line in list(script_lines):
+        wrapped_script.extend(_wrap_lines(line, script_font, script_max_w))
+    y2 = _draw_centered_lines(canvas, wrapped_script, script_font,
                               top=b + 24, fill=WHITE, gap=4, shadow=True)
 
     # 3) Spoken caption — bottom third, white rounded with outline

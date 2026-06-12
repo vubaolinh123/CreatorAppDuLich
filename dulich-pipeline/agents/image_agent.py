@@ -1,6 +1,7 @@
 """
 Image Agent — Orchestrates the batch composition of seeding album images.
 Generates 10 image formats for a given topic and saves metadata.
+Supports AI-powered frame selection from learned Canva templates.
 """
 
 from __future__ import annotations
@@ -20,18 +21,36 @@ def run_album_pipeline(
     subtitle: str,
     creator_id: str = "lan_anh",
     canva_template_path: Optional[str] = None,
+    frame_id: Optional[str] = None,
 ) -> dict:
     """
     Run Album Image Generation Pipeline.
-    
-    1. Search for stock background matching the topic.
-    2. Generate 10 images (1 for each size format).
-    3. Save results to MongoDB content collection.
+
+    1. Auto-select best frame template if frame_id not specified.
+    2. Search for stock background matching the topic.
+    3. Generate 10 images (1 for each size format).
+    4. Save results to MongoDB content collection.
     """
     append_job_log(job_id, "INFO", f"Khởi động Image Pipeline cho chủ đề: '{topic}'")
     append_job_log(job_id, "INFO", f"Tiêu đề: '{title}' | Phụ đề: '{subtitle}'")
-    
-    # 1. Search photo stock
+
+    # ── 0. Auto-select frame if not specified ────────────────────────────────
+    resolved_frame_id = frame_id
+    if not frame_id and not canva_template_path:
+        try:
+            from tools.frame_selector import select_best_frame
+            best = select_best_frame(topic=topic, title=title, creator_id=creator_id)
+            if best:
+                resolved_frame_id = best["frame_id"]
+                append_job_log(job_id, "INFO", f"🎨 AI tự chọn khung: '{best.get('name', best['frame_id'])}'")
+            else:
+                append_job_log(job_id, "INFO", "Không có khung học nào, dùng mock frame mặc định")
+        except Exception as e:
+            append_job_log(job_id, "WARNING", f"Lỗi frame selector: {e}")
+    elif frame_id:
+        append_job_log(job_id, "INFO", f"Sử dụng khung đã chọn: {frame_id}")
+
+    # ── 1. Search photo stock
     update_job(job_id, {"progress": 15})
     append_job_log(job_id, "INFO", "Đang tìm kiếm ảnh stock chất lượng cao...")
     
@@ -66,13 +85,14 @@ def run_album_pipeline(
                 format_name=fmt_name,
                 title=title,
                 subtitle=subtitle,
-                canva_template_path=canva_template_path
+                canva_template_path=canva_template_path,
+                frame_id=resolved_frame_id,
             )
             generated_images[fmt_name] = composed_path
             append_job_log(job_id, "INFO", f"✓ Đã tạo format '{fmt_name}': {composed_path}")
         except Exception as e:
             append_job_log(job_id, "ERROR", f"Lỗi tạo format '{fmt_name}': {e}")
-            
+
     # 3. Save to MongoDB
     update_job(job_id, {"progress": 95})
     append_job_log(job_id, "INFO", "Đang lưu metadata album vào cơ sở dữ liệu...")
@@ -84,26 +104,28 @@ def run_album_pipeline(
         "subtitle": subtitle,
         "background_used": bg_image_path,
         "canva_frame_used": canva_template_path or "mock_default",
+        "frame_id": resolved_frame_id,
         "images": generated_images,
     }
-    
+
     save_content(
         job_id=job_id,
         content_type="album",
         data=album_data
     )
-    
+
     update_job(job_id, {
         "status": "done",
         "progress": 100,
         "result": {
             "album_id": job_id,
             "total_images": len(generated_images),
-            "images": generated_images
+            "images": generated_images,
+            "frame_id": resolved_frame_id,
         }
     })
-    
-    append_job_log(job_id, "INFO", "✓ Job tạo Album seeding hoàn tất thành công!")
+
+    append_job_log(job_id, "INFO", f"✓ Album hoàn tất! {len(generated_images)} ảnh, frame: {resolved_frame_id or 'mock'}")
     return album_data
 
 

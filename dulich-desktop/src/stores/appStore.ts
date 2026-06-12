@@ -34,6 +34,7 @@ export interface Settings {
   elevenLabsKey: string;
   vbeeKey: string;
   openAiKey: string;
+  geminiKey: string;
   outputFolder: string;
   creators: Creator[];
   defaultCreatorId: number;
@@ -163,6 +164,7 @@ const DEFAULT_SETTINGS: Settings = {
   elevenLabsKey: '',
   vbeeKey: '',
   openAiKey: '',
+  geminiKey: '',
   outputFolder: '',
   creators: DEFAULT_CREATORS,
   defaultCreatorId: 1,

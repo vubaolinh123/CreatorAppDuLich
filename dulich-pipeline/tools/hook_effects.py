@@ -11,7 +11,7 @@ import random
 from pathlib import Path
 
 
-# ── FFmpeg Hook Presets ───────────────────────────────────────────────────────
+    # ── FFmpeg Hook Presets ───────────────────────────────────────────────────────
 
 HOOK_PRESETS = {
     "zoom_in": {
@@ -41,86 +41,6 @@ HOOK_PRESETS = {
         "description": "Câu Hook trượt từ dưới lên giữa màn hình, sub hiện phía dưới.",
         # Requires drawtext filter
         "filter": "drawtext=text='{text}':fontcolor=white:fontsize=68:x='(w-tw)/2':y='h-(h/2)*min(t*2,1.0)-80':box=1:boxcolor=black@0.55:boxborderw=14:shadowcolor=black@0.8:shadowx=3:shadowy=3"
-    },
-    # ── Floating Text Hooks ───────────────────────────────────────────────────
-    "bubble_title": {
-        "name": "Bubble Title (Chữ bong bóng nổi)",
-        "description": "Tên địa danh dạng chữ bong bóng màu vàng, câu hook phụ bên dưới màu trắng đậm.",
-        # Yellow bubble title + white subtitle below — both in top 40% of frame
-        "filter": (
-            "drawtext=text='{hook_title}':fontcolor=yellow:fontsize=90:x='(w-tw)/2':y='h*0.10':"
-            "box=1:boxcolor=black@0.0:boxborderw=0:"
-            "shadowcolor=black@1.0:shadowx=4:shadowy=4,"
-            "drawtext=text='{text}':fontcolor=white:fontsize=52:x='(w-tw)/2':y='h*0.22':"
-            "box=1:boxcolor=black@0.5:boxborderw=10:"
-            "shadowcolor=black@0.9:shadowx=2:shadowy=2"
-        )
-    },
-    "neon_glow": {
-        "name": "Neon Glow (Chữ neon phát sáng)",
-        "description": "Tên địa danh neon sáng cyan/tím, sub phụ bên dưới có viền sáng mờ.",
-        # Neon cyan title — drawtext with bright outline simulating glow
-        "filter": (
-            "drawtext=text='{hook_title}':fontcolor=0x00FFFF:fontsize=96:x='(w-tw)/2':y='h*0.08':"
-            "borderw=6:bordercolor=0x4040FF@0.9:"
-            "shadowcolor=0x00FFFF@0.6:shadowx=0:shadowy=0,"
-            "drawtext=text='{text}':fontcolor=white:fontsize=46:x='(w-tw)/2':y='h*0.23':"
-            "borderw=3:bordercolor=0x8080FF@0.7:"
-            "shadowcolor=0x4040FF@0.5:shadowx=2:shadowy=2"
-        )
-    },
-    "handwriting": {
-        "name": "Handwriting (Chữ viết tay nhẹ nhàng)",
-        "description": "Tên địa danh kiểu chữ viết tay màu trắng/vàng nhạt, sub nhỏ hơn.",
-        # Light chalk-like text in top area
-        "filter": (
-            "drawtext=text='{hook_title}':fontcolor=0xFFFFE0:fontsize=88:x='(w-tw)/2':y='h*0.09':"
-            "borderw=2:bordercolor=black@0.6:"
-            "shadowcolor=black@0.7:shadowx=3:shadowy=3,"
-            "drawtext=text='{text}':fontcolor=0xFFFAF0:fontsize=44:x='(w-tw)/2':y='h*0.23':"
-            "box=1:boxcolor=black@0.3:boxborderw=8:"
-            "shadowcolor=black@0.6:shadowx=2:shadowy=2"
-        )
-    },
-    "bold_impact": {
-        "name": "Bold Impact (Chữ đậm siêu to)",
-        "description": "Tên địa danh bold viết hoa siêu to màu trắng viền đen, sub vàng tươi.",
-        "filter": (
-            "drawtext=text='{hook_title}':fontcolor=white:fontsize=108:x='(w-tw)/2':y='h*0.07':"
-            "borderw=8:bordercolor=black@1.0:"
-            "shadowcolor=black@0.8:shadowx=4:shadowy=4,"
-            "drawtext=text='{text}':fontcolor=yellow:fontsize=52:x='(w-tw)/2':y='h*0.23':"
-            "borderw=4:bordercolor=black@0.9:"
-            "shadowcolor=black@0.7:shadowx=2:shadowy=2"
-        )
-    },
-    "sticker_pop": {
-        "name": "Sticker Pop (Chữ sticker màu sắc)",
-        "description": "Tên địa danh màu hồng/mint sticker dán, câu hook phụ màu trắng.",
-        # Pink/mint sticker style
-        "filter": (
-            "drawtext=text='{hook_title}':fontcolor=0xFF69B4:fontsize=96:x='(w-tw)/2':y='h*0.09':"
-            "borderw=7:bordercolor=white@0.95:"
-            "shadowcolor=0xFF1493@0.5:shadowx=3:shadowy=3,"
-            "drawtext=text='{text}':fontcolor=white:fontsize=50:x='(w-tw)/2':y='h*0.24':"
-            "box=1:boxcolor=0x00FA9A@0.35:boxborderw=12:"
-            "borderw=2:bordercolor=white@0.8:"
-            "shadowcolor=black@0.6:shadowx=2:shadowy=2"
-        )
-    },
-    "cinematic_title": {
-        "name": "Cinematic Title (Tiêu đề điện ảnh)",
-        "description": "Tên địa danh kiểu tiêu đề phim tài liệu: chữ hoa, serif, vàng kim.",
-        # Golden documentary title style
-        "filter": (
-            "drawtext=text='{hook_title}':fontcolor=0xFFD700:fontsize=80:x='(w-tw)/2':y='h*0.10':"
-            "borderw=2:bordercolor=0xAA8800@0.8:"
-            "shadowcolor=black@0.9:shadowx=3:shadowy=3,"
-            "drawtext=text='─────────────────':fontcolor=0xFFD70080:fontsize=28:x='(w-tw)/2':y='h*0.195',"
-            "drawtext=text='{text}':fontcolor=0xFFFAF0:fontsize=40:x='(w-tw)/2':y='h*0.215':"
-            "borderw=1:bordercolor=0xAA8800@0.5:"
-            "shadowcolor=black@0.7:shadowx=2:shadowy=2"
-        )
     },
     "tiktok_tag_banner": {
         "name": "TikTok Tag Banner (Khung chữ & Hashtag)",
@@ -199,129 +119,8 @@ def apply_hook_effect(
     fps = 30
     duration_frames = int(duration_sec * fps)
 
-    # ── Xử lý các style chữ trôi nổi mới ────────────────────────────────────
-    FLOATING_TEXT_STYLES = {"bubble_title", "neon_glow", "handwriting", "bold_impact", "sticker_pop", "cinematic_title"}
-
-    if style in FLOATING_TEXT_STYLES:
-        import textwrap
-        if hook_title or hook_subtitle:
-            hook_title_upper = (hook_title or "").upper()
-            subtitle_text = hook_subtitle or ""
-        else:
-            # Split hook_text into title (short location name) and subtitle (full hook sentence)
-            # Heuristic: first word/phrase (up to 2 words or 15 chars) = title, rest = subtitle
-            words = hook_text.strip().split() if hook_text else [""]
-            # Try to detect location name as first 1-2 words
-            hook_title_words = []
-            rest_words = words[:]
-            # If first word is short (≤20 chars), treat it as the title
-            if words and len(words[0]) <= 20:
-                hook_title_words = words[:min(2, len(words))]
-                rest_words = words[len(hook_title_words):]
-
-            hook_title = " ".join(hook_title_words) if hook_title_words else (hook_text[:15] if hook_text else "LOCATION")
-            hook_title_upper = hook_title.upper()
-            subtitle_text = " ".join(rest_words) if rest_words else hook_text
-
-        # Wrap subtitle to ~22 chars per line for vertical video
-        wrapped_sub_lines = textwrap.wrap(subtitle_text, width=22)
-        subtitle_short = "\\n".join(wrapped_sub_lines[:2])  # max 2 lines
-
-        # Write to temp files
-        temp_dir = Path("./output/temp_uploads")
-        temp_dir.mkdir(parents=True, exist_ok=True)
-        import uuid
-        title_file = temp_dir / f"hook_title_{uuid.uuid4().hex[:8]}.txt"
-        sub_file = temp_dir / f"hook_sub_{uuid.uuid4().hex[:8]}.txt"
-        title_file.write_text(hook_title_upper, encoding="utf-8")
-        sub_file.write_text(subtitle_short.replace("\\n", "\n"), encoding="utf-8")
-
-        safe_title = str(title_file.resolve()).replace("\\", "/").replace(":", "\\:")
-        safe_sub = str(sub_file.resolve()).replace("\\", "/").replace(":", "\\:")
-
-        # Tìm font path
-        font_path = "C:/Windows/Fonts/arialbd.ttf"
-        if not os.path.exists(font_path):
-            font_path_safe = "arial"
-        else:
-            font_path_safe = font_path.replace("\\", "/").replace(":", "\\:")
-
-        title_filters = {
-            "bubble_title": (
-                f"drawtext=textfile='{safe_title}':fontcolor=yellow:fontsize=90:fontfile='{font_path_safe}':x='(w-tw)/2':y='h*0.10':"
-                f"borderw=6:bordercolor=black@1.0:"
-                f"shadowcolor=black@0.9:shadowx=5:shadowy=5"
-            ),
-            "neon_glow": (
-                f"drawtext=textfile='{safe_title}':fontcolor=0x00FFFF:fontsize=96:fontfile='{font_path_safe}':x='(w-tw)/2':y='h*0.08':"
-                f"borderw=6:bordercolor=0x4040FF@0.9:"
-                f"shadowcolor=0x00CCFF@0.7:shadowx=4:shadowy=4"
-            ),
-            "handwriting": (
-                f"drawtext=textfile='{safe_title}':fontcolor=0xFFFFE0:fontsize=88:fontfile='{font_path_safe}':x='(w-tw)/2':y='h*0.09':"
-                f"borderw=2:bordercolor=black@0.5:"
-                f"shadowcolor=black@0.8:shadowx=3:shadowy=3"
-            ),
-            "bold_impact": (
-                f"drawtext=textfile='{safe_title}':fontcolor=white:fontsize=108:fontfile='{font_path_safe}':x='(w-tw)/2':y='h*0.07':"
-                f"borderw=8:bordercolor=black@1.0:"
-                f"shadowcolor=black@0.8:shadowx=5:shadowy=5"
-            ),
-            "sticker_pop": (
-                f"drawtext=textfile='{safe_title}':fontcolor=0xFF69B4:fontsize=96:fontfile='{font_path_safe}':x='(w-tw)/2':y='h*0.09':"
-                f"borderw=7:bordercolor=white@0.95:"
-                f"shadowcolor=0xFF1493@0.5:shadowx=4:shadowy=4"
-            ),
-            "cinematic_title": (
-                f"drawtext=textfile='{safe_title}':fontcolor=0xFFD700:fontsize=80:fontfile='{font_path_safe}':x='(w-tw)/2':y='h*0.10':"
-                f"borderw=2:bordercolor=0xAA8800@0.8:"
-                f"shadowcolor=black@0.9:shadowx=3:shadowy=3"
-            ),
-        }
-
-        sub_filters = {
-            "bubble_title": (
-                f"drawtext=textfile='{safe_sub}':fontcolor=white:fontsize=52:fontfile='{font_path_safe}':x='(w-tw)/2':y='h*0.22':"
-                f"line_spacing=8:box=1:boxcolor=black@0.5:boxborderw=12:"
-                f"shadowcolor=black@0.8:shadowx=2:shadowy=2"
-            ),
-            "neon_glow": (
-                f"drawtext=textfile='{safe_sub}':fontcolor=white:fontsize=46:fontfile='{font_path_safe}':x='(w-tw)/2':y='h*0.23':"
-                f"line_spacing=8:borderw=3:bordercolor=0x8080FF@0.7:"
-                f"shadowcolor=0x4040FF@0.5:shadowx=2:shadowy=2"
-            ),
-            "handwriting": (
-                f"drawtext=textfile='{safe_sub}':fontcolor=0xFFFAF0:fontsize=44:fontfile='{font_path_safe}':x='(w-tw)/2':y='h*0.23':"
-                f"line_spacing=8:box=1:boxcolor=black@0.3:boxborderw=10:"
-                f"shadowcolor=black@0.6:shadowx=2:shadowy=2"
-            ),
-            "bold_impact": (
-                f"drawtext=textfile='{safe_sub}':fontcolor=yellow:fontsize=52:fontfile='{font_path_safe}':x='(w-tw)/2':y='h*0.23':"
-                f"line_spacing=8:borderw=4:bordercolor=black@0.9:"
-                f"shadowcolor=black@0.7:shadowx=3:shadowy=3"
-            ),
-            "sticker_pop": (
-                f"drawtext=textfile='{safe_sub}':fontcolor=white:fontsize=50:fontfile='{font_path_safe}':x='(w-tw)/2':y='h*0.24':"
-                f"line_spacing=8:box=1:boxcolor=0x008B5E@0.45:boxborderw=14:"
-                f"borderw=2:bordercolor=white@0.8:"
-                f"shadowcolor=black@0.5:shadowx=2:shadowy=2"
-            ),
-            "cinematic_title": (
-                f"drawtext=textfile='{safe_sub}':fontcolor=0xFFFAF0:fontsize=40:fontfile='{font_path_safe}':x='(w-tw)/2':y='h*0.22':"
-                f"line_spacing=10:borderw=1:bordercolor=0xAA8800@0.5:"
-                f"shadowcolor=black@0.7:shadowx=2:shadowy=2"
-            ),
-        }
-
-        filters = []
-        if style in title_filters:
-            filters.append(title_filters[style])
-        if subtitle_text and style in sub_filters:
-            filters.append(sub_filters[style])
-        filter_expr = ",".join(filters)
-
     # ── Xử lý các style dynamic TikTok ───────────────────────────────────────
-    elif style in ("tiktok_tag_banner", "tiktok_tag_banner_purple", "tiktok_tag_banner_pink", "tiktok_tag_banner_green", "tiktok_quote_card", "tiktok_floating_box"):
+    if style in ("tiktok_tag_banner", "tiktok_tag_banner_purple", "tiktok_tag_banner_pink", "tiktok_tag_banner_green", "tiktok_quote_card", "tiktok_floating_box"):
         # Tìm font Arial Bold trên hệ thống Windows, nếu không có dùng mặc định 'arial'
         font_path = "C:/Windows/Fonts/arialbd.ttf"
         if not os.path.exists(font_path):

@@ -88,6 +88,7 @@ def main():
     parser.add_argument("--title", type=str, default="Khám phá Việt Nam", help="Album main title text")
     parser.add_argument("--subtitle", type=str, default="Những hành trình tuyệt vời", help="Album subtitle text")
     parser.add_argument("--frame", type=str, default="", help="Path to custom Canva frame template")
+    parser.add_argument("--frame-id", type=str, default="", help="Learned frame template ID")
 
     args = parser.parse_args()
 
@@ -270,7 +271,8 @@ def _run_album_channel(args) -> None:
         title=args.title,
         subtitle=args.subtitle,
         creator_id=args.creator or "lan_anh",
-        canva_template_path=args.frame
+        canva_template_path=args.frame if args.frame else None,
+        frame_id=args.frame_id if args.frame_id else None,
     )
     
     # Save latest_run.json

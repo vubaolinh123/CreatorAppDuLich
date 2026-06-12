@@ -107,10 +107,11 @@ def compose_image(
     title: str = "Khám phá Việt Nam",
     subtitle: str = "Những hành trình tuyệt vời cùng Creator",
     canva_template_path: Optional[str] = None,
+    frame_id: Optional[str] = None,
 ) -> str:
     """
     Compose final image from background + Canva template + texts.
-    
+
     Args:
         bg_image_path: Travel stock image path.
         output_name: Base filename (no extension) to write to output/albums/.
@@ -118,11 +119,25 @@ def compose_image(
         title: Large text overlay.
         subtitle: Small description text overlay.
         canva_template_path: Path to PNG border template (optional).
+        frame_id: Learned frame template ID (overrides canva_template_path).
     """
     width, height, desc = FORMATS.get(format_name, FORMATS["feed_square"])
     output_path = OUTPUT_DIR / f"{output_name}_{format_name}.jpg"
-    
-    # 1. Load background image and resize/crop to fit dimensions
+
+    # ── 0. Resolve frame template ────────────────────────────────────────────
+    frame_analysis = None
+    if frame_id:
+        try:
+            from tools.db import frame_templates_col
+            frame_doc = frame_templates_col().find_one({"frame_id": frame_id})
+            if frame_doc and frame_doc.get("original_path"):
+                canva_template_path = frame_doc["original_path"]
+                frame_analysis = frame_doc.get("analysis")
+                print(f"[Composer] Using learned frame '{frame_doc.get('name', frame_id)}'")
+        except Exception as e:
+            print(f"[Composer] Error loading frame '{frame_id}': {e}")
+
+    # ── 1. Load background image and resize/crop to fit dimensions
     if bg_image_path and os.path.exists(bg_image_path):
         bg_img = Image.open(bg_image_path)
     else:
@@ -173,40 +188,51 @@ def compose_image(
     
     # 3. Draw Typography/Text overlays
     border = min(width, height) // 12
-    
+
+    # Use frame analysis text positioning if available
+    text_areas = {}
+    if frame_analysis:
+        header_texts = frame_analysis.get("header", {}).get("text_areas", [])
+        footer_texts = frame_analysis.get("footer", {}).get("text_areas", [])
+        for ta in header_texts + footer_texts:
+            text_areas[ta.get("type", "text")] = ta
+
     # Title Font Setup
     title_size = max(18, min(width, height) // 16)
     sub_size = max(12, min(width, height) // 28)
-    
+
     title_font = get_system_font(title_size)
     sub_font = get_system_font(sub_size)
-    
+
     # Center text coordinates inside top/bottom bars or overlay on center
     title_text = title.strip()
     sub_text = subtitle.strip()
-    
-    # Draw Title inside the top banner or center depending on size
-    # We will wrap or truncate text if it is too wide
+
     def draw_centered_text(d_draw, text, y_pos, font, fill_color):
         try:
-            # Pillow 10+ textlength/textbbox
             w = d_draw.textlength(text, font=font)
         except AttributeError:
-            # Fallback for older PIL
             w, _ = d_draw.textsize(text, font=font)
-            
         x_pos = (width - w) // 2
         d_draw.text((x_pos, y_pos), text, font=font, fill=fill_color)
-        
-    # Top banner position
-    title_y = border // 2 if border // 2 > 10 else 20
+
+    # Determine title Y from frame analysis or default
+    title_area = text_areas.get("title", {})
+    if title_area and "y" in title_area:
+        title_y = title_area["y"]
+    else:
+        title_y = border // 2 if border // 2 > 10 else 20
     draw_centered_text(draw, title_text, title_y, title_font, (255, 255, 255))
-    
-    # Bottom banner position
-    sub_y = height - border - sub_size // 2
+
+    # Subtitle Y
+    sub_area = text_areas.get("subtitle", {})
+    if sub_area and "y" in sub_area:
+        sub_y = sub_area["y"]
+    else:
+        sub_y = height - border - sub_size // 2
     draw_centered_text(draw, sub_text, sub_y, sub_font, (209, 213, 219))
-    
-    # Draw seeding tags/decorations (e.g. #dulich, etc.) at the very bottom
+
+    # Draw seeding tags/decorations at the very bottom
     tag_font = get_system_font(max(10, sub_size - 4))
     draw_centered_text(draw, "#seeding #travelvlog #vietnam", height - border // 2, tag_font, (129, 140, 248))
     

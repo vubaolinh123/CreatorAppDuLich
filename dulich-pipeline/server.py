@@ -292,6 +292,9 @@ class AssembleHandler(BaseHTTPRequestHandler):
             ant_key = data.get("anthropic_api_key", "")
             if ant_key:
                 os.environ["ANTHROPIC_API_KEY"] = ant_key
+            gemini_key = data.get("gemini_api_key", "")
+            if gemini_key:
+                os.environ["GEMINI_API_KEY"] = gemini_key
                 
             from tools.voice_generator import VoiceGenerator
             gen = VoiceGenerator(provider=provider)
@@ -343,7 +346,7 @@ class AssembleHandler(BaseHTTPRequestHandler):
         voice_id = fields.get("voice_id", "")
 
         # Inject API keys into environment if provided
-        for key_name in ["elevenlabs_api_key", "vbee_api_key", "openai_api_key", "anthropic_api_key"]:
+        for key_name in ["elevenlabs_api_key", "vbee_api_key", "openai_api_key", "anthropic_api_key", "gemini_api_key"]:
             val = fields.get(key_name, "")
             env_var = key_name.upper()
             if val:

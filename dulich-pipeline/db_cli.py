@@ -264,7 +264,7 @@ def main():
             voice_id = sys.argv[3]
             text = sys.argv[4]
             output_name = sys.argv[5] if len(sys.argv) > 5 else "preview_temp"
-            
+
             gen = VoiceGenerator(provider=provider)
             audio_path = gen.generate_voice(
                 text=text,
@@ -275,6 +275,104 @@ def main():
             print_result({"audio_path": audio_path})
         except Exception as e:
             print_result(f"Error in preview_voice: {e}", success=False)
+
+    # ── Frame Management ─────────────────────────────────────────────────────
+    elif action == "learn_frames":
+        if len(sys.argv) < 3:
+            print_result("Missing args: zip_path required.", success=False)
+        try:
+            from tools.frame_learner import learn_from_zip, learn_single_frame
+            from tools.vision_provider import VisionProvider
+            path = sys.argv[2]
+            creator_id = sys.argv[3] if len(sys.argv) > 3 else "system"
+
+            vision = VisionProvider.from_config()
+            path_lower = path.lower()
+
+            if path_lower.endswith(".zip"):
+                results = learn_from_zip(path, creator_id, vision)
+                print_result({
+                    "total": len(results),
+                    "frames": [{"frame_id": r["frame_id"], "name": r.get("name"), "width": r.get("width"), "height": r.get("height")} for r in results]
+                })
+            elif path_lower.endswith(".png"):
+                doc = learn_single_frame(path, creator_id, vision)
+                print_result({
+                    "frame_id": doc["frame_id"],
+                    "name": doc.get("name"),
+                    "width": doc.get("width"),
+                    "height": doc.get("height"),
+                    "compatible_formats": doc.get("compatible_formats", []),
+                })
+            else:
+                print_result(f"Unsupported file: {path} (only .zip and .png)", success=False)
+        except Exception as e:
+            import traceback; traceback.print_exc()
+            print_result(f"Error in learn_frames: {e}", success=False)
+
+    elif action == "list_frames":
+        try:
+            from tools.frame_learner import list_learned_frames
+            creator_id = ""
+            format_name = ""
+            # Parse optional --creator and --format args
+            if len(sys.argv) > 2:
+                for i in range(2, len(sys.argv) - 1):
+                    if sys.argv[i] == "--creator":
+                        creator_id = sys.argv[i + 1]
+                    elif sys.argv[i] == "--format":
+                        format_name = sys.argv[i + 1]
+
+            frames = list_learned_frames(
+                creator_id=creator_id if creator_id else None,
+                format_name=format_name if format_name else None,
+            )
+            # Serialize for JSON output
+            out = []
+            for f in frames:
+                out.append({
+                    "frame_id": f.get("frame_id"),
+                    "name": f.get("name"),
+                    "thumbnail_path": f.get("thumbnail_path"),
+                    "width": f.get("width"),
+                    "height": f.get("height"),
+                    "aspect_ratio": f.get("aspect_ratio"),
+                    "compatible_formats": f.get("compatible_formats", []),
+                    "style_tags": f.get("analysis", {}).get("style_tags", []),
+                    "color_palette": f.get("analysis", {}).get("color_palette", []),
+                    "usage_count": f.get("usage_count", 0),
+                    "uploaded_by": f.get("uploaded_by"),
+                    "uploaded_at": f.get("uploaded_at"),
+                })
+            print_result(out)
+        except Exception as e:
+            import traceback; traceback.print_exc()
+            print_result(f"Error in list_frames: {e}", success=False)
+
+    elif action == "analyze_frame":
+        if len(sys.argv) < 3:
+            print_result("Missing args: frame_path required.", success=False)
+        try:
+            from tools.frame_analyzer import analyze_frame
+            from tools.vision_provider import VisionProvider
+            frame_path = sys.argv[2]
+            vision = VisionProvider.from_config()
+            result = analyze_frame(frame_path, vision=vision)
+            print_result(result)
+        except Exception as e:
+            import traceback; traceback.print_exc()
+            print_result(f"Error in analyze_frame: {e}", success=False)
+
+    elif action == "delete_frame":
+        if len(sys.argv) < 3:
+            print_result("Missing args: frame_id required.", success=False)
+        try:
+            from tools.frame_learner import delete_frame
+            frame_id = sys.argv[2]
+            ok = delete_frame(frame_id)
+            print_result({"deleted": ok})
+        except Exception as e:
+            print_result(f"Error in delete_frame: {e}", success=False)
 
     else:
         print_result(f"Unknown action: {action}", success=False)
