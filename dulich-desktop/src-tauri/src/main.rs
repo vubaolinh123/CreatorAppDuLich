@@ -10,6 +10,7 @@ use commands::{
     select_folder, select_files, show_in_folder,
     select_single_file, generate_scene_plan, assemble_from_scenes, set_api_keys,
     preview_voice,
+    upload_canva_frames, list_learned_frames, analyze_single_frame, delete_learned_frame,
 };
 
 fn main() {

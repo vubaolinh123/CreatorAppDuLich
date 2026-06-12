@@ -92,7 +92,7 @@ pub fn save_project(name: String) -> Result<String, String> {
 }
 
 #[tauri::command]
-pub fn delete_project(name: String) -> Result<(), String> {
+pub fn delete_project(_name: String) -> Result<(), String> {
     Ok(())
 }
 

@@ -9,20 +9,6 @@ interface LogLine {
   text: string;
 }
 
-interface FrameTemplate {
-  frame_id: string;
-  name: string;
-  thumbnail_path: string;
-  width: number;
-  height: number;
-  aspect_ratio: string;
-  compatible_formats: string[];
-  style_tags: string[];
-  color_palette: string[];
-  usage_count: number;
-  uploaded_by: string;
-}
-
 const CREATORS = [
   { id: "lan_anh", name: "Lan Anh" },
   { id: "minh_tuan", name: "Minh Tuấn" },
@@ -54,6 +40,7 @@ export default function AlbumScreen() {
   const [canvaFrame, setCanvaFrame] = useState("");
   const [selectedFrameId, setSelectedFrameId] = useState<string>("auto");
   const [learnedFrames, setLearnedFrames] = useState<any[]>([]);
+  const [loadingFrames, setLoadingFrames] = useState(false);
 
   const [logs, setLogs] = useState<LogLine[]>([]);
   const [progress, setProgress] = useState(0);
@@ -63,6 +50,19 @@ export default function AlbumScreen() {
 
   const [errorMsg, setErrorMsg] = useState("");
   const logConsoleBottomRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const STORAGE_KEY = "dulich_learned_frames";
+
+  const isTauri = (): boolean =>
+    typeof window !== "undefined" && (window as any).__TAURI_INTERNALS__ !== undefined;
+
+  // ── Web-mode: load/save frames to localStorage ──
+  const getWebFrames = (): any[] => {
+    try { return JSON.parse(localStorage.getItem(STORAGE_KEY) || "[]"); } catch { return []; }
+  };
+  const saveWebFrames = (frames: any[]) => {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(frames));
+  };
 
   useEffect(() => {
     if (logConsoleBottomRef.current) {
@@ -78,17 +78,19 @@ export default function AlbumScreen() {
   }, [activeTab]);
 
   const loadLearnedFrames = async () => {
-    const isTauri = typeof window !== "undefined" && (window as any).__TAURI_INTERNALS__ !== undefined;
-    if (!isTauri) return;
     try {
       setLoadingFrames(true);
-      const resultStr = await invoke<string>("list_learned_frames", {
-        creatorId: "",
-        formatName: "",
-      });
-      const parsed = JSON.parse(resultStr);
-      if (parsed.success && Array.isArray(parsed.data)) {
-        setLearnedFrames(parsed.data);
+      if (isTauri()) {
+        const resultStr = await invoke<string>("list_learned_frames", {
+          creatorId: "",
+          formatName: "",
+        });
+        const parsed = JSON.parse(resultStr);
+        if (parsed.success && Array.isArray(parsed.data)) {
+          setLearnedFrames(parsed.data);
+        }
+      } else {
+        setLearnedFrames(getWebFrames());
       }
     } catch (e) {
       console.warn("Could not load learned frames:", e);
@@ -97,24 +99,64 @@ export default function AlbumScreen() {
     }
   };
 
+  const handleFileSelected = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    e.target.value = "";
+
+    try {
+      const dataUrl = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result as string);
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+      });
+
+      const newFrame: any = {
+        frame_id: "web_" + Date.now(),
+        name: file.name.replace(/\.[^/.]+$/, ""),
+        thumbnail_path: dataUrl,
+        width: 1080,
+        height: 1920,
+        aspect_ratio: "9:16",
+        compatible_formats: Object.keys(FORMAT_LABELS),
+        style_tags: ["web-upload"],
+        color_palette: [],
+        usage_count: 0,
+        uploaded_by: selectedCreator,
+      };
+
+      const frames = [...getWebFrames(), newFrame];
+      saveWebFrames(frames);
+      setLearnedFrames(frames);
+      alert(`Đã thêm khung ảnh "${file.name}" thành công!`);
+    } catch (err: any) {
+      alert("Lỗi đọc file: " + err.message);
+    }
+  };
+
   const handleUploadFrames = async () => {
     try {
-      const { invoke } = await import("@tauri-apps/api/core");
-      const selected = await invoke<string | null>("select_single_file", {
-        allowedExtensions: ["zip", "png"],
-      });
-      if (!selected) return;
+      if (isTauri()) {
+        const selected = await invoke<string | null>("select_single_file", {
+          allowedExtensions: ["zip", "png"],
+        });
+        if (!selected) return;
 
-      const resultStr = await invoke<string>("upload_canva_frames", {
-        zipPath: selected,
-        creatorId: selectedCreator,
-      });
-      const parsed = JSON.parse(resultStr);
-      if (parsed.success) {
-        await loadLearnedFrames();
-        alert(`Đã học ${parsed.data.total || 1} khung ảnh thành công!`);
+        const resultStr = await invoke<string>("upload_canva_frames", {
+          zipPath: selected,
+          creatorId: selectedCreator,
+        });
+        const parsed = JSON.parse(resultStr);
+        if (parsed.success) {
+          await loadLearnedFrames();
+          alert(`Đã học ${parsed.data.total || 1} khung ảnh thành công!`);
+        } else {
+          alert("Lỗi: " + (parsed.data || "Không rõ"));
+        }
       } else {
-        alert("Lỗi: " + (parsed.data || "Không rõ"));
+        // Web mode: use file input
+        fileInputRef.current?.click();
       }
     } catch (e: any) {
       alert("Lỗi upload: " + e.message);
@@ -123,19 +165,16 @@ export default function AlbumScreen() {
 
   const handleDeleteFrame = async (frameId: string) => {
     try {
-      const { invoke } = await import("@tauri-apps/api/core");
-      await invoke<string>("delete_learned_frame", { frameId });
+      if (isTauri()) {
+        await invoke<string>("delete_learned_frame", { frameId });
+      } else {
+        const frames = getWebFrames().filter((f) => f.frame_id !== frameId);
+        saveWebFrames(frames);
+      }
       setLearnedFrames((prev) => prev.filter((f) => f.frame_id !== frameId));
     } catch (e: any) {
       alert("Lỗi xóa: " + e.message);
     }
-  };
-
-  const getFrameThumbUrl = (frame: FrameTemplate): string => {
-    if (frame.thumbnail_path) {
-      return convertFileSrc(frame.thumbnail_path);
-    }
-    return "";
   };
 
   const runAlbumPipeline = async () => {
@@ -150,9 +189,7 @@ export default function AlbumScreen() {
     setStatusText("Đang khởi động pipeline...");
     setErrorMsg("");
 
-    const isTauri = typeof window !== "undefined" && (window as any).__TAURI_INTERNALS__ !== undefined;
-
-    if (isTauri) {
+    if (isTauri()) {
       try {
         const unlisten = await listen<any>("pipeline-log", (event) => {
           const logPayload = event.payload;
@@ -166,7 +203,6 @@ export default function AlbumScreen() {
             }
           ]);
 
-          // Update progress bar from python logs
           const text = logPayload.text;
           if (text.includes("tìm thấy ảnh nền")) {
             setProgress(25);
@@ -175,7 +211,6 @@ export default function AlbumScreen() {
             setProgress(40);
             setStatusText("Đang vẽ layout Pillow seeding...");
           } else if (text.includes("Đã tạo format")) {
-            // Extrapolate progress from generated format count
             setProgress((prev) => Math.min(90, prev + 5));
             setStatusText(`Đang xuất ảnh: ${text.split("'")[1] || ""}`);
           } else if (text.includes("Job tạo Album seeding hoàn tất")) {
@@ -212,45 +247,172 @@ export default function AlbumScreen() {
         setErrorMsg(err.toString());
       }
     } else {
-      // Mock mode
-      const mockFormats = [
-        "story", "feed_square", "feed_portrait", "reels_cover", "youtube_thumb",
-        "facebook_cover", "pinterest", "carousel_slide", "blog_header", "seeding_card"
-      ];
-      
+      // ── Mock mode: generate canvas previews using selected frame ──
+      const formatList = Object.keys(FORMAT_LABELS);
+      const selectedFrame = selectedFrameId && selectedFrameId !== "auto"
+        ? learnedFrames.find(f => f.frame_id === selectedFrameId) || null
+        : null;
+
       const mockLogLines = [
-        "[AlbumPipeline] Khởi động Image Pipeline cho chủ đề: " + topic,
-        "[Pexels] Tìm kiếm ảnh stock cho từ khóa: " + topic,
-        "[Pexels] ✓ Tìm thấy ảnh nền du lịch từ stock",
-        "[Composer] Đang thiết lập kích thước vẽ Pillow...",
-        ...mockFormats.map(fmt => `[Composer] ✓ Đã tạo format '${fmt}': D:\\ProjectWeb\\DuLichAppWeb\\dulich-pipeline\\output\\albums\\album_mock_${fmt}.jpg`),
+        `[AlbumPipeline] Khởi động Image Pipeline cho chủ đề: ${topic}`,
+        `[Pexels] ✓ Tìm thấy ảnh nền du lịch từ stock`,
+        `[Composer] Thiết lập kích thước vẽ...`,
+        ...formatList.map(fmt => `[Composer] ✓ Đã tạo format '${fmt}'`),
         "[AlbumPipeline] ✓ Job tạo Album seeding hoàn tất thành công!"
       ];
 
-      for (let i = 0; i < mockLogLines.length; i++) {
-        await new Promise((r) => setTimeout(r, 600));
+      const generatedImages: Record<string, string> = {};
+
+      for (let i = 0; i < formatList.length; i++) {
+        const fmt = formatList[i];
         const nowStr = new Date().toLocaleTimeString();
         setLogs((prev) => [
           ...prev,
           {
             id: Math.random().toString(),
             time: nowStr,
-            type: mockLogLines[i].includes("Lỗi") ? "error" : mockLogLines[i].includes("✓") ? "success" : "info",
-            text: mockLogLines[i],
+            type: i < 2 ? "info" : "success",
+            text: mockLogLines[Math.min(i, mockLogLines.length - 1)],
           }
         ]);
-        setProgress(Math.floor(((i + 1) / mockLogLines.length) * 100));
-        setStatusText(mockLogLines[i]);
+        setProgress(Math.floor(((i + 1) / formatList.length) * 100));
+        setStatusText(`Đang tạo ${FORMAT_LABELS[fmt] || fmt}...`);
+
+        // Generate canvas preview
+        generatedImages[fmt] = await generateFormatPreview(fmt, selectedFrame, title, subtitle, topic);
+        await new Promise((r) => setTimeout(r, 300));
       }
 
-      // Generate mock paths
-      const mockImages: Record<string, string> = {};
-      mockFormats.forEach(fmt => {
-        mockImages[fmt] = `mock_placeholder`; // Handled by display helper
-      });
-      setResultImages(mockImages);
+      setResultImages(generatedImages);
       setStep(3);
     }
+  };
+
+  // ── Generate a canvas-based preview image for each format ──
+  const generateFormatPreview = async (
+    format: string,
+    frame: any | null,
+    title: string,
+    subtitle: string,
+    topic: string
+  ): Promise<string> => {
+    const dims: Record<string, [number, number]> = {
+      story: [540, 960],
+      feed_square: [540, 540],
+      feed_portrait: [540, 675],
+      reels_cover: [540, 960],
+      youtube_thumb: [640, 360],
+      facebook_cover: [540, 206],
+      pinterest: [500, 750],
+      carousel_slide: [540, 540],
+      blog_header: [600, 315],
+      seeding_card: [400, 400],
+    };
+
+    const [w, h] = dims[format] || [540, 540];
+    const canvas = document.createElement("canvas");
+    canvas.width = w;
+    canvas.height = h;
+    const ctx = canvas.getContext("2d")!;
+
+    // Background
+    if (frame?.thumbnail_path?.startsWith("data:")) {
+      const img = await loadImage(frame.thumbnail_path);
+      ctx.drawImage(img, 0, 0, w, h);
+      ctx.fillStyle = "rgba(0,0,0,0.35)";
+      ctx.fillRect(0, 0, w, h);
+    } else {
+      const grad = ctx.createLinearGradient(0, 0, w, h);
+      grad.addColorStop(0, "#1e1b4b");
+      grad.addColorStop(0.5, "#312e81");
+      grad.addColorStop(1, "#831843");
+      ctx.fillStyle = grad;
+      ctx.fillRect(0, 0, w, h);
+
+      // Subtle pattern
+      ctx.fillStyle = "rgba(255,255,255,0.03)";
+      for (let x = 0; x < w; x += 20) {
+        for (let y = 0; y < h; y += 20) {
+          if ((x + y) % 40 === 0) ctx.fillRect(x, y, 8, 8);
+        }
+      }
+    }
+
+    // Overlay format label and title
+    const isWide = w > h;
+    const fontSize = Math.min(w, h) * (isWide ? 0.12 : 0.07);
+
+    // Format badge
+    ctx.fillStyle = "rgba(124, 58, 237, 0.85)";
+    ctx.beginPath();
+    const badgeSize = Math.min(w * 0.35, 140);
+    ctx.roundRect(10, 10, badgeSize, 22, 6);
+    ctx.fill();
+    ctx.fillStyle = "#ffffff";
+    ctx.font = `bold 11px sans-serif`;
+    ctx.textAlign = "center";
+    ctx.fillText((FORMAT_LABELS[format] || format).toUpperCase(), 10 + badgeSize / 2, 26);
+
+    // Title
+    ctx.fillStyle = "#ffffff";
+    ctx.font = `bold ${fontSize}px sans-serif`;
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+
+    const lines = wrapText(ctx, title, w * 0.85);
+    const lineHeight = fontSize * 1.3;
+    const startY = h / 2 - (lines.length - 1) * lineHeight / 2 - 10;
+
+    lines.forEach((line, i) => {
+      ctx.fillText(line, w / 2, startY + i * lineHeight);
+    });
+
+    // Subtitle
+    if (subtitle) {
+      const subSize = Math.max(11, fontSize * 0.55);
+      ctx.fillStyle = "rgba(255,255,255,0.8)";
+      ctx.font = `${subSize}px sans-serif`;
+      ctx.fillText(subtitle, w / 2, startY + lines.length * lineHeight + 8);
+    }
+
+    // Topic tag
+    ctx.fillStyle = "rgba(255,255,255,0.12)";
+    ctx.beginPath();
+    ctx.roundRect(w / 2 - 50, h - 28, 100, 18, 9);
+    ctx.fill();
+    ctx.fillStyle = "rgba(255,255,255,0.5)";
+    ctx.font = "9px sans-serif";
+    ctx.textAlign = "center";
+    ctx.fillText(`#${topic.split(" ")[0]}`, w / 2, h - 16);
+
+    return canvas.toDataURL("image/png");
+  };
+
+  const loadImage = (src: string): Promise<HTMLImageElement> => {
+    return new Promise((resolve, reject) => {
+      const img = new Image();
+      img.onload = () => resolve(img);
+      img.onerror = reject;
+      img.src = src;
+    });
+  };
+
+  const wrapText = (ctx: CanvasRenderingContext2D, text: string, maxWidth: number): string[] => {
+    if (ctx.measureText(text).width <= maxWidth) return [text];
+    const words = text.split(" ");
+    const lines: string[] = [];
+    let current = "";
+    for (const word of words) {
+      const test = current ? current + " " + word : word;
+      if (ctx.measureText(test).width > maxWidth && current) {
+        lines.push(current);
+        current = word;
+      } else {
+        current = test;
+      }
+    }
+    if (current) lines.push(current);
+    return lines.length ? lines : [text];
   };
 
   const handleOpenFolder = async () => {
@@ -275,7 +437,7 @@ export default function AlbumScreen() {
     <div style={styles.container}>
       <header style={styles.header}>
         <h1 style={styles.title}>🖼️ Tạo Album Ảnh Seeding</h1>
-        <p style={styles.subtitle}>Sản xuất hàng loạt 10 kích thước ảnh chuẩn để seeding lên Facebook, Instagram, TikTok, Reels, YouTube và Pinterest.</p>
+        <p style={styles.subtitle}>Tạo 10 kích thước ảnh chuẩn seeding (mô phỏng, không cần AI). Upload khung ảnh của bạn và xem kết quả ngay trên trình duyệt.</p>
       </header>
 
       {errorMsg && <div style={styles.errorAlert}>⚠ {errorMsg}</div>}
@@ -313,7 +475,7 @@ export default function AlbumScreen() {
 
           <div style={styles.formGrid}>
             <div style={styles.formGroup}>
-              <label style={styles.label}>🗺️ Chủ đề hình ảnh (Từ khoá để AI tìm ảnh nền)</label>
+              <label style={styles.label}>🗺️ Chủ đề hình ảnh (Từ khoá để tạo ảnh mô phỏng)</label>
               <input
                 type="text"
                 value={topic}
@@ -321,7 +483,7 @@ export default function AlbumScreen() {
                 placeholder="VD: Phú Quốc resort, cafe Đà Lạt view đẹp, món ăn Hà Nội..."
                 style={styles.input}
               />
-              <small style={styles.hint}>AI sẽ dùng từ khóa này để tìm kiếm ảnh stock chất lượng cao.</small>
+              <small style={styles.hint}>Dùng từ khóa để gắn hashtag và mô phỏng ảnh seeding.</small>
             </div>
 
             <div style={styles.formRow}>
@@ -369,8 +531,8 @@ export default function AlbumScreen() {
                   onChange={(e) => setSelectedFrameId(e.target.value)}
                   style={{ ...styles.select, flex: 1 }}
                 >
-                  <option value="auto">🤖 AI Tự Chọn Khung (Khuyên dùng)</option>
-                  <option value="">🔲 Khung mặc định (Mock)</option>
+                  <option value="auto">🤖 AI Tự Chọn Khung</option>
+                  <option value="">🔲 Khung mặc định (Chuyển màu tím)</option>
                   {learnedFrames.map((f) => (
                     <option key={f.frame_id} value={f.frame_id}>
                       🖼️ {f.name} ({f.width}x{f.height})
@@ -383,9 +545,9 @@ export default function AlbumScreen() {
                       const frame = learnedFrames.find(f => f.frame_id === selectedFrameId);
                       return frame ? (
                         <div>
-                          <img src={convertFileSrc(frame.thumbnail_path)} alt={frame.name} style={styles.frameThumb} />
+                          <img src={frame.thumbnail_path?.startsWith("data:") ? frame.thumbnail_path : convertFileSrc(frame.thumbnail_path)} alt={frame.name} style={styles.frameThumb} />
                           <div style={styles.frameTags}>
-                            {frame.style_tags?.map(t => <span key={t} style={styles.tag}>#{t}</span>)}
+                            {frame.style_tags?.map((t: string) => <span key={t} style={styles.tag}>#{t}</span>)}
                           </div>
                         </div>
                       ) : null;
@@ -401,7 +563,7 @@ export default function AlbumScreen() {
                 type="text"
                 value={canvaFrame}
                 onChange={(e) => setCanvaFrame(e.target.value)}
-                placeholder="VD: D:\Design\frame_dulich.png (Bỏ trống để dùng khung AI chọn)"
+                placeholder="Đường dẫn frame PNG (Bỏ trống để dùng khung đã chọn ở trên)"
                 style={styles.input}
               />
             </div>
@@ -418,12 +580,19 @@ export default function AlbumScreen() {
         <div style={styles.glassPanel}>
           <h2 style={styles.panelTitle}>🎨 Quản lý Khung Ảnh Canva</h2>
           <p style={{ ...styles.hint, marginBottom: 16 }}>
-            Upload file ZIP chứa nhiều PNG khung Canva hoặc từng file PNG riêng lẻ. AI sẽ tự động phân tích và lưu làm template.
+            Upload file PNG để làm khung nền cho ảnh seeding. (Hiện tại đang chạy chế độ mô phỏng, chưa có AI.)
           </p>
 
           <button onClick={handleUploadFrames} style={styles.generateBtn}>
             📤 Upload Khung Ảnh (ZIP/PNG)
           </button>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".zip,.png,.jpg,.jpeg"
+            style={{ display: "none" }}
+            onChange={handleFileSelected}
+          />
 
           <div style={{ height: 20 }} />
 
@@ -433,8 +602,8 @@ export default function AlbumScreen() {
             </div>
           ) : learnedFrames.length === 0 ? (
             <div style={{ textAlign: "center", padding: 40, color: "#6b7280" }}>
-              <p>Chưa có khung ảnh nào được học.</p>
-              <p style={{ fontSize: 12 }}>Upload file ZIP chứa PNG khung Canva để bắt đầu.</p>
+              <p>Chưa có khung ảnh nào.</p>
+              <p style={{ fontSize: 12 }}>Upload file PNG để làm khung nền ảnh seeding.</p>
             </div>
           ) : (
             <div style={styles.frameGrid}>
@@ -443,7 +612,7 @@ export default function AlbumScreen() {
                   <div style={styles.frameCardPreview}>
                     {frame.thumbnail_path ? (
                       <img
-                        src={convertFileSrc(frame.thumbnail_path)}
+                        src={frame.thumbnail_path?.startsWith("data:") ? frame.thumbnail_path : convertFileSrc(frame.thumbnail_path)}
                         alt={frame.name}
                         style={styles.frameCardThumb}
                       />
@@ -455,7 +624,7 @@ export default function AlbumScreen() {
                     <span style={styles.frameCardName}>{frame.name}</span>
                     <span style={styles.frameCardDims}>{frame.width}x{frame.height}</span>
                     <div style={styles.frameCardTags}>
-                      {frame.style_tags?.slice(0, 3).map(t => (
+                      {frame.style_tags?.slice(0, 3).map((t: string) => (
                         <span key={t} style={styles.tag}>#{t}</span>
                       ))}
                     </div>
@@ -522,9 +691,9 @@ export default function AlbumScreen() {
 
           <div style={styles.galleryGrid}>
             {Object.entries(resultImages).map(([format, path]) => {
-              // Create dynamic gradient placeholders for mock/empty display
-              const isMock = path === "mock_placeholder" || path.includes("album_mock_");
-              const imageUrl = !isMock ? convertFileSrc(path) : null;
+              const isDataUrl = typeof path === "string" && path.startsWith("data:");
+              const isMock = !isDataUrl && (path === "mock_placeholder" || path.includes("album_mock_"));
+              const imageUrl = isDataUrl ? path : (!isMock ? convertFileSrc(path) : null);
               return (
                 <div key={format} style={styles.galleryCard}>
                   <div
@@ -549,7 +718,7 @@ export default function AlbumScreen() {
                   </div>
                   <div style={styles.cardInfo}>
                     <span style={styles.cardTitle}>{FORMAT_LABELS[format] || format}</span>
-                    <span style={styles.cardPath}>{isMock ? "Generated mock_stock.jpg" : path.split("\\").pop()}</span>
+                    <span style={styles.cardPath}>{isDataUrl ? "Canvas preview" : isMock ? "Generated mock" : path.split("\\").pop()}</span>
                   </div>
                 </div>
               );
@@ -566,20 +735,25 @@ export default function AlbumScreen() {
             <h3 style={styles.modalTitle}>{FORMAT_LABELS[zoomImage] || zoomImage}</h3>
             
             <div style={styles.modalImagePlaceholder}>
-              {(!resultImages[zoomImage] || resultImages[zoomImage] === "mock_placeholder" || resultImages[zoomImage].includes("album_mock_")) ? (
-                <div style={styles.modalMockCard}>
-                  <span style={styles.modalMockIcon}>🌴</span>
-                  <h1 style={styles.modalMockTitle}>{title}</h1>
-                  <p style={styles.modalMockSub}>{subtitle}</p>
-                  <span style={styles.modalMockHash}>#seeding #travel #vietnam</span>
-                </div>
-              ) : (
-                <img
-                  src={convertFileSrc(resultImages[zoomImage])}
-                  alt={zoomImage}
-                  style={styles.modalImage}
-                />
-              )}
+              {(() => {
+                const imgPath = resultImages[zoomImage];
+                const isDataUrl = imgPath?.startsWith("data:");
+                const isMock = !isDataUrl && (!imgPath || imgPath === "mock_placeholder" || imgPath.includes("album_mock_"));
+                return isMock ? (
+                  <div style={styles.modalMockCard}>
+                    <span style={styles.modalMockIcon}>🌴</span>
+                    <h1 style={styles.modalMockTitle}>{title}</h1>
+                    <p style={styles.modalMockSub}>{subtitle}</p>
+                    <span style={styles.modalMockHash}>#seeding #travel #vietnam</span>
+                  </div>
+                ) : (
+                  <img
+                    src={isDataUrl ? imgPath : convertFileSrc(imgPath)}
+                    alt={zoomImage}
+                    style={styles.modalImage}
+                  />
+                );
+              })()}
             </div>
           </div>
         </div>
