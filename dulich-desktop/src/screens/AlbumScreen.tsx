@@ -30,6 +30,32 @@ const FORMAT_LABELS: Record<string, string> = {
   seeding_card: "Seeding Card (800x800)",
 };
 
+// ── TikTok Cute Frame Themes ──────────────────────────────────────────
+interface FrameTheme {
+  id: string;
+  name: string;
+  emoji: string;
+  gradient: string[];
+  cornerColor: string;
+  accentColor: string;
+  desc: string;
+}
+
+const FRAME_THEMES: FrameTheme[] = [
+  { id: "cute_pastel", name: "Cute Pastel", emoji: "🌸", gradient: ["#fce4ec", "#f8bbd0", "#f48fb1"], cornerColor: "#ec407a", accentColor: "#f06292", desc: "Hồng pastel dễ thương, góc trái tim" },
+  { id: "kawaii_star", name: "Kawaii Star", emoji: "⭐", gradient: ["#fff9c4", "#fff176", "#ffd54f"], cornerColor: "#ffb300", accentColor: "#ffca28", desc: "Sao vàng lấp lánh, tươi sáng" },
+  { id: "ribbon_gold", name: "Ribbon Gold", emoji: "🎀", gradient: ["#fff8e1", "#ffecb3", "#ffe082"], cornerColor: "#ff8f00", accentColor: "#ffa726", desc: "Ruy băng vàng sang trọng" },
+  { id: "neon_glow", name: "Neon Glow", emoji: "💜", gradient: ["#1a0033", "#2d0054", "#4a0072"], cornerColor: "#e040fb", accentColor: "#7c4dff", desc: "Neon tím hồng, vibe hiện đại" },
+  { id: "vintage_film", name: "Vintage Film", emoji: "📽️", gradient: ["#3e2723", "#4e342e", "#5d4037"], cornerColor: "#8d6e63", accentColor: "#a1887f", desc: "Phim cổ điển, góc răng cưa" },
+  { id: "polaroid", name: "Polaroid Classic", emoji: "📸", gradient: ["#ffffff", "#f5f5f5", "#eeeeee"], cornerColor: "#9e9e9e", accentColor: "#bdbdbd", desc: "Trắng tinh, bo góc như ảnh Polaroid" },
+  { id: "floral_dream", name: "Floral Dream", emoji: "🌷", gradient: ["#fce4ec", "#e8eaf6", "#f3e5f5"], cornerColor: "#ab47bc", accentColor: "#ce93d8", desc: "Hoa tím mộng mơ, lãng mạn" },
+  { id: "minimal_line", name: "Minimal Line", emoji: "✨", gradient: ["#fafafa", "#f5f5f5", "#e0e0e0"], cornerColor: "#424242", accentColor: "#616161", desc: "Đường kẻ thanh mảnh tối giản" },
+  { id: "glitter_sparkle", name: "Glitter Sparkle", emoji: "💎", gradient: ["#e8eaf6", "#c5cae9", "#9fa8da"], cornerColor: "#5c6bc0", accentColor: "#7986cb", desc: "Kim cương lấp lánh, glam" },
+  { id: "ocean_breeze", name: "Ocean Breeze", emoji: "🌊", gradient: ["#e0f7fa", "#b2ebf2", "#80deea"], cornerColor: "#00acc1", accentColor: "#26c6da", desc: "Biển xanh mát mẻ, góc sóng" },
+  { id: "sunset_warm", name: "Sunset Warm", emoji: "🌅", gradient: ["#fff3e0", "#ffccbc", "#ffab91"], cornerColor: "#e64a19", accentColor: "#ff7043", desc: "Cam đỏ hoàng hôn ấm áp" },
+  { id: "candy_pop", name: "Candy Pop", emoji: "🍬", gradient: ["#fce4ec", "#e1f5fe", "#fff9c4"], cornerColor: "#e91e63", accentColor: "#2196f3", desc: "Kẹo ngọt nhiều màu, nổi bật" },
+];
+
 export default function AlbumScreen() {
   const [activeTab, setActiveTab] = useState<"create" | "manage">("create");
   const [step, setStep] = useState<1 | 2 | 3>(1); // 1: Input, 2: Running, 3: Result
@@ -39,6 +65,7 @@ export default function AlbumScreen() {
   const [selectedCreator, setSelectedCreator] = useState("lan_anh");
   const [canvaFrame, setCanvaFrame] = useState("");
   const [selectedFrameId, setSelectedFrameId] = useState<string>("auto");
+  const [selectedTheme, setSelectedTheme] = useState<string>("cute_pastel");
   const [learnedFrames, setLearnedFrames] = useState<any[]>([]);
   const [loadingFrames, setLoadingFrames] = useState(false);
 
@@ -279,7 +306,7 @@ export default function AlbumScreen() {
         setStatusText(`Đang tạo ${FORMAT_LABELS[fmt] || fmt}...`);
 
         // Generate canvas preview
-        generatedImages[fmt] = await generateFormatPreview(fmt, selectedFrame, title, subtitle, topic);
+        generatedImages[fmt] = await generateFormatPreview(fmt, selectedFrame, title, subtitle, topic, selectedTheme);
         await new Promise((r) => setTimeout(r, 300));
       }
 
@@ -294,7 +321,8 @@ export default function AlbumScreen() {
     frame: any | null,
     title: string,
     subtitle: string,
-    topic: string
+    topic: string,
+    themeId: string
   ): Promise<string> => {
     const dims: Record<string, [number, number]> = {
       story: [540, 960],
@@ -315,51 +343,103 @@ export default function AlbumScreen() {
     canvas.height = h;
     const ctx = canvas.getContext("2d")!;
 
-    // Background
+    const theme = FRAME_THEMES.find(t => t.id === themeId) || FRAME_THEMES[0];
+    const cornerSize = Math.min(w, h) * 0.12;
+    const borderWidth = Math.max(3, Math.min(w, h) * 0.012);
+
+    // ── Background ──
     if (frame?.thumbnail_path?.startsWith("data:")) {
       const img = await loadImage(frame.thumbnail_path);
       ctx.drawImage(img, 0, 0, w, h);
-      ctx.fillStyle = "rgba(0,0,0,0.35)";
+      ctx.fillStyle = "rgba(0,0,0,0.25)";
       ctx.fillRect(0, 0, w, h);
     } else {
       const grad = ctx.createLinearGradient(0, 0, w, h);
-      grad.addColorStop(0, "#1e1b4b");
-      grad.addColorStop(0.5, "#312e81");
-      grad.addColorStop(1, "#831843");
+      grad.addColorStop(0, theme.gradient[0]);
+      grad.addColorStop(0.5, theme.gradient[1]);
+      grad.addColorStop(1, theme.gradient[2]);
       ctx.fillStyle = grad;
       ctx.fillRect(0, 0, w, h);
-
-      // Subtle pattern
-      ctx.fillStyle = "rgba(255,255,255,0.03)";
-      for (let x = 0; x < w; x += 20) {
-        for (let y = 0; y < h; y += 20) {
-          if ((x + y) % 40 === 0) ctx.fillRect(x, y, 8, 8);
-        }
-      }
     }
 
-    // Overlay format label and title
-    const isWide = w > h;
-    const fontSize = Math.min(w, h) * (isWide ? 0.12 : 0.07);
+    // ── Draw corner decorations ──
+    const corners = [
+      { x: 0, y: 0, sx: 1, sy: 1 },   // top-left
+      { x: w, y: 0, sx: -1, sy: 1 },  // top-right
+      { x: 0, y: h, sx: 1, sy: -1 },  // bottom-left
+      { x: w, y: h, sx: -1, sy: -1 }, // bottom-right
+    ];
 
-    // Format badge
-    ctx.fillStyle = "rgba(124, 58, 237, 0.85)";
+    ctx.save();
+    for (const c of corners) {
+      ctx.save();
+      ctx.translate(c.x, c.y);
+      ctx.scale(c.sx, c.sy);
+      drawCornerDecoration(ctx, cornerSize, theme, borderWidth);
+      ctx.restore();
+    }
+    ctx.restore();
+
+    // ── Border lines between corners ──
+    ctx.strokeStyle = theme.cornerColor;
+    ctx.lineWidth = borderWidth;
+    ctx.globalAlpha = 0.5;
+
+    const inset = cornerSize * 0.5;
+    ctx.beginPath();
+    ctx.moveTo(inset, borderWidth / 2);
+    ctx.lineTo(w - inset, borderWidth / 2);
+    ctx.stroke();
+
+    ctx.beginPath();
+    ctx.moveTo(inset, h - borderWidth / 2);
+    ctx.lineTo(w - inset, h - borderWidth / 2);
+    ctx.stroke();
+
+    ctx.beginPath();
+    ctx.moveTo(borderWidth / 2, inset);
+    ctx.lineTo(borderWidth / 2, h - inset);
+    ctx.stroke();
+
+    ctx.beginPath();
+    ctx.moveTo(w - borderWidth / 2, inset);
+    ctx.lineTo(w - borderWidth / 2, h - inset);
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+
+    // ── Inner glow (pastel themes only) ──
+    if (["cute_pastel", "kawaii_star", "floral_dream", "candy_pop"].includes(theme.id)) {
+      const glow = ctx.createRadialGradient(w / 2, h / 2, 0, w / 2, h / 2, Math.max(w, h) * 0.6);
+      glow.addColorStop(0, "rgba(255,255,255,0.12)");
+      glow.addColorStop(1, "rgba(255,255,255,0)");
+      ctx.fillStyle = glow;
+      ctx.fillRect(0, 0, w, h);
+    }
+
+    // ── Format badge ──
+    ctx.fillStyle = theme.cornerColor + "CC";
     ctx.beginPath();
     const badgeSize = Math.min(w * 0.35, 140);
     ctx.roundRect(10, 10, badgeSize, 22, 6);
     ctx.fill();
-    ctx.fillStyle = "#ffffff";
+    ctx.fillStyle = getTextColor(theme.cornerColor);
     ctx.font = `bold 11px sans-serif`;
     ctx.textAlign = "center";
     ctx.fillText((FORMAT_LABELS[format] || format).toUpperCase(), 10 + badgeSize / 2, 26);
 
-    // Title
-    ctx.fillStyle = "#ffffff";
+    // ── Title ──
+    const textColor = isLightTheme(theme) ? "#1a1a2e" : "#ffffff";
+    const subColor = isLightTheme(theme) ? "rgba(0,0,0,0.6)" : "rgba(255,255,255,0.8)";
+
+    const isWide = w > h;
+    const fontSize = Math.min(w, h) * (isWide ? 0.12 : 0.07);
+
+    ctx.fillStyle = textColor;
     ctx.font = `bold ${fontSize}px sans-serif`;
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
 
-    const lines = wrapText(ctx, title, w * 0.85);
+    const lines = wrapText(ctx, title, w * 0.8);
     const lineHeight = fontSize * 1.3;
     const startY = h / 2 - (lines.length - 1) * lineHeight / 2 - 10;
 
@@ -367,25 +447,348 @@ export default function AlbumScreen() {
       ctx.fillText(line, w / 2, startY + i * lineHeight);
     });
 
-    // Subtitle
+    // ── Subtitle ──
     if (subtitle) {
       const subSize = Math.max(11, fontSize * 0.55);
-      ctx.fillStyle = "rgba(255,255,255,0.8)";
+      ctx.fillStyle = subColor;
       ctx.font = `${subSize}px sans-serif`;
       ctx.fillText(subtitle, w / 2, startY + lines.length * lineHeight + 8);
     }
 
-    // Topic tag
-    ctx.fillStyle = "rgba(255,255,255,0.12)";
+    // ── Theme emoji watermark ──
+    ctx.globalAlpha = 0.2;
+    ctx.font = `${cornerSize * 0.6}px sans-serif`;
+    ctx.textAlign = "center";
+    ctx.fillText(theme.emoji, w / 2, h / 2);
+    ctx.globalAlpha = 1;
+
+    // ── Topic tag ──
+    const tagBg = theme.cornerColor + "30";
+    ctx.fillStyle = tagBg;
     ctx.beginPath();
     ctx.roundRect(w / 2 - 50, h - 28, 100, 18, 9);
     ctx.fill();
-    ctx.fillStyle = "rgba(255,255,255,0.5)";
+    ctx.fillStyle = theme.cornerColor;
     ctx.font = "9px sans-serif";
     ctx.textAlign = "center";
     ctx.fillText(`#${topic.split(" ")[0]}`, w / 2, h - 16);
 
     return canvas.toDataURL("image/png");
+  };
+
+  // ── Draw corner decoration based on theme ──
+  const drawCornerDecoration = (
+    ctx: CanvasRenderingContext2D,
+    size: number,
+    theme: FrameTheme,
+    bw: number
+  ) => {
+    ctx.save();
+
+    switch (theme.id) {
+      case "cute_pastel": {
+        // Heart corner
+        const hs = size * 0.5;
+        ctx.fillStyle = theme.cornerColor + "80";
+        ctx.beginPath();
+        ctx.moveTo(hs, hs * 0.3);
+        ctx.bezierCurveTo(hs * 0.2, hs * 0.3, 0, hs * 0.6, hs * 0.5, hs);
+        ctx.bezierCurveTo(hs, hs * 0.6, hs * 0.8, hs * 0.3, hs, hs * 0.3);
+        ctx.fill();
+        // Petal dots
+        for (let i = 0; i < 3; i++) {
+          ctx.fillStyle = theme.accentColor + "60";
+          ctx.beginPath();
+          ctx.arc(hs * 0.2 + i * hs * 0.3, hs * 0.15, size * 0.03, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        break;
+      }
+      case "kawaii_star": {
+        // Star corner
+        const sp = size * 0.5;
+        ctx.fillStyle = theme.cornerColor + "90";
+        drawStar(ctx, sp, sp, 5, sp * 0.8, sp * 0.35);
+        ctx.fill();
+        // Mini stars around
+        for (let a = 0; a < 3; a++) {
+          const angle = a * 1.2;
+          drawStar(ctx, sp + Math.cos(angle) * sp * 0.7, sp + Math.sin(angle) * sp * 0.7, 5, size * 0.08, size * 0.04);
+          ctx.fillStyle = theme.accentColor + "50";
+          ctx.fill();
+        }
+        break;
+      }
+      case "ribbon_gold": {
+        // Ribbon bow corner
+        ctx.fillStyle = theme.cornerColor + "90";
+        const rw = size * 0.5;
+        // Left loop
+        ctx.beginPath();
+        ctx.ellipse(rw * 0.35, rw * 0.55, rw * 0.35, rw * 0.2, -0.3, 0, Math.PI * 2);
+        ctx.fill();
+        // Right loop
+        ctx.beginPath();
+        ctx.ellipse(rw * 0.65, rw * 0.55, rw * 0.35, rw * 0.2, 0.3, 0, Math.PI * 2);
+        ctx.fill();
+        // Center knot
+        ctx.fillStyle = theme.accentColor;
+        ctx.beginPath();
+        ctx.arc(rw * 0.5, rw * 0.55, rw * 0.12, 0, Math.PI * 2);
+        ctx.fill();
+        // Tail ribbons
+        ctx.strokeStyle = theme.cornerColor + "70";
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(rw * 0.5, rw * 0.67);
+        ctx.lineTo(rw * 0.3, rw);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.moveTo(rw * 0.5, rw * 0.67);
+        ctx.lineTo(rw * 0.7, rw);
+        ctx.stroke();
+        break;
+      }
+      case "neon_glow": {
+        // Neon corner brackets with glow
+        const nl = size * 0.6;
+        ctx.shadowColor = theme.cornerColor;
+        ctx.shadowBlur = 15;
+        ctx.strokeStyle = theme.cornerColor;
+        ctx.lineWidth = bw * 1.5;
+        ctx.beginPath();
+        ctx.moveTo(0, nl);
+        ctx.lineTo(0, 0);
+        ctx.lineTo(nl, 0);
+        ctx.stroke();
+        ctx.shadowBlur = 0;
+        // Inner neon dots
+        ctx.fillStyle = theme.accentColor + "80";
+        ctx.beginPath();
+        ctx.arc(nl * 0.15, nl * 0.15, size * 0.04, 0, Math.PI * 2);
+        ctx.fill();
+        break;
+      }
+      case "vintage_film": {
+        // Film sprocket holes
+        const spH = size * 0.15;
+        ctx.fillStyle = theme.cornerColor + "60";
+        for (let i = 0; i < 4; i++) {
+          ctx.beginPath();
+          ctx.arc(spH * 1.2 + i * spH * 1.2, spH * 0.5, spH * 0.3, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        ctx.fillRect(0, 0, size * 0.55, bw * 2);
+        ctx.fillRect(0, 0, bw * 2, size * 0.55);
+        // Corner Vignette
+        const vig = ctx.createRadialGradient(0, 0, 0, 0, 0, size);
+        vig.addColorStop(0, "rgba(0,0,0,0)");
+        vig.addColorStop(1, "rgba(0,0,0,0.3)");
+        ctx.fillStyle = vig;
+        ctx.fillRect(0, 0, size, size);
+        break;
+      }
+      case "polaroid": {
+        // Thick white corner
+        ctx.fillStyle = "#ffffff";
+        ctx.shadowColor = "rgba(0,0,0,0.2)";
+        ctx.shadowBlur = 6;
+        ctx.fillRect(0, 0, size * 0.7, bw * 3);
+        ctx.fillRect(0, 0, bw * 3, size * 0.7);
+        ctx.shadowBlur = 0;
+        // Paper texture dots
+        ctx.fillStyle = "rgba(0,0,0,0.03)";
+        for (let i = 0; i < 5; i++) {
+          ctx.beginPath();
+          ctx.arc(5 + i * 8, size * 0.4, 2, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        break;
+      }
+      case "floral_dream": {
+        // Flower corner
+        const fc = size * 0.35;
+        const petalCount = 5;
+        ctx.fillStyle = theme.cornerColor + "70";
+        for (let i = 0; i < petalCount; i++) {
+          const angle = (i / petalCount) * Math.PI * 2 - Math.PI / 2;
+          ctx.beginPath();
+          ctx.ellipse(
+            fc + Math.cos(angle) * fc * 0.4,
+            fc + Math.sin(angle) * fc * 0.4,
+            fc * 0.35, fc * 0.18,
+            angle, 0, Math.PI * 2
+          );
+          ctx.fill();
+        }
+        // Center
+        ctx.fillStyle = theme.accentColor;
+        ctx.beginPath();
+        ctx.arc(fc, fc, fc * 0.12, 0, Math.PI * 2);
+        ctx.fill();
+        // Leaves
+        ctx.fillStyle = "#81c78460";
+        ctx.beginPath();
+        ctx.ellipse(fc * 0.1, fc * 0.85, fc * 0.25, fc * 0.1, 0.5, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.beginPath();
+        ctx.ellipse(fc * 0.85, fc * 0.1, fc * 0.25, fc * 0.1, -0.5, 0, Math.PI * 2);
+        ctx.fill();
+        break;
+      }
+      case "minimal_line": {
+        // Clean geometric corner
+        const ml = size * 0.55;
+        ctx.strokeStyle = theme.cornerColor;
+        ctx.lineWidth = bw;
+        ctx.beginPath();
+        ctx.moveTo(0, ml);
+        ctx.lineTo(0, 0);
+        ctx.lineTo(ml, 0);
+        ctx.stroke();
+        // Accent dot at vertex
+        ctx.fillStyle = theme.accentColor;
+        ctx.beginPath();
+        ctx.arc(0, 0, size * 0.03, 0, Math.PI * 2);
+        ctx.fill();
+        break;
+      }
+      case "glitter_sparkle": {
+        // Diamond gem corner
+        const gs = size * 0.45;
+        ctx.fillStyle = theme.cornerColor + "80";
+        ctx.beginPath();
+        ctx.moveTo(gs, 0);
+        ctx.lineTo(gs * 2, gs);
+        ctx.lineTo(gs, gs * 2);
+        ctx.lineTo(0, gs);
+        ctx.closePath();
+        ctx.fill();
+        // Inner diamond
+        ctx.fillStyle = "#ffffff60";
+        ctx.beginPath();
+        ctx.moveTo(gs, gs * 0.4);
+        ctx.lineTo(gs * 1.1, gs);
+        ctx.lineTo(gs, gs * 1.1);
+        ctx.lineTo(gs * 0.9, gs);
+        ctx.closePath();
+        ctx.fill();
+        // Sparkle rays
+        ctx.strokeStyle = theme.accentColor + "50";
+        ctx.lineWidth = 1;
+        for (let a = 0; a < 8; a++) {
+          const ang = (a / 8) * Math.PI * 2;
+          ctx.beginPath();
+          ctx.moveTo(gs, gs);
+          ctx.lineTo(gs + Math.cos(ang) * gs * 0.6, gs + Math.sin(ang) * gs * 0.6);
+          ctx.stroke();
+        }
+        break;
+      }
+      case "ocean_breeze": {
+        // Wave corner
+        ctx.strokeStyle = theme.cornerColor + "80";
+        ctx.lineWidth = bw * 1.2;
+        const wl = size * 0.55;
+        ctx.beginPath();
+        ctx.moveTo(0, wl);
+        ctx.quadraticCurveTo(wl * 0.25, wl * 0.6, wl * 0.5, wl * 0.5);
+        ctx.quadraticCurveTo(wl * 0.6, wl * 0.25, wl, 0);
+        ctx.stroke();
+        // Bubbles
+        ctx.fillStyle = "#ffffff50";
+        for (let i = 0; i < 4; i++) {
+          const r = size * 0.025 + i * 3;
+          ctx.beginPath();
+          ctx.arc(wl * 0.15 + i * wl * 0.2, wl * 0.82, r, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        ctx.fillStyle = theme.accentColor + "40";
+        ctx.beginPath();
+        ctx.arc(wl * 0.3, wl * 0.35, size * 0.04, 0, Math.PI * 2);
+        ctx.fill();
+        break;
+      }
+      case "sunset_warm": {
+        // Sun ray corner
+        const sr = size * 0.55;
+        ctx.fillStyle = theme.cornerColor + "60";
+        ctx.beginPath();
+        ctx.moveTo(0, 0);
+        for (let i = 0; i <= 5; i++) {
+          const angle = (i / 5) * Math.PI / 2;
+          const r2 = i % 2 === 0 ? sr : sr * 0.6;
+          ctx.lineTo(Math.cos(angle) * r2, Math.sin(angle) * r2);
+        }
+        ctx.closePath();
+        ctx.fill();
+        // Small circle accent
+        ctx.fillStyle = "#ffffff50";
+        ctx.beginPath();
+        ctx.arc(sr * 0.3, sr * 0.3, size * 0.05, 0, Math.PI * 2);
+        ctx.fill();
+        break;
+      }
+      case "candy_pop": {
+        // Colorful striped corner
+        const stripCount = 6;
+        for (let i = 0; i < stripCount; i++) {
+          const hue = (i * 30) % 360;
+          ctx.fillStyle = `hsla(${hue}, 80%, 65%, 0.5)`;
+          ctx.fillRect(0, i * (size * 0.6 / stripCount), size * 0.6, size * 0.6 / stripCount + 1);
+          ctx.fillRect(i * (size * 0.6 / stripCount), 0, size * 0.6 / stripCount + 1, size * 0.6);
+        }
+        // Cute circle on top
+        ctx.fillStyle = "#ffffff70";
+        ctx.beginPath();
+        ctx.arc(size * 0.15, size * 0.15, size * 0.06, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = theme.cornerColor;
+        ctx.beginPath();
+        ctx.arc(size * 0.15, size * 0.15, size * 0.03, 0, Math.PI * 2);
+        ctx.fill();
+        break;
+      }
+      default: {
+        // Fallback: simple bracket
+        ctx.strokeStyle = theme.cornerColor + "80";
+        ctx.lineWidth = bw;
+        const fl = size * 0.5;
+        ctx.beginPath();
+        ctx.moveTo(0, fl);
+        ctx.lineTo(0, 0);
+        ctx.lineTo(fl, 0);
+        ctx.stroke();
+      }
+    }
+
+    ctx.restore();
+  };
+
+  const drawStar = (
+    ctx: CanvasRenderingContext2D,
+    cx: number, cy: number,
+    points: number, outerR: number, innerR: number
+  ) => {
+    ctx.beginPath();
+    for (let i = 0; i < points * 2; i++) {
+      const r = i % 2 === 0 ? outerR : innerR;
+      const angle = (i * Math.PI) / points - Math.PI / 2;
+      const x = cx + Math.cos(angle) * r;
+      const y = cy + Math.sin(angle) * r;
+      if (i === 0) ctx.moveTo(x, y);
+      else ctx.lineTo(x, y);
+    }
+    ctx.closePath();
+  };
+
+  const isLightTheme = (theme: FrameTheme): boolean => {
+    return ["kawaii_star", "polaroid", "minimal_line", "glitter_sparkle", "ocean_breeze", "candy_pop", "cute_pastel", "floral_dream", "sunset_warm"].includes(theme.id);
+  };
+
+  const getTextColor = (bgColor: string): string => {
+    const dark = ["#e040fb", "#7c4dff", "#8d6e63", "#5c6bc0", "#424242", "#ec407a", "#ab47bc", "#e64a19", "#00acc1", "#ff8f00"];
+    return dark.some(c => bgColor.includes(c)) ? "#ffffff" : "#1a1a2e";
   };
 
   const loadImage = (src: string): Promise<HTMLImageElement> => {
@@ -554,6 +957,37 @@ export default function AlbumScreen() {
                     })()}
                   </div>
                 )}
+              </div>
+            </div>
+
+            <div style={styles.formGroup}>
+              <label style={styles.label}>🌈 Theme khung viền TikTok</label>
+              <div style={styles.themeGrid}>
+                {FRAME_THEMES.map((theme) => (
+                  <div
+                    key={theme.id}
+                    onClick={() => setSelectedTheme(theme.id)}
+                    style={{
+                      ...styles.themeCard,
+                      borderColor: selectedTheme === theme.id ? theme.cornerColor : "rgba(255,255,255,0.06)",
+                      boxShadow: selectedTheme === theme.id ? `0 0 20px ${theme.cornerColor}40` : "none",
+                    }}
+                  >
+                    <div style={{
+                      ...styles.themeSwatch,
+                      background: `linear-gradient(135deg, ${theme.gradient[0]}, ${theme.gradient[1]}, ${theme.gradient[2]})`,
+                    }}>
+                      <span style={styles.themeEmoji}>{theme.emoji}</span>
+                    </div>
+                    <div style={styles.themeInfo}>
+                      <span style={styles.themeName}>{theme.name}</span>
+                      <span style={styles.themeDesc}>{theme.desc}</span>
+                    </div>
+                    <div style={{ ...styles.themeCheck, opacity: selectedTheme === theme.id ? 1 : 0 }}>
+                      ✓
+                    </div>
+                  </div>
+                ))}
               </div>
             </div>
 
@@ -1161,7 +1595,7 @@ const styles = {
     borderRadius: 4,
   },
 
-  // ── NEW: Frame management gallery ──
+  // ── Frame management gallery ──
   frameGrid: {
     display: "grid",
     gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))",
@@ -1227,5 +1661,66 @@ const styles = {
     display: "flex",
     alignItems: "center",
     justifyContent: "center",
+  },
+
+  // ── Theme Grid ──
+  themeGrid: {
+    display: "grid",
+    gridTemplateColumns: "repeat(auto-fill, minmax(180px, 1fr))",
+    gap: 10,
+    marginTop: 4,
+  },
+  themeCard: {
+    display: "flex",
+    alignItems: "center",
+    gap: 10,
+    padding: "8px 10px",
+    borderRadius: 10,
+    border: "1px solid rgba(255,255,255,0.06)",
+    backgroundColor: "rgba(255,255,255,0.02)",
+    cursor: "pointer",
+    transition: "all 0.2s",
+    position: "relative" as const,
+  },
+  themeSwatch: {
+    width: 36,
+    height: 36,
+    borderRadius: 8,
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    flexShrink: 0,
+  },
+  themeEmoji: {
+    fontSize: 16,
+    filter: "drop-shadow(0 1px 2px rgba(0,0,0,0.2))",
+  },
+  themeInfo: {
+    display: "flex",
+    flexDirection: "column" as const,
+    gap: 1,
+    overflow: "hidden",
+  },
+  themeName: {
+    fontSize: 12,
+    fontWeight: 600,
+    color: "#ffffff",
+    whiteSpace: "nowrap" as const,
+  },
+  themeDesc: {
+    fontSize: 9.5,
+    color: "#6b7280",
+    whiteSpace: "nowrap" as const,
+    overflow: "hidden",
+    textOverflow: "ellipsis" as const,
+  },
+  themeCheck: {
+    position: "absolute" as const,
+    top: 4,
+    right: 6,
+    fontSize: 10,
+    color: "#10b981",
+    fontWeight: 700,
+    transition: "opacity 0.2s",
   },
 };
