@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Store, Plus, Edit2, Trash2, Loader2, MapPin, Tag, Lightbulb, Info } from "lucide-react";
+import { Store, Plus, Edit2, Trash2, Loader2, MapPin, Lightbulb } from "lucide-react";
 
 interface SeedingItem {
   id: string;
@@ -109,9 +109,7 @@ export default function SeedingPage() {
     setErrorMsg("");
     setSuccessMsg("");
     try {
-      const res = await fetch(`/api/seeding/${id}`, {
-        method: "DELETE",
-      });
+      const res = await fetch(`/api/seeding/${id}`, { method: "DELETE" });
       const data = await res.json();
       if (data.success) {
         setSuccessMsg("Đã xóa địa điểm seeding.");

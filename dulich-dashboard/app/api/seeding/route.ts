@@ -8,7 +8,6 @@ export async function GET() {
     const { db } = await connectToDatabase();
     const items = await db.collection("seeding").find({}).toArray();
     
-    // Map to frontend format
     const mapped = items.map((item) => ({
       id: item._id.toString(),
       name: item.name,

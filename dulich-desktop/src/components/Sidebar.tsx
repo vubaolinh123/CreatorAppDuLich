@@ -209,11 +209,11 @@ const styles: Record<string, React.CSSProperties> = {
   } as React.CSSProperties,
   navItemHovered: {
     background: '#1a1a1a',
-    borderColor: '#2a2a2a',
+    border: '1px solid #2a2a2a',
   },
   navItemActive: {
     background: 'linear-gradient(135deg, rgba(124,58,237,0.18) 0%, rgba(37,99,235,0.16) 100%)',
-    borderColor: 'rgba(124,58,237,0.35)',
+    border: '1px solid rgba(124,58,237,0.35)',
     boxShadow: '0 2px 12px rgba(124, 58, 237, 0.15)',
   },
   navIcon: {

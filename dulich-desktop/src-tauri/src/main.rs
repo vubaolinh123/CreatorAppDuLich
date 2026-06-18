@@ -11,6 +11,7 @@ use commands::{
     select_single_file, generate_scene_plan, assemble_from_scenes, set_api_keys,
     preview_voice,
     upload_canva_frames, list_learned_frames, analyze_single_frame, delete_learned_frame,
+    fetch_image_as_base64, select_album_images,
 };
 
 fn main() {
@@ -51,6 +52,8 @@ fn main() {
             list_learned_frames,
             analyze_single_frame,
             delete_learned_frame,
+            fetch_image_as_base64,
+            select_album_images,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

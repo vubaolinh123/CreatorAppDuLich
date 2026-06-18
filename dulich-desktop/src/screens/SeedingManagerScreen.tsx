@@ -8,6 +8,7 @@ interface SeedingItem {
   location: string;
   description: string;
   mention_guide: string;
+  images?: string[];
   status: string;
 }
 
@@ -24,6 +25,7 @@ export default function SeedingManagerScreen() {
   const [location, setLocation] = useState("");
   const [description, setDescription] = useState("");
   const [mentionGuide, setMentionGuide] = useState("");
+  const [images, setImages] = useState<string[]>([]);
 
   useEffect(() => {
     fetchSeedingItems();
@@ -79,6 +81,7 @@ export default function SeedingManagerScreen() {
       location,
       description,
       mention_guide: mentionGuide,
+      images: images,
       status: "active",
     };
 
@@ -114,6 +117,7 @@ export default function SeedingManagerScreen() {
     setLocation(item.location);
     setDescription(item.description);
     setMentionGuide(item.mention_guide);
+    setImages(item.images || []);
     setErrorMsg("");
   };
 
@@ -153,6 +157,7 @@ export default function SeedingManagerScreen() {
     setLocation("");
     setDescription("");
     setMentionGuide("");
+    setImages([]);
   };
 
   return (

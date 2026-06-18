@@ -68,13 +68,10 @@ export async function DELETE(
     const result = await db.collection("seeding").deleteOne(query as any);
 
     if (result.deletedCount === 0) {
-      const strResult = await db.collection("seeding").deleteOne({ _id: params.id } as any);
-      if (strResult.deletedCount === 0) {
-        return NextResponse.json(
-          { success: false, error: "Không tìm thấy địa điểm seeding" },
-          { status: 404 }
-        );
-      }
+      return NextResponse.json(
+        { success: false, error: "Không tìm thấy địa điểm seeding" },
+        { status: 404 }
+      );
     }
 
     return NextResponse.json({ success: true, message: "Đã xóa địa điểm seeding" });

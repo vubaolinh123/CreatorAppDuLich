@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::{Command as StdCommand, Stdio};
 use std::io::{BufRead, BufReader};
 use tauri::{Window, Emitter};
@@ -783,6 +783,50 @@ pub fn select_single_file(allowed_extensions: Vec<String>) -> Result<Option<Stri
     Ok(file.map(|path| path.to_string_lossy().to_string()))
 }
 
+/// Select image files from disk and copy them into an album folder.
+/// Returns list of { id, title, localPath, originalPath }.
+#[tauri::command]
+pub fn select_album_images(album_id: String) -> Result<Vec<serde_json::Value>, String> {
+    let files = rfd::FileDialog::new()
+        .add_filter("Images", &["jpg", "jpeg", "png", "gif", "webp", "bmp"])
+        .pick_files()
+        .ok_or_else(|| "No files selected".to_string())?;
+
+    // Album folder: ~/.dulichapp/albums/{album_id}/
+    let home = std::env::var("USERPROFILE")
+        .or_else(|_| std::env::var("HOME"))
+        .map(PathBuf::from)
+        .unwrap_or_else(|_| PathBuf::from("."));
+    let album_dir = home.join(".dulichapp").join("albums").join(&album_id);
+    fs::create_dir_all(&album_dir).map_err(|e| e.to_string())?;
+
+    let mut results = Vec::new();
+    for (i, src_path) in files.iter().enumerate() {
+        let ext = src_path
+            .extension()
+            .and_then(|e| e.to_str())
+            .unwrap_or("jpg");
+        let filename = format!("{}_{}.{}", album_id, i, ext);
+        let dest = album_dir.join(&filename);
+        fs::copy(src_path, &dest).map_err(|e| format!("Copy failed: {}", e))?;
+
+        let title = src_path
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or("image")
+            .to_string();
+
+        results.push(serde_json::json!({
+            "id": format!("{}", chrono::Utc::now().timestamp_millis() + i as i64),
+            "title": title,
+            "localPath": dest.to_string_lossy().to_string(),
+            "originalPath": src_path.to_string_lossy().to_string(),
+        }));
+    }
+
+    Ok(results)
+}
+
 /// Stage 1: Run AI research + script generation, returns script + scene plan.
 #[tauri::command]
 pub async fn generate_scene_plan(
@@ -1111,5 +1155,29 @@ pub async fn preview_voice(
         let stderr_str = String::from_utf8_lossy(&output.stderr);
         Err(format!("Preview failed: {}", stderr_str))
     }
+}
+
+/// Fetch an image from URL and return as base64 data URL (bypasses CORS)
+#[tauri::command]
+pub async fn fetch_image_as_base64(url: String) -> Result<String, String> {
+    let resp = reqwest::get(&url)
+        .await
+        .map_err(|e| format!("HTTP error: {}", e))?;
+
+    let content_type = resp
+        .headers()
+        .get("content-type")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("image/jpeg")
+        .to_string();
+
+    let bytes = resp
+        .bytes()
+        .await
+        .map_err(|e| format!("Read body error: {}", e))?;
+
+    use base64::Engine;
+    let b64 = base64::engine::general_purpose::STANDARD.encode(&bytes);
+    Ok(format!("data:{};base64,{}", content_type, b64))
 }
 
