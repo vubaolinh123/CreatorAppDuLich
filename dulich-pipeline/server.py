@@ -21,7 +21,7 @@ import tempfile
 import threading
 import subprocess
 from pathlib import Path
-from http.server import HTTPServer, BaseHTTPRequestHandler
+from http.server import HTTPServer, ThreadingHTTPServer, BaseHTTPRequestHandler
 
 # Configure UTF-8 encoding for Windows console to avoid print crashes
 if sys.platform.startswith("win"):
@@ -34,9 +34,154 @@ if sys.platform.startswith("win"):
 # Add project root to path
 sys.path.insert(0, str(Path(__file__).parent))
 
+# Load .env (keys: OPENROUTER_KEY, VBEE_APP_ID, VBEE_API_KEY, ...) for all handlers.
+try:
+    from dotenv import load_dotenv, find_dotenv
+    load_dotenv(find_dotenv())
+except Exception:
+    pass
+
 PORT = 7788
 UPLOAD_TEMP_DIR = Path(__file__).parent / "output" / "temp_uploads"
 UPLOAD_TEMP_DIR.mkdir(parents=True, exist_ok=True)
+
+WEB_INDEX = Path(__file__).parent / "web" / "index.html"
+
+# Serialize heavy operations (script gen / assembly) so the threaded server can
+# still answer health checks + serve files while one render is running.
+_HEAVY_LOCK = threading.Lock()
+
+# No API keys in this demo → default voice engine is free Microsoft Edge TTS (vi-VN).
+os.environ.setdefault("VOICE_PROVIDER", "edge")
+
+
+def _to_output_url(abs_path: str) -> str:
+    """Convert an absolute output file path into a URL servable by GET /output/..."""
+    if not abs_path:
+        return ""
+    try:
+        rel = os.path.relpath(abs_path, str(Path(__file__).parent))
+        return "/" + rel.replace("\\", "/")
+    except Exception:
+        return ""
+
+
+def _derive_title(topic: str) -> str:
+    """Pull a short, big hook title (place name) out of the topic. Uppercased, editable in UI."""
+    import re
+    t = (topic or "").splitlines()[0].strip()
+    for filler in ["khám phá", "kham pha", "một ngày ở", "mot ngay o", "review",
+                   "du lịch", "du lich", "trải nghiệm", "trai nghiem", "ghé thăm", "ghé", "đi "]:
+        t = re.sub(filler, "", t, flags=re.IGNORECASE)
+    t = t.strip(" -–—,.")
+    words = t.split()
+    if len(words) > 3:
+        t = " ".join(words[:3])
+    return (t or topic).strip().upper()[:18]
+
+
+USERS_FILE = Path(__file__).parent / "data" / "users.json"
+PRODUCTS_FILE = Path(__file__).parent / "output" / "products.json"
+_PROD_LOCK = threading.Lock()
+
+
+def _load_users() -> dict:
+    try:
+        return json.loads(USERS_FILE.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+
+
+def _load_products() -> list:
+    try:
+        return json.loads(PRODUCTS_FILE.read_text(encoding="utf-8"))
+    except Exception:
+        return []
+
+
+def _append_product(rec: dict) -> None:
+    with _PROD_LOCK:
+        items = _load_products()
+        items.append(rec)
+        PRODUCTS_FILE.parent.mkdir(parents=True, exist_ok=True)
+        PRODUCTS_FILE.write_text(json.dumps(items, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+def _build_framework_script(topic: str) -> dict:
+    """
+    Build a short ~20s framework script with 4 parts:
+      title (big hook overlay), hook (hook subtitle line), body, cta.
+    If `topic` is a multi-line / long pasted script, parse it instead of generating.
+    """
+    text = topic.strip()
+    is_pasted = ("\n" in text) or (len(text) >= 80)
+    title = _derive_title(text)
+
+    if is_pasted:
+        if text.startswith("{") and text.endswith("}"):
+            try:
+                import json as _json
+                d = _json.loads(text)
+                return {"title": d.get("title", title), "hook": d.get("hook", ""),
+                        "body": d.get("body", ""), "cta": d.get("cta", "")}
+            except Exception:
+                pass
+        lines = [ln.strip() for ln in text.split("\n") if ln.strip()]
+        if len(lines) >= 3:
+            return {"title": _derive_title(lines[0]), "hook": lines[0],
+                    "body": " ".join(lines[1:-1]), "cta": lines[-1]}
+        if len(lines) == 2:
+            return {"title": _derive_title(lines[0]), "hook": lines[0],
+                    "body": lines[1], "cta": "Lưu lại và theo dõi kênh để xem thêm nhé!"}
+        return {"title": title, "hook": "Đừng đi nếu chưa biết những điều này!",
+                "body": text, "cta": "Theo dõi kênh để xem thêm nhé!"}
+
+    # Short generated template (~20s total when read by vi-VN edge TTS)
+    place = text.rstrip(".!?")
+    return {
+        "title": title,
+        "hook": "Đừng đi nếu chưa biết những điều này!",
+        "body": (f"Từ cảnh thiên nhiên đẹp nghẹt thở, món ăn địa phương gây thương nhớ, "
+                 f"đến những góc check-in cực chill. Mỗi khoảnh khắc ở {place} đều đáng giá."),
+        "cta": "Lưu lại ngay và theo dõi kênh để không bỏ lỡ nhé!",
+    }
+
+
+def _concat_scene_clips(paths: list, dest: str) -> bool:
+    """
+    Concatenate multiple uploaded clips for one scene into a single 1080x1920@30
+    H264 file (video only — voiceover is added later). Clips play in order;
+    any excess length is trimmed downstream by the renderer's per-scene -t.
+    Returns True on success.
+    """
+    import subprocess
+    W, H = 1080, 1920
+    cmd = ["ffmpeg", "-y"]
+    for p in paths:
+        cmd.extend(["-i", p])
+    n = len(paths)
+    parts = []
+    for i in range(n):
+        parts.append(
+            f"[{i}:v]fps=30,scale={W}:{H}:force_original_aspect_ratio=decrease,"
+            f"pad={W}:{H}:(ow-iw)/2:(oh-ih)/2:color=black,setsar=1,setpts=PTS-STARTPTS[v{i}]"
+        )
+    concat_inputs = "".join(f"[v{i}]" for i in range(n))
+    filter_complex = ";".join(parts) + f";{concat_inputs}concat=n={n}:v=1:a=0[outv]"
+    cmd.extend([
+        "-filter_complex", filter_complex, "-map", "[outv]",
+        "-c:v", "libx264", "-preset", "fast", "-crf", "23", "-pix_fmt", "yuv420p", "-an",
+        dest,
+    ])
+    try:
+        r = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
+        if r.returncode == 0 and os.path.exists(dest) and os.path.getsize(dest) > 1000:
+            return True
+        print(f"[Server] _concat_scene_clips failed ({r.returncode}): {r.stderr[-300:]}", file=sys.stderr)
+        return False
+    except Exception as e:
+        print(f"[Server] _concat_scene_clips exception: {e}", file=sys.stderr)
+        return False
 
 
 def parse_multipart(handler: BaseHTTPRequestHandler):
@@ -143,6 +288,14 @@ class AssembleHandler(BaseHTTPRequestHandler):
     def do_POST(self):
         if self.path == "/assemble":
             self.handle_assemble()
+        elif self.path == "/generate-script":
+            self.handle_generate_script()
+        elif self.path == "/login":
+            self.handle_login()
+        elif self.path == "/news-research":
+            self.handle_news_research()
+        elif self.path == "/hookpreview":
+            self.handle_hookpreview()
         elif self.path == "/preview":
             self.handle_preview()
         elif self.path == "/open-folder":
@@ -155,8 +308,18 @@ class AssembleHandler(BaseHTTPRequestHandler):
             self._json_response({"error": f"Unknown path: {self.path}"}, 404)
 
     def do_GET(self):
-        if self.path == "/health":
+        if self.path in ("/", "/app", "/index.html"):
+            self._serve_index()
+        elif self.path.startswith("/hookframe/"):
+            self._serve_hookframe(self.path[len("/hookframe/"):])
+        elif self.path.startswith("/font/"):
+            self._serve_font(self.path[len("/font/"):])
+        elif self.path == "/health":
             self._json_response({"status": "ok", "port": PORT})
+        elif self.path.startswith("/library"):
+            self._serve_library()
+        elif self.path == "/stats":
+            self._serve_stats()
         elif self.path.startswith("/output/"):
             # Serve output files statically for preview/playback
             file_path = Path(__file__).parent / self.path.lstrip("/")
@@ -190,6 +353,233 @@ class AssembleHandler(BaseHTTPRequestHandler):
         length = int(self.headers.get("Content-Length", 0))
         body = self.rfile.read(length)
         return json.loads(body.decode("utf-8")) if body else {}
+
+    def _serve_index(self):
+        """Serve the single-page web UI."""
+        if not WEB_INDEX.exists():
+            self._json_response({"error": f"UI not found: {WEB_INDEX}"}, 404)
+            return
+        body = WEB_INDEX.read_bytes()
+        self.send_response(200)
+        self._cors_headers()
+        self.send_header("Content-Type", "text/html; charset=utf-8")
+        self.send_header("Content-Length", str(len(body)))
+        self.send_header("Connection", "close")
+        self.end_headers()
+        self.wfile.write(body)
+        self.close_connection = True
+
+    def _serve_library(self):
+        """List a user's products (admin/news see all). Reads output/products.json."""
+        from urllib.parse import urlparse, parse_qs
+        q = parse_qs(urlparse(self.path).query)
+        user = (q.get("user") or [""])[0]
+        role = (q.get("role") or [""])[0]
+        items = _load_products()
+        if user and role not in ("admin",):
+            items = [p for p in items if p.get("user") == user]
+        items.sort(key=lambda x: x.get("time", 0), reverse=True)
+        self._json_response({"videos": items})
+
+    def _serve_stats(self):
+        """Admin: count products per user."""
+        items = _load_products()
+        users = _load_users()
+        counts = {}
+        for p in items:
+            counts[p.get("user", "?")] = counts.get(p.get("user", "?"), 0) + 1
+        rows = []
+        for uname, u in users.items():
+            if u.get("role") in ("staff", "news"):
+                rows.append({"user": uname, "name": u.get("name", uname),
+                             "role": u.get("role"), "count": counts.get(uname, 0)})
+        rows.sort(key=lambda r: r["count"], reverse=True)
+        self._json_response({"stats": rows, "total": len(items)})
+
+    def _serve_hookframe(self, name: str):
+        """Serve a hook frame PNG from assets/hook_frames/ (for the UI preview)."""
+        safe = os.path.basename(name)
+        fp = Path(__file__).parent / "assets" / "hook_frames" / safe
+        if not fp.exists() or fp.suffix.lower() != ".png":
+            self._json_response({"error": "frame not found"}, 404)
+            return
+        body = fp.read_bytes()
+        self.send_response(200)
+        self._cors_headers()
+        self.send_header("Content-Type", "image/png")
+        self.send_header("Content-Length", str(len(body)))
+        self.send_header("Connection", "close")
+        self.end_headers()
+        self.wfile.write(body)
+        self.close_connection = True
+
+    def _serve_font(self, name: str):
+        """Serve a .ttf from assets/fonts/ (for @font-face in the UI preview)."""
+        safe = os.path.basename(name)
+        fp = Path(__file__).parent / "assets" / "fonts" / safe
+        if not fp.exists() or fp.suffix.lower() != ".ttf":
+            self._json_response({"error": "font not found"}, 404)
+            return
+        body = fp.read_bytes()
+        self.send_response(200)
+        self._cors_headers()
+        self.send_header("Content-Type", "font/ttf")
+        self.send_header("Content-Length", str(len(body)))
+        self.send_header("Connection", "close")
+        self.end_headers()
+        self.wfile.write(body)
+        self.close_connection = True
+
+    def handle_login(self):
+        """Check username/password against data/users.json."""
+        try:
+            data = self._read_json_body()
+            u = (data.get("username") or "").strip()
+            p = data.get("password") or ""
+            users = _load_users()
+            acc = users.get(u)
+            if not acc or acc.get("password") != p:
+                self._json_response({"ok": False, "error": "Sai tài khoản hoặc mật khẩu"}, 401)
+                return
+            self._json_response({
+                "ok": True, "username": u, "role": acc.get("role", "staff"),
+                "name": acc.get("name", u), "hook_style": acc.get("hook_style", "hook_red"),
+                "voice": acc.get("voice", "gtts"),
+            })
+        except Exception as e:
+            self._json_response({"ok": False, "error": str(e)}, 500)
+
+    def handle_news_research(self):
+        """News flow: trả TOPIC + LINK source YouTube để user tự tải về thả vào (không auto-download)."""
+        try:
+            data = self._read_json_body()
+            keyword = (data.get("keyword") or "Đà Lạt").strip()
+            # 1) script gợi ý (OpenRouter) + 2) link source thật từ YouTube (yt-dlp search, metadata only)
+            try:
+                from tools.script_ai import generate_script_ai
+                script = generate_script_ai(f"tin tức / review {keyword}") or _build_framework_script(keyword)
+            except Exception:
+                script = _build_framework_script(keyword)
+            sources = []
+            try:
+                import yt_dlp
+                opts = {"quiet": True, "skip_download": True, "extract_flat": True, "default_search": "ytsearch"}
+                with yt_dlp.YoutubeDL(opts) as ydl:
+                    res = ydl.extract_info(f"ytsearch6:{keyword} Đà Lạt review", download=False)
+                for e in (res.get("entries") or [])[:6]:
+                    sources.append({
+                        "title": e.get("title", ""),
+                        "url": f"https://youtu.be/{e.get('id')}",
+                        "duration": e.get("duration"),
+                        "views": e.get("view_count"),
+                    })
+            except Exception as ex:
+                print(f"[news] yt search lỗi: {ex}", file=sys.stderr)
+            self._json_response({"success": True, "keyword": keyword, "script": script, "sources": sources})
+        except Exception as e:
+            import traceback
+            self._json_response({"success": False, "error": str(e), "traceback": traceback.format_exc()}, 500)
+
+    def handle_hookpreview(self):
+        """Build the real hook overlay PNG for the given style/title/subtitle and
+        return it flattened on a light bg — so the user sees if text fits the frame."""
+        try:
+            data = self._read_json_body()
+            style = data.get("style", "hook_red")
+            title = data.get("title", "")
+            subtitle = data.get("subtitle", "")
+
+            import uuid as _uuid
+            tmp = str(UPLOAD_TEMP_DIR / f"prev_{_uuid.uuid4().hex[:8]}.png")
+            from PIL import Image
+            if style.startswith("hook_news"):
+                from tools.hook_overlay import build_news_hook
+                color = style.split("_")[-1] if style.split("_")[-1] in ("green", "purple", "pink") else "pink"
+                build_news_hook(caption=title or subtitle or "ĐÀ LẠT", out_path=tmp, color=color)
+            elif style == "hook_overlay":
+                from tools.hook_overlay import build_overlay
+                build_overlay(title=title or "ĐÀ LẠT", script_lines=(subtitle or "",),
+                              caption="", out_path=tmp, with_caption=False)
+            else:
+                from tools.hook_overlay import build_hook
+                build_hook(style, title or "", subtitle or "", tmp)
+
+            # Return the hook as a TRANSPARENT PNG so the UI can overlay it on a clip thumbnail.
+            ov = Image.open(tmp).convert("RGBA")
+            from io import BytesIO
+            buf = BytesIO()
+            ov.save(buf, format="PNG")
+            body = buf.getvalue()
+            try:
+                os.remove(tmp)
+            except Exception:
+                pass
+
+            self.send_response(200)
+            self._cors_headers()
+            self.send_header("Content-Type", "image/png")
+            self.send_header("Content-Length", str(len(body)))
+            self.send_header("Connection", "close")
+            self.end_headers()
+            self.wfile.write(body)
+            self.close_connection = True
+        except Exception as e:
+            import traceback
+            print(f"[Server] /hookpreview error: {e}\n{traceback.format_exc()}", file=sys.stderr)
+            self._json_response({"success": False, "error": str(e)}, 500)
+
+    def handle_generate_script(self):
+        """
+        Stage 1 (framework): build a short ~20s script (hook/body/cta) from a topic
+        and return exactly 3 captioned scenes that map 1:1 to the voiceover segments.
+        If the user pastes a multi-line script, parse it as hook / body / cta instead.
+        """
+        print("[Server] /generate-script — Tạo kịch bản theo framework (3 scene)...", file=sys.stderr)
+        try:
+            data = self._read_json_body()
+            topic = (data.get("topic") or "").strip()
+            if not topic:
+                self._json_response({"success": False, "error": "Thiếu chủ đề / kịch bản."}, 400)
+                return
+
+            # Prefer AI (OpenRouter, learns from data/transcripts/); fallback to template.
+            script = None
+            try:
+                from tools.script_ai import generate_script_ai
+                script = generate_script_ai(topic)
+                if script:
+                    print(f"[Server] /generate-script: dùng OpenRouter (AI). title={script.get('title')}", file=sys.stderr)
+            except Exception as e:
+                print(f"[Server] script_ai lỗi: {e}", file=sys.stderr)
+            if not script:
+                script = _build_framework_script(topic)
+                print("[Server] /generate-script: dùng template (fallback).", file=sys.stderr)
+
+            # ~chars per second for vi-VN edge TTS @ speed 1.08 → estimate scene durations
+            def est(text):
+                return max(3, round(len(text) / 14.0))
+
+            scenes = [
+                {"scene_id": "scene_1", "label": "HOOK", "title": script["title"], "caption": script["hook"],
+                 "description": "Cảnh mở đầu (hook overlay)", "min_duration_sec": est(script["title"] + " " + script["hook"]), "type": "clip"},
+                {"scene_id": "scene_2", "label": "NỘI DUNG", "caption": script["body"],
+                 "description": "Cảnh đẹp / trải nghiệm chính", "min_duration_sec": est(script["body"]), "type": "clip"},
+                {"scene_id": "scene_3", "label": "CTA", "caption": script["cta"],
+                 "description": "Cảnh kết kèm kêu gọi", "min_duration_sec": est(script["cta"]), "type": "clip"},
+            ]
+
+            import uuid as _uuid
+            self._json_response({
+                "success": True,
+                "job_id": f"job_{_uuid.uuid4().hex[:10]}",
+                "script": script,
+                "scenes": scenes,
+            })
+        except Exception as e:
+            import traceback
+            tb = traceback.format_exc()
+            print(f"[Server] /generate-script error: {e}\n{tb}", file=sys.stderr)
+            self._json_response({"success": False, "error": str(e), "traceback": tb}, 500)
 
     def handle_open_folder(self):
         """Open Windows Explorer at the directory containing the given file path."""
@@ -378,19 +768,43 @@ class AssembleHandler(BaseHTTPRequestHandler):
         scene_uploads = []
         for scene in scenes_meta:
             sid = scene.get("scene_id", "")
-            if sid in files:
-                filename, file_bytes = files[sid]
+
+            # Collect all files for this scene: field name == sid, or "{sid}__{idx}".
+            # Sort by the numeric suffix so clips concat in drop order.
+            def _idx(fname):
+                if "__" in fname:
+                    tail = fname.rsplit("__", 1)[1]
+                    return int(tail) if tail.isdigit() else 0
+                return 0
+            field_names = sorted(
+                [fn for fn in files if fn == sid or fn.startswith(sid + "__")],
+                key=_idx,
+            )
+
+            saved_paths = []
+            for k, fn in enumerate(field_names):
+                filename, file_bytes = files[fn]
                 ext = Path(filename).suffix or ".mp4"
-                dest = job_temp / f"{sid}{ext}"
+                dest = job_temp / f"{sid}_{k}{ext}"
                 with open(str(dest), "wb") as f:
                     f.write(file_bytes)
-                scene_uploads.append({"scene_id": sid, "file_path": str(dest)})
-                size_mb = len(file_bytes) / 1024 / 1024
-                print(f"[Server]   ✓ Saved {sid}: {filename} ({size_mb:.1f}MB) → {dest}", file=sys.stderr)
-            else:
-                # No file uploaded for this scene → placeholder
+                saved_paths.append(str(dest))
+                print(f"[Server]   ✓ {sid}[{k}]: {filename} ({len(file_bytes)/1024/1024:.1f}MB)", file=sys.stderr)
+
+            if not saved_paths:
                 scene_uploads.append({"scene_id": sid, "file_path": ""})
-                print(f"[Server]   ⚠ {sid}: no file uploaded → placeholder", file=sys.stderr)
+                print(f"[Server]   ⚠ {sid}: no file → placeholder", file=sys.stderr)
+            elif len(saved_paths) == 1:
+                scene_uploads.append({"scene_id": sid, "file_path": saved_paths[0]})
+            else:
+                concat_dest = str(job_temp / f"{sid}_concat.mp4")
+                if _concat_scene_clips(saved_paths, concat_dest):
+                    scene_uploads.append({"scene_id": sid, "file_path": concat_dest})
+                    print(f"[Server]   ✓ {sid}: nối {len(saved_paths)} clip → {concat_dest}", file=sys.stderr)
+                else:
+                    # Concat failed → fall back to first clip
+                    scene_uploads.append({"scene_id": sid, "file_path": saved_paths[0]})
+                    print(f"[Server]   ⚠ {sid}: concat lỗi, dùng clip đầu", file=sys.stderr)
 
         # Ensure jobs collection
         try:
@@ -424,31 +838,46 @@ class AssembleHandler(BaseHTTPRequestHandler):
         except Exception as e:
             print(f"[Server] Warning: DB error (continuing): {e}", file=sys.stderr)
 
-        # Run assembly
+        # Run assembly (serialized — only one heavy job at a time)
         try:
-            # Force reload agents/tools modules so updates to video_renderer / hook_effects / personal_video_agent take effect without restarting server
-            for m in list(sys.modules.keys()):
-                if m.startswith("agents") or m.startswith("tools"):
-                    sys.modules.pop(m, None)
+            with _HEAVY_LOCK:
+                # Force reload agents/tools modules so code edits take effect without restart
+                for m in list(sys.modules.keys()):
+                    if m.startswith("agents") or m.startswith("tools"):
+                        sys.modules.pop(m, None)
 
-            from agents.personal_video_agent import run_assemble_video
-            print(f"[Server] Bắt đầu ghép video với FFmpeg...", file=sys.stderr)
-            result = run_assemble_video(
-                job_id=job_id,
-                scene_uploads=scene_uploads,
-                transition=transition,
-                hook_style=hook_style,
-                hook_text=hook_text,
-                hook_title=hook_title,
-                hook_subtitle=hook_subtitle,
-                video_type=video_type,
-                voice_provider=voice_mode,
-                voice_id=voice_id,
-            )
+                from agents.personal_video_agent import run_assemble_video
+                print(f"[Server] Bắt đầu ghép video với FFmpeg...", file=sys.stderr)
+                result = run_assemble_video(
+                    job_id=job_id,
+                    scene_uploads=scene_uploads,
+                    transition=transition,
+                    hook_style=hook_style,
+                    hook_text=hook_text,
+                    hook_title=hook_title,
+                    hook_subtitle=hook_subtitle,
+                    video_type=video_type,
+                    voice_provider=voice_mode,
+                    voice_id=voice_id,
+                )
             print(f"[Server] ✅ Hoàn tất! Video: {result.get('video_path')}", file=sys.stderr)
+            video_url = _to_output_url(result.get("video_path", ""))
+            # Track product per user (for admin stats + per-user library)
+            try:
+                import time as _t
+                _append_product({
+                    "user": fields.get("user", "") or creator_id,
+                    "topic": fields.get("topic", "") or hook_title,
+                    "hook_style": hook_style,
+                    "video_url": video_url,
+                    "time": _t.time(),
+                })
+            except Exception as _e:
+                print(f"[Server] product log lỗi: {_e}", file=sys.stderr)
             self._json_response({
                 "success": True,
                 "video_path": result.get("video_path", ""),
+                "video_url": video_url,
                 "audio_path": result.get("audio_path", ""),
                 "job_id": job_id,
             })
@@ -499,8 +928,9 @@ Vui lòng chạy server bằng Python của môi trường ảo (.venv):
     except ConnectionRefusedError:
         pass  # Port is free, good
 
-    class ReusableHTTPServer(HTTPServer):
+    class ReusableHTTPServer(ThreadingHTTPServer):
         allow_reuse_address = True
+        daemon_threads = True
 
     print("""
 +------------------------------------------------------+

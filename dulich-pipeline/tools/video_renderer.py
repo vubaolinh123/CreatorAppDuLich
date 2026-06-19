@@ -125,24 +125,51 @@ class VideoEngine:
             # Measure actual duration of normalised clip
             actual_dur = self._probe_duration(norm_path) or target_dur
 
+            # News full-frame hook (kênh tin tức)
+            if i == 0 and hook_style.startswith("hook_news"):
+                print(f"[VideoEngine] Đang tạo Hook tin tức full-nền ('{hook_style}')...", flush=True)
+                temp_hook_path = str(norm_dir / "norm_000_hook.mp4")
+                try:
+                    overlay_png = str(norm_dir / "hook_overlay.png")
+                    from tools.hook_overlay import build_news_hook
+                    color = hook_style.split("_")[-1] if hook_style.split("_")[-1] in ("green", "purple", "pink") else "pink"
+                    build_news_hook(caption=hook_title or hook_subtitle or "ĐÀ LẠT", out_path=overlay_png, color=color)
+                    filter_str = (
+                        f"[0:v]scale=1080:1920:force_original_aspect_ratio=decrease,"
+                        f"pad=1080:1920:(ow-iw)/2:(oh-ih)/2,setsar=1[bg];[bg][1:v]overlay=0:0:format=auto[vout]")
+                    cmd = ["ffmpeg", "-y", "-i", norm_path, "-i", overlay_png, "-filter_complex", filter_str,
+                           "-map", "[vout]", "-c:v", "libx264", "-preset", "fast", "-crf", "23", "-pix_fmt", "yuv420p", temp_hook_path]
+                    r = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
+                    if r.returncode == 0 and os.path.exists(temp_hook_path) and os.path.getsize(temp_hook_path) > 1000:
+                        os.replace(temp_hook_path, norm_path)
+                        print(f"[VideoEngine] ✓ Hook tin tức OK.", flush=True)
+                    else:
+                        print(f"[VideoEngine] ⚠ Hook tin tức lỗi: {r.stderr[-200:]}", flush=True)
+                except Exception as e:
+                    print(f"[VideoEngine] ⚠ Hook tin tức exception: {e}", flush=True)
             # Apply hook effect to the first clip (i == 0) if specified
-            if i == 0 and hook_style == "hook_overlay":
-                print(f"[VideoEngine] Đang tạo Hook Overlay PNG cho Cảnh 1...", flush=True)
+            elif i == 0 and hook_style in ("hook_overlay", "hook_red", "hook_green", "hook_brown", "hook_serif", "hook_meo"):
+                print(f"[VideoEngine] Đang tạo Hook Overlay PNG ('{hook_style}') cho Cảnh 1...", flush=True)
                 temp_hook_path = str(norm_dir / f"norm_000_hook.mp4")
                 try:
-                    from tools.hook_overlay import build_overlay as build_hook_overlay
                     overlay_png = str(norm_dir / "hook_overlay.png")
-                    # Split subtitle into lines (separated by |) or use as single line
-                    script_lines_list = [s.strip() for s in (hook_subtitle or "").split("|") if s.strip()]
-                    if not script_lines_list:
-                        script_lines_list = [hook_subtitle or "Review và chấm điểm"]
-                    build_hook_overlay(
-                        title=hook_title or "ĐÀ LẠT",
-                        script_lines=tuple(script_lines_list),
-                        caption="",
-                        out_path=overlay_png,
-                        with_caption=False,
-                    )
+                    if hook_style == "hook_overlay":
+                        from tools.hook_overlay import build_overlay as build_hook_overlay
+                        # Split subtitle into lines (separated by |) or use as single line
+                        script_lines_list = [s.strip() for s in (hook_subtitle or "").split("|") if s.strip()]
+                        if not script_lines_list:
+                            script_lines_list = [hook_subtitle or "Review và chấm điểm"]
+                        build_hook_overlay(
+                            title=hook_title or "ĐÀ LẠT",
+                            script_lines=tuple(script_lines_list),
+                            caption="",
+                            out_path=overlay_png,
+                            with_caption=False,
+                        )
+                    else:
+                        # One of the 5 main hooks: title + subtitle drawn into the design
+                        from tools.hook_overlay import build_hook
+                        build_hook(hook_style, hook_title or "ĐÀ LẠT", hook_subtitle or "", overlay_png)
                     # Composite overlay PNG onto scaled video
                     filter_str = (
                         f"[0:v]scale=1080:1920:force_original_aspect_ratio=decrease,"

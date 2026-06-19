@@ -1,0 +1,410 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Đà Lạt Studio — Tạo video</title>
+<style>
+  :root {
+    --pine: #2f6b4f; --pine2: #3c8a64; --sunset: #ef8aa0; --sun: #f6b25e;
+    --lav: #b9a7e6; --ink: #2b2f38; --muted: #7b8694; --line: #e6e2f0;
+    --card: #ffffff; --card2: #f7f5fb; --ok: #2f9d57; --err: #e2536b; --radius: 16px;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; color: var(--ink); font-size: 15px; line-height: 1.5;
+    font-family: -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    background: linear-gradient(135deg, #dCeaf2 0%, #e9e3f6 42%, #ffe7da 100%); min-height: 100vh; }
+  button { font-family: inherit; cursor: pointer; border: none; border-radius: 10px; font-weight: 600; }
+  .btn { background: linear-gradient(135deg, var(--pine2), var(--pine)); color: #fff; padding: 11px 18px; font-size: 14px; }
+  .btn:hover { filter: brightness(1.06); }
+  .btn:disabled { opacity: .5; cursor: not-allowed; }
+  .btn-pink { background: linear-gradient(135deg, var(--sunset), #f3a6b6); }
+  .btn-ghost { background: #fff; border: 1px solid var(--line); color: var(--ink); }
+  input, textarea, select { width: 100%; background: #fff; border: 1px solid var(--line); color: var(--ink);
+    border-radius: 10px; padding: 10px 12px; font-size: 14px; font-family: inherit; resize: vertical; }
+  input:focus, textarea:focus { outline: none; border-color: var(--pine2); }
+  label { display: block; font-size: 12px; color: var(--muted); margin: 10px 0 5px; font-weight: 600; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: 18px;
+    box-shadow: 0 8px 30px rgba(120,110,160,.10); }
+  .muted { color: var(--muted); font-size: 12px; }
+  .hidden { display: none !important; }
+
+  /* LOGIN */
+  #login { min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 24px; }
+  #login .card { width: 100%; max-width: 380px; text-align: center; }
+  #login .logo { font-size: 30px; }
+  #login h1 { font-size: 20px; margin: 6px 0 2px; }
+  #login .err { color: var(--err); font-size: 13px; margin-top: 10px; min-height: 18px; }
+
+  /* HEADER */
+  header { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 14px 22px;
+    background: rgba(255,255,255,.7); backdrop-filter: blur(8px); border-bottom: 1px solid var(--line);
+    position: sticky; top: 0; z-index: 20; }
+  header .brand { font-weight: 800; font-size: 17px; }
+  header .brand small { display: block; font-weight: 500; color: var(--muted); font-size: 11px; }
+  .hdr-right { display: flex; align-items: center; gap: 10px; }
+  .chip { padding: 6px 12px; border-radius: 999px; font-size: 12px; font-weight: 700; }
+  .chip-hook { background: rgba(47,107,79,.12); color: var(--pine); }
+  .chip-role { background: rgba(239,138,160,.16); color: #c14a66; }
+
+  .wrap { max-width: 1240px; margin: 0 auto; padding: 22px; }
+  .grid5050 { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; align-items: start; }
+  @media (max-width: 900px) { .grid5050 { grid-template-columns: 1fr; } }
+  h2.sec { font-size: 13px; text-transform: uppercase; letter-spacing: .05em; color: var(--pine); margin: 0 0 12px; }
+
+  .scene { border: 1px solid var(--line); border-radius: 12px; padding: 12px; margin-top: 12px; background: var(--card2); }
+  .scene .tag { font-size: 11px; color: var(--pine); font-weight: 800; }
+  .scene .tag .dur { color: var(--muted); font-weight: 600; }
+  .scene-total { font-size: 12px; margin-top: 8px; font-weight: 700; }
+  .scene-total.ok { color: var(--ok); } .scene-total.low { color: #d98a1f; }
+  .clip-list { margin-top: 8px; display: flex; flex-direction: column; gap: 6px; }
+  .clip-row { display: flex; align-items: center; gap: 8px; background: #fff; border: 1px solid var(--line);
+    border-radius: 8px; padding: 5px 8px; font-size: 12px; }
+  .clip-row img { width: 30px; height: 53px; object-fit: cover; border-radius: 4px; background: #eee; }
+  .clip-row .nm { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .clip-row .du { color: var(--ok); font-weight: 700; } .clip-row .x { background: none; color: var(--err); font-size: 15px; }
+  .drop { border: 1.5px dashed var(--line); border-radius: 10px; padding: 12px; text-align: center; color: var(--muted);
+    font-size: 12px; cursor: pointer; margin-top: 8px; background: #fff; }
+  .drop.over { border-color: var(--pine2); background: rgba(47,107,79,.06); color: var(--pine); }
+  .pager { display: flex; align-items: center; gap: 8px; }
+  .pager button { padding: 4px 10px; background: #fff; border: 1px solid var(--line); color: var(--ink); }
+  .pager .idx { font-size: 12px; color: var(--muted); }
+
+  /* preview phones */
+  .preview-hint { color: var(--muted); font-size: 12px; margin: 0 0 12px; }
+  .phones { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; }
+  .phone { width: min(31%, 230px); aspect-ratio: 9/16; border-radius: 14px; border: 1px solid var(--line);
+    position: relative; overflow: hidden; background: #e9e9ef center/cover no-repeat; flex: 0 0 auto; box-shadow: 0 6px 20px rgba(0,0,0,.08); }
+  .phone .plabel { position: absolute; top: 6px; left: 0; right: 0; text-align: center; font-size: 9px; font-weight: 700;
+    color: #fff; z-index: 4; text-shadow: 0 1px 2px #000; }
+  .phone .hookov { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; z-index: 3; }
+  .phone .pcap { position: absolute; bottom: 5%; left: 0; right: 0; z-index: 4; text-align: center; color: #fff;
+    font-size: clamp(8px,1.5vw,12px); font-weight: 700; padding: 0 8px; line-height: 1.2;
+    text-shadow: 0 0 3px #000,1px 1px 2px #000; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+  .phone .empty { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; color: #aaa; font-size: 10px; }
+
+  /* news color pick */
+  .colors { display: flex; gap: 8px; margin-top: 6px; }
+  .colordot { width: 30px; height: 30px; border-radius: 50%; cursor: pointer; border: 3px solid transparent; }
+  .colordot.active { border-color: var(--ink); }
+  .srclist a { display: block; color: var(--pine); font-size: 13px; padding: 6px 0; border-bottom: 1px solid var(--line); text-decoration: none; word-break: break-all; }
+
+  /* library + viewer + overlays */
+  .lib { position: fixed; inset: 0; background: rgba(40,40,60,.55); backdrop-filter: blur(6px); z-index: 60; overflow-y: auto; padding: 30px; }
+  .lib-inner { max-width: 1100px; margin: 0 auto; }
+  .lib-top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 18px; color: #fff; }
+  .lib-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px,1fr)); gap: 16px; }
+  .lib-card { border-radius: 12px; overflow: hidden; background: #fff; box-shadow: 0 6px 20px rgba(0,0,0,.15); }
+  .lib-card video { width: 100%; display: block; background: #000; aspect-ratio: 9/16; object-fit: contain; }
+  .lib-card .cap { padding: 8px 10px; font-size: 12px; display: flex; justify-content: space-between; gap: 8px; align-items: center; }
+  .lib-card .expand { background: var(--card2); border: 1px solid var(--line); border-radius: 8px; padding: 3px 8px; font-size: 11px; }
+  .lib-render { position: relative; aspect-ratio: 9/16; background: #1a1d24 center/cover; }
+  .lib-render .blur { position: absolute; inset: 0; background: inherit; filter: blur(7px) brightness(.6); }
+  .lib-render .mid { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; z-index: 2; color: #fff; }
+  .spin { width: 38px; height: 38px; border: 4px solid rgba(255,255,255,.25); border-top-color: #fff; border-radius: 50%; animation: spin 1s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .lib-bar { position: absolute; bottom: 0; left: 0; height: 4px; background: var(--sunset); z-index: 3; }
+  .viewer { position: fixed; inset: 0; background: rgba(15,15,25,.92); z-index: 80; display: flex; align-items: center; justify-content: center; flex-direction: column; gap: 12px; }
+  .viewer video { height: 88vh; max-width: 96vw; aspect-ratio: 9/16; border-radius: 12px; background: #000; }
+  .viewer .close { position: absolute; top: 18px; right: 22px; color: #fff; font-size: 26px; background: none; }
+  .created { position: fixed; inset: 0; background: rgba(20,30,25,.55); backdrop-filter: blur(4px); z-index: 90; display: flex; align-items: center; justify-content: center; }
+  .created .box { background: #fff; border-radius: 18px; padding: 30px 40px; text-align: center; box-shadow: 0 20px 60px rgba(0,0,0,.3); }
+  .created .ok { font-size: 46px; }
+  .stat-table { width: 100%; border-collapse: collapse; }
+  .stat-table th, .stat-table td { text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--line); font-size: 14px; }
+  .stat-table th { color: var(--muted); font-size: 12px; text-transform: uppercase; }
+  .stat-table .num { font-weight: 800; color: var(--pine); }
+  .toast { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); background: #fff; border: 1px solid var(--line);
+    padding: 10px 18px; border-radius: 10px; font-size: 14px; z-index: 100; box-shadow: 0 8px 30px rgba(0,0,0,.15); }
+</style>
+</head>
+<body>
+
+<!-- LOGIN -->
+<div id="login">
+  <div class="card">
+    <div class="logo">🌲🌸</div>
+    <h1>Đà Lạt Studio</h1>
+    <div class="muted">Đăng nhập để tạo video</div>
+    <label style="text-align:left">Tài khoản</label>
+    <input id="lg-user" placeholder="vd: nv1 / admin / tintuc" autocomplete="username">
+    <label style="text-align:left">Mật khẩu</label>
+    <input id="lg-pass" type="password" placeholder="••••" autocomplete="current-password">
+    <button class="btn" style="width:100%;margin-top:14px" onclick="doLogin()">Đăng nhập</button>
+    <div class="err" id="lg-err"></div>
+  </div>
+</div>
+
+<!-- APP -->
+<div id="app" class="hidden">
+  <header>
+    <div class="brand">🌲🌸 Đà Lạt Studio<small id="hd-sub"></small></div>
+    <div class="hdr-right" id="hd-right"></div>
+  </header>
+  <div class="wrap" id="appbody"></div>
+</div>
+
+<!-- overlays -->
+<div class="lib hidden" id="lib"><div class="lib-inner">
+  <div class="lib-top"><h2 style="margin:0">📚 Thư viện video</h2><button class="btn-ghost" onclick="closeLibrary()">✕ Đóng</button></div>
+  <div class="lib-grid" id="libGrid"></div>
+  <div id="libEmpty" class="muted" style="color:#eee;margin-top:16px">Chưa có video nào.</div>
+</div></div>
+<div class="viewer hidden" id="viewer"><button class="close" onclick="closeViewer()">✕</button><video id="viewerVid" controls></video></div>
+<div class="created hidden" id="created"><div class="box"><div class="ok">✅</div><div style="font-weight:700;font-size:18px;margin-top:6px">Đã tạo video!</div><div class="muted">Đang render ở nền — bạn cứ tạo clip mới.</div></div></div>
+
+<script>
+const API = location.origin;
+let SESSION = null;
+const HOOK_NAMES = { hook_red:"Viền đỏ", hook_green:"Hộp xanh", hook_brown:"Hộp nâu", hook_serif:"Khung vuông", hook_meo:"Khung mèo", hook_news:"Tin tức" };
+const PAGE = 3;
+let currentScenes = [], scenePage = 0, jobs = [], rendering = false, prevTimer = null, hookOverlayUrl = "";
+let newsColor = "pink";
+
+function toast(m){const t=document.createElement("div");t.className="toast";t.textContent=m;document.body.appendChild(t);setTimeout(()=>t.remove(),2800);}
+
+// ---------- LOGIN ----------
+async function doLogin(){
+  const u=document.getElementById("lg-user").value.trim(), p=document.getElementById("lg-pass").value;
+  const err=document.getElementById("lg-err"); err.textContent="";
+  try{
+    const r=await fetch(API+"/login",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({username:u,password:p})});
+    const j=await r.json();
+    if(!j.ok){err.textContent=j.error||"Sai tài khoản";return;}
+    SESSION=j; localStorage.setItem("dalat_session",JSON.stringify(j)); startApp();
+  }catch(e){err.textContent="Lỗi kết nối server";}
+}
+function logout(){ localStorage.removeItem("dalat_session"); location.reload(); }
+document.getElementById("lg-pass").addEventListener("keydown",e=>{if(e.key==="Enter")doLogin();});
+
+function startApp(){
+  document.getElementById("login").classList.add("hidden");
+  document.getElementById("app").classList.remove("hidden");
+  document.getElementById("hd-sub").textContent = SESSION.name + (SESSION.role==="staff"?" · Hook: "+(HOOK_NAMES[SESSION.hook_style]||SESSION.hook_style):"");
+  const right=document.getElementById("hd-right");
+  let html = `<span class="chip chip-role">${SESSION.role==="admin"?"Quản lý":SESSION.role==="news"?"Tin tức":"Nhân viên"}</span>`;
+  if(SESSION.role==="staff"||SESSION.role==="news") html += `<button class="btn-ghost chip" onclick="openLibrary()">📚 Thư viện</button>`;
+  if(SESSION.role==="admin") html += `<button class="btn-ghost chip" onclick="openLibrary()">📚 Tất cả video</button>`;
+  html += `<button class="btn-ghost chip" onclick="logout()">Đăng xuất</button>`;
+  right.innerHTML=html;
+  if(SESSION.role==="admin") renderAdmin();
+  else if(SESSION.role==="news") renderNews();
+  else renderStaff();
+}
+
+// ---------- shared clip meta ----------
+function loadClipMeta(file){return new Promise(res=>{const url=URL.createObjectURL(file),v=document.createElement("video");v.preload="metadata";v.muted=true;v.src=url;let done=false;const fin=(d,t)=>{if(done)return;done=true;URL.revokeObjectURL(url);res({dur:d,thumb:t});};v.onloadedmetadata=()=>{try{v.currentTime=Math.min(.15,(v.duration||1)/2);}catch{fin(v.duration||0,"");}};v.onseeked=()=>{let t="";try{const c=document.createElement("canvas");const ar=(v.videoWidth&&v.videoHeight)?v.videoWidth/v.videoHeight:9/16;c.width=120;c.height=Math.round(120/(ar||9/16));c.getContext("2d").drawImage(v,0,0,c.width,c.height);t=c.toDataURL("image/jpeg",.6);}catch{}fin(v.duration||0,t);};v.onerror=()=>fin(0,"");setTimeout(()=>fin(v.duration||0,""),4000);});}
+
+// ---------- STAFF / NEWS create flow ----------
+function curHookStyle(){ return SESSION.role==="news" ? ("hook_news_"+newsColor) : SESSION.hook_style; }
+
+function renderStaff(){
+  document.getElementById("appbody").innerHTML = `
+    <div class="card" style="max-width:620px;margin:0 auto" id="genCard">
+      <h2 class="sec">① Tạo kịch bản</h2>
+      <label>Chủ đề (vd: "Khám phá Đà Lạt") — hoặc dán kịch bản nhiều dòng</label>
+      <textarea id="topic" rows="2" placeholder="Nhập chủ đề ngắn, AI viết kịch bản ~18s."></textarea>
+      <button class="btn" style="width:100%;margin-top:12px" id="genBtn" onclick="generateScript()">✨ Tạo theo framework</button>
+      <div class="muted" style="margin-top:8px">Hook: <b>${HOOK_NAMES[SESSION.hook_style]||SESSION.hook_style}</b> · giọng Google · dọc 9:16 · ~18s.</div>
+    </div>
+    <div id="editor" class="hidden"></div>`;
+}
+
+function renderNews(){
+  document.getElementById("appbody").innerHTML = `
+    <div class="card" style="max-width:680px;margin:0 auto" id="genCard">
+      <h2 class="sec">📰 Kênh tin tức Đà Lạt</h2>
+      <label>Từ khoá / chủ đề tin</label>
+      <input id="topic" placeholder="vd: ẩm thực Đà Lạt, check-in Đà Lạt tháng 6">
+      <div class="row" style="display:flex;gap:10px;margin-top:6px">
+        <label style="margin:0">Màu hook</label>
+        <div class="colors">
+          <div class="colordot active" style="background:#ef5da8" data-c="pink" onclick="pickColor('pink',this)"></div>
+          <div class="colordot" style="background:#3fbf6f" data-c="green" onclick="pickColor('green',this)"></div>
+          <div class="colordot" style="background:#9b5de5" data-c="purple" onclick="pickColor('purple',this)"></div>
+        </div>
+      </div>
+      <button class="btn" style="width:100%;margin-top:12px" id="genBtn" onclick="researchNews()">🔎 Research tin + tìm source</button>
+      <div class="muted" style="margin-top:8px">AI viết kịch bản + trả <b>link source YouTube</b> để bạn tải về thả vào (giống luồng nhân viên). Hook full-nền · 1080p.</div>
+      <div id="srcbox" class="hidden" style="margin-top:14px"><h2 class="sec">Source gợi ý (tải về rồi thả vào scene)</h2><div class="srclist" id="srclist"></div></div>
+    </div>
+    <div id="editor" class="hidden"></div>`;
+}
+function pickColor(c,el){ newsColor=c; document.querySelectorAll(".colordot").forEach(d=>d.classList.toggle("active",d===el)); updateHookOverlay(); }
+
+async function researchNews(){
+  const kw=document.getElementById("topic").value.trim(); if(!kw){toast("Nhập từ khoá");return;}
+  const btn=document.getElementById("genBtn"); btn.disabled=true; btn.textContent="⏳ Đang research...";
+  try{
+    const r=await fetch(API+"/news-research",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({keyword:kw})});
+    const j=await r.json(); if(!j.success) throw new Error(j.error||"lỗi");
+    const sb=document.getElementById("srcbox"), sl=document.getElementById("srclist");
+    sb.classList.remove("hidden");
+    sl.innerHTML = (j.sources||[]).map(s=>`<a href="${s.url}" target="_blank">▶ ${s.title||s.url} ${s.duration?("· "+Math.round(s.duration/60)+"ph"):""}</a>`).join("") || "<div class='muted'>Không tìm được source — thử từ khoá khác.</div>";
+    currentScenes = makeScenes(j.script); scenePage=0;
+    openEditor();
+  }catch(e){toast("Lỗi: "+e.message);} finally{btn.disabled=false;btn.textContent="🔎 Research tin + tìm source";}
+}
+
+function makeScenes(s){
+  const est=t=>Math.max(3,Math.round((t||"").length/14));
+  return [
+    {scene_id:"scene_1",label:"HOOK",title:(s.title||"").trim(),caption:(s.hook||"").trim(),min_duration_sec:est(s.title+" "+s.hook),type:"clip",files:[]},
+    {scene_id:"scene_2",label:"NỘI DUNG",caption:(s.body||"").trim(),min_duration_sec:est(s.body),type:"clip",files:[]},
+    {scene_id:"scene_3",label:"CTA",caption:(s.cta||"").trim(),min_duration_sec:est(s.cta),type:"clip",files:[]},
+  ];
+}
+
+async function generateScript(){
+  const topic=document.getElementById("topic").value.trim(); if(!topic){toast("Nhập chủ đề");return;}
+  const btn=document.getElementById("genBtn"); btn.disabled=true; btn.textContent="⏳ Đang viết…";
+  try{
+    const r=await fetch(API+"/generate-script",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({topic})});
+    const j=await r.json(); if(!j.success) throw new Error(j.error||"lỗi");
+    currentScenes=j.scenes.map(s=>({...s,files:[]})); scenePage=0; openEditor();
+  }catch(e){toast("Lỗi: "+e.message);} finally{btn.disabled=false;btn.textContent="✨ Tạo theo framework";}
+}
+
+function openEditor(){
+  document.getElementById("editor").classList.remove("hidden");
+  document.getElementById("editor").innerHTML = `
+    <div class="grid5050" style="margin-top:18px">
+      <div class="card">
+        <div style="display:flex;justify-content:space-between;align-items:center"><h2 class="sec" style="margin:0">② Scene & source</h2><div class="pager" id="pager"></div></div>
+        <div class="muted">Mỗi scene 1 câu. Thả 1+ clip (số giây hiện sẵn). Dư tự cắt.</div>
+        <div id="scenes"></div>
+        <div style="display:flex;gap:10px;margin-top:14px">
+          <button class="btn-pink" style="flex:1;color:#fff" onclick="createVideo()">🎬 Tạo video</button>
+          <button class="btn-ghost" onclick="resetEditor()">↺ làm lại</button>
+        </div>
+      </div>
+      <div class="card">
+        <h2 class="sec">Xem trước</h2>
+        <div class="preview-hint">Scene 1 = hook. Thả source để xem khớp khung.</div>
+        <div class="phones" id="phones"></div>
+      </div>
+    </div>`;
+  renderSceneInputs(); updateHookOverlay(); renderPreview();
+  document.getElementById("editor").scrollIntoView({behavior:"smooth"});
+}
+function resetEditor(){ currentScenes=[]; scenePage=0; document.getElementById("editor").classList.add("hidden"); document.getElementById("editor").innerHTML=""; }
+
+function renderPager(){const total=currentScenes.length,pages=Math.ceil(total/PAGE),box=document.getElementById("pager");if(!box)return;if(pages<=1){box.innerHTML="";return;}const a=scenePage*PAGE+1,b=Math.min(total,(scenePage+1)*PAGE);box.innerHTML=`<button onclick="pageScene(-1)" ${scenePage===0?"disabled":""}>‹</button><span class="idx">Scene ${a}-${b}/${total}</span><button onclick="pageScene(1)" ${scenePage>=pages-1?"disabled":""}>›</button>`;}
+function pageScene(d){const pages=Math.ceil(currentScenes.length/PAGE);scenePage=Math.max(0,Math.min(pages-1,scenePage+d));renderSceneInputs();renderPreview();}
+
+function renderSceneInputs(){
+  renderPager(); const box=document.getElementById("scenes"); if(!box)return; box.innerHTML="";
+  const start=scenePage*PAGE;
+  currentScenes.slice(start,start+PAGE).forEach((sc,k)=>{
+    const i=start+k; const div=document.createElement("div"); div.className="scene";
+    let head;
+    if(i===0){
+      head=`<label style="margin-top:0">${SESSION.role==="news"?"Caption hook (chữ to)":"Tiêu đề hook"}</label>
+        <textarea rows="2" data-title="${i}">${(sc.title||"").replace(/</g,"&lt;")}</textarea>`;
+      if(SESSION.role!=="news") head+=`<label>Dòng phụ hook</label><textarea rows="2" data-cap="${i}">${(sc.caption||"").replace(/</g,"&lt;")}</textarea>`;
+    } else {
+      head=`<label style="margin-top:0">Lời thoại / phụ đề scene</label><textarea rows="2" data-cap="${i}">${(sc.caption||"").replace(/</g,"&lt;")}</textarea>`;
+    }
+    div.innerHTML=`<div class="tag">SCENE ${i+1} · ${sc.label} <span class="dur">· mục tiêu ~${sc.min_duration_sec}s</span></div>${head}
+      <div class="scene-total" id="total-${i}"></div><div class="clip-list" id="clips-${i}"></div>
+      <div class="drop" id="drop-${i}">+ Kéo-thả / bấm thêm clip</div>
+      <input type="file" accept="video/*,.mov,.mp4" multiple class="hidden" id="file-${i}">`;
+    box.appendChild(div);
+    const tEl=div.querySelector(`[data-title="${i}"]`); if(tEl)tEl.oninput=()=>{currentScenes[i].title=tEl.value;updateHookOverlay();};
+    const cEl=div.querySelector(`[data-cap="${i}"]`); if(cEl)cEl.oninput=()=>{currentScenes[i].caption=cEl.value;if(i===0)updateHookOverlay();renderPreview();};
+    const drop=div.querySelector("#drop-"+i),input=div.querySelector("#file-"+i);
+    drop.onclick=()=>input.click(); input.onchange=()=>{addFiles(i,input.files);input.value="";};
+    drop.ondragover=e=>{e.preventDefault();drop.classList.add("over");};drop.ondragleave=()=>drop.classList.remove("over");
+    drop.ondrop=e=>{e.preventDefault();drop.classList.remove("over");addFiles(i,e.dataTransfer.files);};
+    renderClipList(i);
+  });
+}
+function updateHookOverlay(){
+  if(!currentScenes[0])return; if(prevTimer)clearTimeout(prevTimer);
+  prevTimer=setTimeout(async()=>{
+    const payload={style:curHookStyle(),title:currentScenes[0].title||"",subtitle:(SESSION.role==="news")?"":(currentScenes[0].caption||"")};
+    try{const r=await fetch(API+"/hookpreview",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload)});if(!r.ok)return;const b=await r.blob();if(hookOverlayUrl)URL.revokeObjectURL(hookOverlayUrl);hookOverlayUrl=URL.createObjectURL(b);const el=document.getElementById("hookov-0");if(el)el.src=hookOverlayUrl;}catch{}
+  },350);
+}
+function renderPreview(){
+  const box=document.getElementById("phones"); if(!box)return; const start=scenePage*PAGE; box.innerHTML="";
+  currentScenes.slice(start,start+PAGE).forEach((sc,k)=>{const i=start+k;const ph=document.createElement("div");ph.className="phone";const thumb=sc.files[0]&&sc.files[0].thumb;if(thumb)ph.style.backgroundImage=`url(${thumb})`;let inner=`<div class="plabel">SCENE ${i+1} · ${sc.label}</div>`;if(!thumb)inner+=`<div class="empty">Chưa có clip</div>`;if(i===0)inner+=`<img class="hookov" id="hookov-0" ${hookOverlayUrl?`src="${hookOverlayUrl}"`:""}>`;else inner+=`<div class="pcap">${(sc.caption||"").replace(/</g,"&lt;")}</div>`;ph.innerHTML=inner;box.appendChild(ph);});
+}
+async function addFiles(i,fl){const drop=document.getElementById("drop-"+i);if(drop)drop.textContent="⏳ đọc clip…";for(const f of fl){const m=await loadClipMeta(f);currentScenes[i].files.push({file:f,dur:m.dur||0,thumb:m.thumb||""});renderClipList(i);renderPreview();}if(drop)drop.textContent="+ Kéo-thả / bấm thêm clip";}
+function removeClip(i,k){currentScenes[i].files.splice(k,1);renderClipList(i);renderPreview();}
+function sceneTotal(i){return currentScenes[i].files.reduce((a,c)=>a+(c.dur||0),0);}
+function renderClipList(i){const sc=currentScenes[i],box=document.getElementById("clips-"+i);if(!box)return;box.innerHTML="";sc.files.forEach((c,k)=>{const row=document.createElement("div");row.className="clip-row";row.innerHTML=`${c.thumb?`<img src="${c.thumb}">`:`<img>`}<span class="nm">${k+1}. ${c.file.name}</span><span class="du">${c.dur?c.dur.toFixed(1)+"s":"—"}</span><button class="x">✕</button>`;row.querySelector(".x").onclick=()=>removeClip(i,k);box.appendChild(row);});const tot=sceneTotal(i),tg=sc.min_duration_sec,el=document.getElementById("total-"+i);if(!el)return;if(!sc.files.length){el.textContent="";return;}const ok=tot>=tg;el.className="scene-total "+(ok?"ok":"low");el.textContent=ok?`✓ ${tot.toFixed(1)}s (mục tiêu ~${tg}s)`+(tot>tg+1?" — dư sẽ cắt":""):`⚠ ${tot.toFixed(1)}s / ~${tg}s — nên thêm clip`;}
+
+async function createVideo(){
+  const empty=currentScenes.filter(s=>s.files.length===0); if(empty.length){toast("Còn "+empty.length+" scene chưa có clip");return;}
+  const isNews=SESSION.role==="news";
+  const sub=isNews?"":(currentScenes[0].caption||"").trim();
+  const job={id:"job_"+Date.now().toString(36),topic:((currentScenes[0].title||"")||"Clip").slice(0,50),
+    script:{hook:(currentScenes[0].title||"").trim(),body:(currentScenes[1].caption||"").trim(),cta:(currentScenes[2].caption||"").trim()},
+    hookTitle:(currentScenes[0].title||"").trim(),hookSub:sub,hookStyle:curHookStyle(),hookPrev:hookOverlayUrl,
+    scenes:currentScenes.map(s=>({scene_id:s.scene_id,description:s.description||s.label,min_duration_sec:s.min_duration_sec,type:s.type,files:s.files.map(c=>c.file)})),
+    status:"pending",progress:0,videoUrl:"",error:""};
+  hookOverlayUrl="";
+  jobs.unshift(job); renderAll();
+  // success overlay 2s → reset
+  const cr=document.getElementById("created"); cr.classList.remove("hidden");
+  setTimeout(()=>{ cr.classList.add("hidden"); resetEditor(); const tp=document.getElementById("topic"); if(tp)tp.value=""; }, 2000);
+}
+
+async function renderAll(){
+  if(rendering)return; rendering=true;
+  let job;
+  while((job=jobs.find(j=>j.status==="pending"))){
+    job.status="rendering"; job.progress=15; renderLibrary();
+    try{
+      const fd=new FormData();
+      fd.append("job_id",job.id); fd.append("video_type","personal"); fd.append("creator_id",SESSION.username);
+      fd.append("user",SESSION.username); fd.append("topic",job.topic);
+      fd.append("voice_mode",SESSION.voice||"gtts"); fd.append("voice_id","");
+      fd.append("hook_style",job.hookStyle); fd.append("hook_title",job.hookTitle); fd.append("hook_subtitle",job.hookSub);
+      fd.append("hook_text",job.hookTitle); fd.append("transition","fade"); fd.append("template_ratio","9:16");
+      fd.append("script",JSON.stringify(job.script));
+      fd.append("scenes_meta",JSON.stringify(job.scenes.map(s=>({scene_id:s.scene_id,description:s.description,min_duration_sec:s.min_duration_sec,type:s.type}))));
+      job.scenes.forEach(s=>s.files.forEach((f,k)=>fd.append(s.scene_id+"__"+k,f,f.name)));
+      job.progress=55; renderLibrary();
+      const r=await fetch(API+"/assemble",{method:"POST",body:fd}); const t=await r.text();
+      let res; try{res=JSON.parse(t);}catch{throw new Error("Phản hồi lạ");}
+      if(!res.success) throw new Error(res.error||"render fail");
+      job.status="done"; job.progress=100; job.videoUrl=res.video_url||"";
+    }catch(e){job.status="error";job.error=e.message;}
+    renderLibrary();
+  }
+  rendering=false;
+}
+
+// ---------- LIBRARY / VIEWER ----------
+let libVideos=[];
+async function fetchLibrary(){try{const r=await fetch(API+`/library?user=${SESSION.username}&role=${SESSION.role}`,{cache:"no-store"});libVideos=(await r.json()).videos||[];}catch{}}
+async function openLibrary(){await fetchLibrary();document.getElementById("lib").classList.remove("hidden");renderLibrary();}
+function closeLibrary(){document.getElementById("lib").classList.add("hidden");}
+function openViewer(url){const v=document.getElementById("viewerVid");v.src=API+url;document.getElementById("viewer").classList.remove("hidden");v.play().catch(()=>{});}
+function closeViewer(){const v=document.getElementById("viewerVid");v.pause();v.removeAttribute("src");document.getElementById("viewer").classList.add("hidden");}
+function renderLibrary(){
+  const grid=document.getElementById("libGrid"); if(!grid)return; const cards=[];
+  jobs.filter(j=>j.status!=="done").forEach(j=>{cards.push(`<div class="lib-card"><div class="lib-render" style="${j.hookPrev?`background-image:url(${j.hookPrev})`:""}"><div class="blur" style="${j.hookPrev?`background-image:url(${j.hookPrev})`:""}"></div><div class="mid">${j.status==="error"?`<div style="color:#ffb4b4">Lỗi</div><div class="muted" style="color:#ddd;max-width:90%;text-align:center">${j.error||""}</div>`:`<div class="spin"></div><div>${j.status==="rendering"?"Đang render "+j.progress+"%":"Chờ…"}</div>`}</div><div class="lib-bar" style="width:${j.progress}%"></div></div><div class="cap"><span>${j.topic}</span></div></div>`);});
+  const shown=new Set();
+  jobs.filter(j=>j.status==="done"&&j.videoUrl).forEach(j=>{shown.add(j.videoUrl);cards.push(libCard(j.videoUrl,j.topic));});
+  libVideos.forEach(v=>{if(shown.has(v.video_url))return;cards.push(libCard(v.video_url,v.topic||"video",v.user));});
+  grid.innerHTML=cards.join(""); const e=document.getElementById("libEmpty"); if(e)e.style.display=cards.length?"none":"block";
+}
+function libCard(url,topic,user){return `<div class="lib-card"><video src="${API+url}" preload="metadata"></video><div class="cap"><span>${topic||""}${user?" · "+user:""}</span><button class="expand" onclick="openViewer('${url}')">⤢ Phóng to</button></div></div>`;}
+
+// ---------- ADMIN ----------
+async function renderAdmin(){
+  document.getElementById("appbody").innerHTML=`<div class="card"><h2 class="sec">📊 Thống kê sản phẩm theo nhân viên</h2><div id="statbox" class="muted">Đang tải…</div></div>`;
+  try{const r=await fetch(API+"/stats",{cache:"no-store"});const j=await r.json();
+    const rows=(j.stats||[]).map(s=>`<tr><td>${s.name}</td><td><span class="chip ${s.role==="news"?"chip-role":"chip-hook"}">${s.role==="news"?"Tin tức":"Nhân viên"}</span></td><td class="num">${s.count}</td></tr>`).join("");
+    document.getElementById("statbox").innerHTML=`<table class="stat-table"><tr><th>Nhân viên</th><th>Loại</th><th>Số sản phẩm</th></tr>${rows}</table><div class="muted" style="margin-top:10px">Tổng: ${j.total} video. Bấm "Tất cả video" trên header để xem.</div>`;
+  }catch(e){document.getElementById("statbox").textContent="Lỗi tải thống kê";}
+}
+
+// boot
+(function(){const s=localStorage.getItem("dalat_session");if(s){try{SESSION=JSON.parse(s);startApp();}catch{}}})();
+</script>
+</body>
+</html>

@@ -62,3 +62,14 @@ Thumbs.db
 **/*.pyc
 **/*.pyo
 **/*.pyd
+
+# Secrets — KHÔNG push .env (chứa API key thật); gửi riêng cho team. Chỉ push .env.example
+.env
+*.env
+!.env.example
+
+# Media nặng (raw footage / ảnh / source tải về) — không push lên GitHub
+/source video/
+/source video noi that/
+/anh video du lich/
+/dulich-pipeline/data/news_source/
