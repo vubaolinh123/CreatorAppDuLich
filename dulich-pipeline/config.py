@@ -24,13 +24,22 @@ class PipelineConfig:
     google_sheet_id: str = ""
     google_credentials_path: str = "credentials.json"
 
-    # --- MongoDB ---
+    # --- Supabase ---
+    supabase_url: str = ""
+    supabase_key: str = ""
+
+    # --- MongoDB (Legacy) ---
     mongo_uri: str = "mongodb://localhost:27017"
     mongo_db_name: str = "dulichapp"
 
     # --- Output ---
     output_dir: str = "./output"
     dashboard_url: str = "http://localhost:3000"
+
+    # --- Social Publishing ---
+    tiktok_access_token: str = ""
+    facebook_access_token: str = ""
+    facebook_page_id: str = ""
 
     # --- Resource / Worker config ---
     max_workers: int = 2            # Số jobs chạy song song
@@ -57,12 +66,29 @@ class PipelineConfig:
             self.voice_provider = os.getenv("VOICE_PROVIDER", "vbee")
         if not self.google_sheet_id:
             self.google_sheet_id = os.getenv("GOOGLE_SHEET_ID", "")
+        
+        # Supabase
+        if not self.supabase_url:
+            self.supabase_url = os.getenv("SUPABASE_URL", "")
+        if not self.supabase_key:
+            self.supabase_key = os.getenv("SUPABASE_PUBLISHABLE_KEY", "")
+        
+        # MongoDB (legacy)
         if self.mongo_uri == "mongodb://localhost:27017":
             self.mongo_uri = os.getenv("MONGO_URI", "mongodb://localhost:27017")
         if self.mongo_db_name == "dulichapp":
             self.mongo_db_name = os.getenv("MONGO_DB_NAME", "dulichapp")
         if self.dashboard_url == "http://localhost:3000":
             self.dashboard_url = os.getenv("DASHBOARD_URL", "http://localhost:3000")
+        
+        # Social Publishing
+        if not self.tiktok_access_token:
+            self.tiktok_access_token = os.getenv("TIKTOK_ACCESS_TOKEN", "")
+        if not self.facebook_access_token:
+            self.facebook_access_token = os.getenv("FACEBOOK_ACCESS_TOKEN", "")
+        if not self.facebook_page_id:
+            self.facebook_page_id = os.getenv("FACEBOOK_PAGE_ID", "")
+        
         if self.max_workers == 2:
             self.max_workers = int(os.getenv("MAX_WORKERS", "2"))
         if self.ram_gb == 4.0:

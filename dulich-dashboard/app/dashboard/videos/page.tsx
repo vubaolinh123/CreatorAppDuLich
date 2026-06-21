@@ -3,24 +3,47 @@
 import { useEffect, useState } from "react";
 import {
   Film,
-  User,
   Clock,
   CheckCircle2,
   Send,
   Loader2,
-  ChevronRight,
   Eye,
   FileText,
   Type,
-  ImageIcon,
+  XCircle,
+  ExternalLink,
+  Share2,
 } from "lucide-react";
-import type { VideoItem } from "@/lib/mock_db";
+
+interface VideoItem {
+  id: string;
+  name: string;
+  creator: string;
+  status: "Đang render" | "Chờ duyệt" | "Đã duyệt" | "Đã đăng" | "Từ chối";
+  date: string;
+  topic: string;
+  script: {
+    hook: string;
+    body: string;
+    cta: string;
+  };
+  captions: {
+    hooks: string[];
+    caption_short: string;
+    caption_long: string;
+    hashtags: string[];
+  };
+  videoPath: string;
+  driveUrl: string;
+  localPath: string;
+}
 
 export default function VideosPage() {
   const [videos, setVideos] = useState<VideoItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedVideo, setSelectedVideo] = useState<VideoItem | null>(null);
   const [updatingId, setUpdatingId] = useState<string | null>(null);
+  const [publishingId, setPublishingId] = useState<string | null>(null);
 
   const fetchVideos = async () => {
     try {
@@ -71,30 +94,26 @@ export default function VideosPage() {
     }
   };
 
-  const handlePublish = async (id: string) => {
-    setUpdatingId(id);
+  const handlePublishToSocial = async (id: string, platform: "tiktok" | "facebook") => {
+    setPublishingId(id);
     try {
-      const res = await fetch("/api/publish", {
+      const res = await fetch("/api/publish-social", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id, type: "video" }),
+        body: JSON.stringify({ id, platform }),
       });
       const data = await res.json();
       if (data.success) {
-        alert(`${data.message}\nLink: ${data.postLink}`);
-        setVideos((prev) =>
-          prev.map((v) => (v.id === id ? { ...v, status: "Đã đăng" } : v))
-        );
-        if (selectedVideo?.id === id) {
-          setSelectedVideo((prev) => (prev ? { ...prev, status: "Đã đăng" } : null));
-        }
+        alert(`Đăng bài lên ${platform === "tiktok" ? "TikTok" : "Facebook"} thành công!\nLink: ${data.postUrl || "N/A"}`);
+        // Update status to published
+        await handleUpdateStatus(id, "Đã đăng");
       } else {
-        alert(data.error || "Không thể đăng bài");
+        alert(data.error || `Không thể đăng bài lên ${platform}`);
       }
     } catch (err) {
       alert("Đã xảy ra lỗi khi đăng bài");
     } finally {
-      setUpdatingId(null);
+      setPublishingId(null);
     }
   };
 
@@ -128,6 +147,13 @@ export default function VideosPage() {
             Đã đăng
           </span>
         );
+      case "Từ chối":
+        return (
+          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-red-500/10 text-red-400 border border-red-500/20">
+            <XCircle size={12} />
+            Từ chối
+          </span>
+        );
       default:
         return null;
     }
@@ -139,7 +165,7 @@ export default function VideosPage() {
       <div className="mb-8">
         <h1 className="text-2xl font-bold text-white mb-2">Quản lý Video & Bài viết</h1>
         <p className="text-sm text-gray-500">
-          Danh sách kịch bản, hình ảnh seeding và trạng thái render video từ hệ thống
+          Danh sách video từ dulich-pipeline — Duyệt và đăng bài lên TikTok/Facebook
         </p>
       </div>
 
@@ -153,14 +179,8 @@ export default function VideosPage() {
           <Film className="mx-auto mb-4 text-gray-600" size={48} />
           <h3 className="text-white font-medium mb-1">Chưa có video nào</h3>
           <p className="text-gray-500 text-sm mb-6">
-            Hãy tạo bài viết mới bằng Claude AI để bắt đầu workflow!
+            Hãy tạo video từ dulich-pipeline và bấm &quot;Đăng lên Dashboard&quot;!
           </p>
-          <a
-            href="/dashboard/create"
-            className="inline-flex items-center gap-2 bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-500 hover:to-blue-500 text-white text-sm font-medium px-5 py-2.5 rounded-xl transition"
-          >
-            Tạo bài mới ngay
-          </a>
         </div>
       ) : (
         <div className="grid grid-cols-1 lg:grid-cols-5 gap-8">
@@ -169,6 +189,12 @@ export default function VideosPage() {
             <div className="bg-[#1a1a1a] rounded-xl border border-[#333] overflow-hidden">
               <div className="px-6 py-4 border-b border-[#333] flex justify-between items-center bg-[#1e1e1e]">
                 <h2 className="text-sm font-semibold text-white">Danh sách nội dung ({videos.length})</h2>
+                <button
+                  onClick={fetchVideos}
+                  className="text-xs text-purple-400 hover:text-purple-300 font-medium flex items-center gap-1 transition"
+                >
+                  🔄 Làm mới
+                </button>
               </div>
               <div className="overflow-x-auto">
                 <table className="w-full text-left">
@@ -192,16 +218,11 @@ export default function VideosPage() {
                       >
                         <td className="px-6 py-4">
                           <div className="font-medium text-white">{video.name}</div>
-                          {video.seeds && video.seeds.length > 0 && (
-                            <div className="text-xs text-gray-500 mt-1">
-                              📍 Seeding: {video.seeds.join(", ")}
-                            </div>
-                          )}
                         </td>
                         <td className="px-6 py-4 text-sm text-gray-300">
                           <div className="flex items-center gap-2">
                             <div className="w-6 h-6 rounded-full bg-blue-600/20 text-blue-400 flex items-center justify-center text-xs font-bold">
-                              {video.creator.replace("Creator ", "")}
+                              {video.creator.slice(0, 2).toUpperCase()}
                             </div>
                             {video.creator}
                           </div>
@@ -219,23 +240,51 @@ export default function VideosPage() {
                             </button>
 
                             {video.status === "Chờ duyệt" && (
-                              <button
-                                onClick={() => handleUpdateStatus(video.id, "Đã duyệt")}
-                                disabled={updatingId === video.id}
-                                className="px-2.5 py-1 text-xs bg-green-600 hover:bg-green-500 text-white font-medium rounded-lg transition disabled:opacity-50"
-                              >
-                                Duyệt
-                              </button>
+                              <>
+                                <button
+                                  onClick={() => handleUpdateStatus(video.id, "Đã duyệt")}
+                                  disabled={updatingId === video.id}
+                                  className="px-2.5 py-1 text-xs bg-green-600 hover:bg-green-500 text-white font-medium rounded-lg transition disabled:opacity-50"
+                                >
+                                  Duyệt
+                                </button>
+                                <button
+                                  onClick={() => handleUpdateStatus(video.id, "Từ chối")}
+                                  disabled={updatingId === video.id}
+                                  className="px-2.5 py-1 text-xs bg-red-600/50 hover:bg-red-500 text-white font-medium rounded-lg transition disabled:opacity-50"
+                                >
+                                  Từ chối
+                                </button>
+                              </>
                             )}
 
                             {video.status === "Đã duyệt" && (
-                              <button
-                                onClick={() => handlePublish(video.id)}
-                                disabled={updatingId === video.id}
-                                className="px-2.5 py-1 text-xs bg-purple-600 hover:bg-purple-500 text-white font-medium rounded-lg transition disabled:opacity-50"
-                              >
-                                Đăng bài
-                              </button>
+                              <div className="flex gap-1">
+                                <button
+                                  onClick={() => handlePublishToSocial(video.id, "tiktok")}
+                                  disabled={publishingId === video.id}
+                                  className="px-2.5 py-1 text-xs bg-black hover:bg-gray-800 text-white font-medium rounded-lg transition disabled:opacity-50 flex items-center gap-1"
+                                >
+                                  {publishingId === video.id ? (
+                                    <Loader2 className="animate-spin" size={12} />
+                                  ) : (
+                                    <Share2 size={12} />
+                                  )}
+                                  TikTok
+                                </button>
+                                <button
+                                  onClick={() => handlePublishToSocial(video.id, "facebook")}
+                                  disabled={publishingId === video.id}
+                                  className="px-2.5 py-1 text-xs bg-blue-600 hover:bg-blue-500 text-white font-medium rounded-lg transition disabled:opacity-50 flex items-center gap-1"
+                                >
+                                  {publishingId === video.id ? (
+                                    <Loader2 className="animate-spin" size={12} />
+                                  ) : (
+                                    <Share2 size={12} />
+                                  )}
+                                  Facebook
+                                </button>
+                              </div>
                             )}
                           </div>
                         </td>
@@ -266,25 +315,54 @@ export default function VideosPage() {
                 </div>
 
                 <div className="p-6 space-y-6 max-h-[70vh] overflow-y-auto">
+                  {/* Video Preview */}
+                  {(selectedVideo.videoPath || selectedVideo.driveUrl) && (
+                    <div className="space-y-3">
+                      <h3 className="text-sm font-semibold text-white flex items-center gap-2 border-b border-[#333] pb-2">
+                        <Film size={16} className="text-purple-400" />
+                        Video Preview
+                      </h3>
+                      <div className="bg-[#111] p-4 rounded-lg border border-[#222]">
+                        <video
+                          src={selectedVideo.driveUrl || selectedVideo.videoPath}
+                          controls
+                          className="w-full rounded-lg"
+                          style={{ maxHeight: "400px" }}
+                        />
+                        <div className="mt-2 flex gap-2">
+                          <a
+                            href={selectedVideo.driveUrl || selectedVideo.videoPath}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-xs text-blue-400 hover:text-blue-300 flex items-center gap-1"
+                          >
+                            <ExternalLink size={12} />
+                            Mở trong tab mới
+                          </a>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
                   {/* Script Details */}
                   <div className="space-y-3">
                     <h3 className="text-sm font-semibold text-white flex items-center gap-2 border-b border-[#333] pb-2">
                       <FileText size={16} className="text-blue-400" />
-                      Kịch bản video (60s)
+                      Kịch bản video
                     </h3>
                     <div className="space-y-3 bg-[#111] p-4 rounded-lg border border-[#222]">
                       <div>
-                        <div className="text-[10px] font-bold text-purple-400 uppercase">Hook (0-5s)</div>
+                        <div className="text-[10px] font-bold text-purple-400 uppercase">Hook</div>
                         <p className="text-sm text-white mt-1">{selectedVideo.script.hook}</p>
                       </div>
                       <div className="border-t border-[#222] pt-2 mt-2">
-                        <div className="text-[10px] font-bold text-blue-400 uppercase">Body (5-40s)</div>
+                        <div className="text-[10px] font-bold text-blue-400 uppercase">Body</div>
                         <p className="text-sm text-gray-300 mt-1 whitespace-pre-line">
                           {selectedVideo.script.body}
                         </p>
                       </div>
                       <div className="border-t border-[#222] pt-2 mt-2">
-                        <div className="text-[10px] font-bold text-green-400 uppercase">CTA (40-60s)</div>
+                        <div className="text-[10px] font-bold text-green-400 uppercase">CTA</div>
                         <p className="text-sm text-white mt-1">{selectedVideo.script.cta}</p>
                       </div>
                     </div>
@@ -309,66 +387,52 @@ export default function VideosPage() {
                           {selectedVideo.captions.caption_long}
                         </p>
                       </div>
-                      <div>
-                        <div className="text-xs text-gray-500 font-medium">Hashtags:</div>
-                        <div className="flex flex-wrap gap-1.5 mt-2">
-                          {selectedVideo.captions.hashtags.map((h, i) => (
-                            <span
-                              key={i}
-                              className="text-xs bg-blue-500/10 text-blue-400 px-2 py-0.5 rounded-full border border-blue-500/10"
-                            >
-                              {h}
-                            </span>
-                          ))}
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Image Prompts details */}
-                  <div className="space-y-3">
-                    <h3 className="text-sm font-semibold text-white flex items-center gap-2 border-b border-[#333] pb-2">
-                      <ImageIcon size={16} className="text-purple-400" />
-                      Gợi ý Prompts ảnh Seeding
-                    </h3>
-                    <div className="bg-[#111] p-4 rounded-lg border border-[#222] space-y-3">
-                      <p className="text-xs text-gray-400 italic">
-                        {selectedVideo.images.description}
-                      </p>
-                      <ol className="space-y-2">
-                        {selectedVideo.images.prompts.map((prompt, i) => (
-                          <li key={i} className="text-sm text-gray-300 flex gap-2">
-                            <span className="text-purple-400 font-bold">{i + 1}.</span>
-                            <span>{prompt}</span>
-                          </li>
-                        ))}
-                      </ol>
                     </div>
                   </div>
 
                   {/* Quick Action in detail */}
                   <div className="border-t border-[#333] pt-4 mt-2 flex gap-3">
                     {selectedVideo.status === "Chờ duyệt" && (
-                      <button
-                        onClick={() => handleUpdateStatus(selectedVideo.id, "Đã duyệt")}
-                        disabled={updatingId === selectedVideo.id}
-                        className="flex-1 py-2.5 bg-green-600 hover:bg-green-500 text-white font-medium rounded-xl text-sm transition"
-                      >
-                        Duyệt video kịch bản
-                      </button>
+                      <>
+                        <button
+                          onClick={() => handleUpdateStatus(selectedVideo.id, "Đã duyệt")}
+                          disabled={updatingId === selectedVideo.id}
+                          className="flex-1 py-2.5 bg-green-600 hover:bg-green-500 text-white font-medium rounded-xl text-sm transition"
+                        >
+                          Duyệt video
+                        </button>
+                        <button
+                          onClick={() => handleUpdateStatus(selectedVideo.id, "Từ chối")}
+                          disabled={updatingId === selectedVideo.id}
+                          className="flex-1 py-2.5 bg-red-600/50 hover:bg-red-500 text-white font-medium rounded-xl text-sm transition"
+                        >
+                          Từ chối
+                        </button>
+                      </>
                     )}
                     {selectedVideo.status === "Đã duyệt" && (
-                      <button
-                        onClick={() => handlePublish(selectedVideo.id)}
-                        disabled={updatingId === selectedVideo.id}
-                        className="flex-1 py-2.5 bg-purple-600 hover:bg-purple-500 text-white font-medium rounded-xl text-sm transition"
-                      >
-                        Đăng bài lên mạng xã hội
-                      </button>
+                      <div className="flex gap-2 w-full">
+                        <button
+                          onClick={() => handlePublishToSocial(selectedVideo.id, "tiktok")}
+                          disabled={publishingId === selectedVideo.id}
+                          className="flex-1 py-2.5 bg-black hover:bg-gray-800 text-white font-medium rounded-xl text-sm transition flex items-center justify-center gap-2"
+                        >
+                          <Share2 size={16} />
+                          Đăng lên TikTok
+                        </button>
+                        <button
+                          onClick={() => handlePublishToSocial(selectedVideo.id, "facebook")}
+                          disabled={publishingId === selectedVideo.id}
+                          className="flex-1 py-2.5 bg-blue-600 hover:bg-blue-500 text-white font-medium rounded-xl text-sm transition flex items-center justify-center gap-2"
+                        >
+                          <Share2 size={16} />
+                          Đăng lên Facebook
+                        </button>
+                      </div>
                     )}
                     {selectedVideo.status === "Đã đăng" && (
                       <div className="w-full text-center py-2 bg-purple-500/10 text-purple-400 border border-purple-500/20 text-xs font-semibold rounded-lg">
-                        Bài viết đã được đăng qua Ayrshare API!
+                        Bài viết đã được đăng lên mạng xã hội!
                       </div>
                     )}
                   </div>

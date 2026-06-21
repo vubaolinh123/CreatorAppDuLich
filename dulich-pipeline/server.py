@@ -84,8 +84,33 @@ USERS_FILE = Path(__file__).parent / "data" / "users.json"
 PRODUCTS_FILE = Path(__file__).parent / "output" / "products.json"
 _PROD_LOCK = threading.Lock()
 
+# Supabase client (lazy init)
+_supabase_client = None
+
+
+def _get_supabase():
+    """Get or create Supabase client."""
+    global _supabase_client
+    if _supabase_client is None:
+        try:
+            from tools.supabase_client import get_supabase
+            _supabase_client = get_supabase()
+        except Exception as e:
+            print(f"[Server] Supabase init error: {e}", file=sys.stderr)
+    return _supabase_client
+
 
 def _load_users() -> dict:
+    """Load users from Supabase, fallback to local file."""
+    try:
+        sb = _get_supabase()
+        if sb and sb.url:
+            users = sb.get_users()
+            if users:
+                return {u["username"]: u for u in users}
+    except Exception as e:
+        print(f"[Server] Supabase users load error: {e}", file=sys.stderr)
+    # Fallback to local file
     try:
         return json.loads(USERS_FILE.read_text(encoding="utf-8"))
     except Exception:
@@ -302,6 +327,8 @@ class AssembleHandler(BaseHTTPRequestHandler):
             self.handle_open_folder()
         elif self.path == "/download-file":
             self.handle_download_file()
+        elif self.path == "/publish-to-dashboard":
+            self.handle_publish_to_dashboard()
         elif self.path == "/health":
             self._json_response({"status": "ok", "port": PORT})
         else:
@@ -897,6 +924,103 @@ class AssembleHandler(BaseHTTPRequestHandler):
                 time.sleep(60)
                 shutil.rmtree(str(job_temp), ignore_errors=True)
             threading.Thread(target=cleanup, daemon=True).start()
+
+    def handle_publish_to_dashboard(self):
+        """Publish content to dashboard via Supabase with Google Drive upload."""
+        print("[Server] /publish-to-dashboard — Đăng nội dung lên Dashboard...", file=sys.stderr)
+        try:
+            data = self._read_json_body()
+            
+            # Extract data
+            job_id = data.get("job_id", "")
+            user_id = data.get("user_id", "")
+            title = data.get("title", "")
+            topic = data.get("topic", "")
+            script = data.get("script", {})
+            drive_url = data.get("drive_url", "")
+            local_path = data.get("local_path", "")
+            hook_style = data.get("hook_style", "")
+            hook_text = data.get("hook_text", "")
+            video_type = data.get("video_type", "video")
+            
+            if not job_id:
+                self._json_response({"success": False, "error": "Thiếu job_id"}, 400)
+                return
+            
+            # Try to upload to Google Drive if local_path exists
+            actual_drive_url = drive_url
+            if local_path and not drive_url:
+                try:
+                    from tools.drive_uploader import get_drive_uploader
+                    uploader = get_drive_uploader()
+                    # Resolve full path
+                    full_path = local_path
+                    if not os.path.isabs(full_path):
+                        full_path = str(Path(__file__).parent / local_path.lstrip("/"))
+                    
+                    if os.path.exists(full_path):
+                        print(f"[Server] Uploading to Google Drive: {full_path}", file=sys.stderr)
+                        upload_result = uploader.upload_video(full_path, job_id)
+                        if "webViewLink" in upload_result:
+                            actual_drive_url = upload_result["webViewLink"]
+                            print(f"[Server] ✓ Uploaded to Drive: {actual_drive_url}", file=sys.stderr)
+                        elif "error" in upload_result:
+                            print(f"[Server] ⚠ Drive upload failed: {upload_result['error']}", file=sys.stderr)
+                    else:
+                        print(f"[Server] ⚠ File not found: {full_path}", file=sys.stderr)
+                except Exception as e:
+                    print(f"[Server] ⚠ Google Drive upload error: {e}", file=sys.stderr)
+            
+            # Save to Supabase
+            sb = _get_supabase()
+            if sb and sb.url:
+                content_data = {
+                    "user_id": user_id if user_id else None,
+                    "content_type": video_type,
+                    "status": "pending",
+                    "title": title,
+                    "topic": topic,
+                    "script": script,
+                    "drive_url": actual_drive_url,
+                    "local_path": local_path,
+                    "hook_style": hook_style,
+                    "hook_text": hook_text,
+                    "job_id": job_id,
+                    "video_type": video_type,
+                }
+                result = sb.create_content(content_data)
+                if result and "id" in result:
+                    print(f"[Server] ✅ Đã đăng lên Dashboard. Content ID: {result['id']}", file=sys.stderr)
+                    self._json_response({
+                        "success": True,
+                        "content_id": result["id"],
+                        "drive_url": actual_drive_url,
+                        "message": "Đã đăng nội dung lên Dashboard thành công"
+                    })
+                else:
+                    print(f"[Server] ❌ Lỗi đăng lên Dashboard: {result}", file=sys.stderr)
+                    self._json_response({"success": False, "error": f"Lỗi Supabase: {result}"}, 500)
+            else:
+                # Fallback: save to local products.json
+                print("[Server] Supabase not configured, saving to local products.json", file=sys.stderr)
+                import time as _t
+                _append_product({
+                    "user": data.get("user", ""),
+                    "topic": topic,
+                    "hook_style": hook_style,
+                    "video_url": drive_url or local_path,
+                    "time": _t.time(),
+                    "status": "pending",
+                })
+                self._json_response({
+                    "success": True,
+                    "message": "Đã lưu vào products.json (Supabase chưa cấu hình)"
+                })
+        except Exception as e:
+            import traceback
+            tb = traceback.format_exc()
+            print(f"[Server] /publish-to-dashboard error: {e}\n{tb}", file=sys.stderr)
+            self._json_response({"success": False, "error": str(e), "traceback": tb}, 500)
 
 
 def main():

@@ -98,6 +98,8 @@
   .lib-card video { width: 100%; display: block; background: #000; aspect-ratio: 9/16; object-fit: contain; }
   .lib-card .cap { padding: 8px 10px; font-size: 12px; display: flex; justify-content: space-between; gap: 8px; align-items: center; }
   .lib-card .expand { background: var(--card2); border: 1px solid var(--line); border-radius: 8px; padding: 3px 8px; font-size: 11px; }
+  .lib-card .btn-publish { background: linear-gradient(135deg, #3b82f6, #1d4ed8); color: #fff; border: none; border-radius: 8px; padding: 3px 8px; font-size: 11px; cursor: pointer; }
+  .lib-card .btn-publish:hover { filter: brightness(1.1); }
   .lib-render { position: relative; aspect-ratio: 9/16; background: #1a1d24 center/cover; }
   .lib-render .blur { position: absolute; inset: 0; background: inherit; filter: blur(7px) brightness(.6); }
   .lib-render .mid { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; z-index: 2; color: #fff; }
@@ -392,7 +394,41 @@ function renderLibrary(){
   libVideos.forEach(v=>{if(shown.has(v.video_url))return;cards.push(libCard(v.video_url,v.topic||"video",v.user));});
   grid.innerHTML=cards.join(""); const e=document.getElementById("libEmpty"); if(e)e.style.display=cards.length?"none":"block";
 }
-function libCard(url,topic,user){return `<div class="lib-card"><video src="${API+url}" preload="metadata"></video><div class="cap"><span>${topic||""}${user?" · "+user:""}</span><button class="expand" onclick="openViewer('${url}')">⤢ Phóng to</button></div></div>`;}
+function libCard(url,topic,user,jobId){return `<div class="lib-card"><video src="${API+url}" preload="metadata"></video><div class="cap"><span>${topic||""}${user?" · "+user:""}</span><div style="display:flex;gap:4px;"><button class="expand" onclick="openViewer('${url}')">⤢ Phóng to</button><button class="btn-publish" onclick="publishToDashboard('${jobId||''}','${topic||''}')" title="Đăng lên Dashboard">📤</button></div></div></div>`;}
+
+async function publishToDashboard(jobId, topic) {
+  if (!jobId) { toast("Không tìm thấy job ID"); return; }
+  const job = jobs.find(j => j.id === jobId);
+  if (!job || !job.videoUrl) { toast("Video chưa hoàn tất"); return; }
+  
+  try {
+    toast("Đang đăng lên Dashboard...");
+    const r = await fetch(API + "/publish-to-dashboard", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({
+        job_id: jobId,
+        user_id: SESSION.username,
+        title: job.hookTitle || topic,
+        topic: topic,
+        script: job.script,
+        drive_url: job.videoUrl,
+        local_path: job.videoUrl,
+        hook_style: job.hookStyle,
+        hook_text: job.hookTitle,
+        video_type: "video"
+      })
+    });
+    const res = await r.json();
+    if (res.success) {
+      toast("✅ Đã đăng lên Dashboard thành công!");
+    } else {
+      toast("❌ Lỗi: " + (res.error || "Không rõ lỗi"));
+    }
+  } catch (e) {
+    toast("❌ Lỗi kết nối: " + e.message);
+  }
+}
 
 // ---------- ADMIN ----------
 async function renderAdmin(){

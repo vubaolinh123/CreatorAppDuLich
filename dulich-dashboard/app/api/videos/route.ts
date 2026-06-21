@@ -1,62 +1,68 @@
 import { NextResponse } from "next/server";
-import { connectToDatabase } from "@/lib/db";
+import { supabase, getAllContent } from "@/lib/supabase";
 
 export const runtime = "nodejs";
 
 export async function GET() {
   try {
-    const { db } = await connectToDatabase();
-    
-    // Fetch all personal_video or video items from content collection
-    const contents = await db.collection("content")
-      .find({ content_type: { $in: ["personal_video", "video"] } })
-      .sort({ created_at: -1 })
-      .toArray();
+    // Fetch all video content from Supabase
+    const { data: contents, error } = await supabase
+      .from("content")
+      .select("*")
+      .order("created_at", { ascending: false });
+
+    if (error) {
+      console.error("[GET /api/videos] Supabase error:", error);
+      return NextResponse.json(
+        { success: false, error: "Không thể lấy danh sách video", details: error.message },
+        { status: 500 }
+      );
+    }
 
     // Map to frontend VideoItem format
-    const videos = contents.map((doc) => {
-      const data = doc.data || {};
-      const script = data.script || {};
+    const videos = (contents || []).map((doc: any) => {
+      const script = doc.script || {};
       
-      // Determine name
-      let topic = data.topic || "Du lịch";
-      let name = data.name || doc.name || `Video ${topic}`;
-      
+      // Determine status for frontend
       let status = "Chờ duyệt";
-      if (doc.status === "approved" || doc.status === "approved_review" || doc.status === "Đã duyệt") {
+      if (doc.status === "approved") {
         status = "Đã duyệt";
-      } else if (doc.status === "published" || doc.status === "Đã đăng") {
+      } else if (doc.status === "published") {
         status = "Đã đăng";
-      } else if (doc.status === "rendering" || doc.status === "running") {
+      } else if (doc.status === "rejected") {
+        status = "Từ chối";
+      } else if (doc.status === "rendering") {
         status = "Đang render";
       }
 
       return {
-        id: doc._id.toString(),
-        name,
-        creator: data.creator_name || data.creator_id || "Lan Anh",
+        id: doc.id,
+        name: doc.title || `Video ${doc.topic || "Du lịch"}`,
+        creator: doc.user_id || "Unknown",
         status,
         date: doc.created_at ? doc.created_at.split("T")[0] : new Date().toISOString().split("T")[0],
-        topic,
-        templateId: data.template_id || "default",
-        seeds: data.seeds || [],
+        topic: doc.topic || "Du lịch",
+        templateId: "default",
+        seeds: [],
         script: {
-          hook: script.hook || data.hook_text || "",
+          hook: script.hook || doc.hook_text || "",
           body: script.body || "",
           cta: script.cta || "",
         },
-        captions: data.captions || {
-          hooks: [data.hook_text || ""],
+        captions: {
+          hooks: [doc.hook_text || ""],
           caption_short: script.hook || "",
           caption_long: script.body || "",
           hashtags: [],
         },
-        images: data.images || {
-          description: data.image_assets ? `Bộ ảnh du lịch ${topic}` : "",
-          prompts: data.image_assets || [],
+        images: {
+          description: "",
+          prompts: [],
         },
-        videoPath: data.video_path || "",
-        audioPath: data.audio_path || "",
+        videoPath: doc.drive_url || doc.local_path || "",
+        audioPath: "",
+        driveUrl: doc.drive_url || "",
+        localPath: doc.local_path || "",
       };
     });
 
@@ -65,97 +71,49 @@ export async function GET() {
     console.error("GET /api/videos error:", error);
     return NextResponse.json(
       { success: false, error: "Không thể lấy danh sách video", details: error.message },
-      { status: 500 },
+      { status: 500 }
     );
   }
 }
 
 export async function POST(request: Request) {
   try {
-    const { db } = await connectToDatabase();
     const payload = await request.json();
+    const { title, topic, script, drive_url, local_path, user_id, hook_style, hook_text, video_type } = payload;
 
-    // Check if it is a personal/album run payload from pipeline
-    if (payload.channel === "personal") {
-      const jobId = payload.job_id;
-      const creatorId = payload.creator_id;
-      
-      const existing = await db.collection("content").findOne({ job_id: jobId });
-      if (existing) {
-        return NextResponse.json({ success: true, data: existing, message: "Video already synced in MongoDB" });
-      }
+    // Insert new content into Supabase
+    const { data, error } = await supabase
+      .from("content")
+      .insert({
+        user_id: user_id || null,
+        content_type: video_type || "video",
+        status: "pending",
+        title: title || "Video mới",
+        topic: topic || "Du lịch",
+        script: script || {},
+        drive_url: drive_url || "",
+        local_path: local_path || "",
+        hook_style: hook_style || "",
+        hook_text: hook_text || "",
+        video_type: video_type || "video",
+      })
+      .select()
+      .single();
 
-      const doc = {
-        job_id: jobId,
-        content_type: "personal_video",
-        status: "pending_review",
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-        data: {
-          creator_id: creatorId,
-          video_path: payload.video_path,
-          audio_path: payload.audio_path,
-          script: payload.script,
-          hook_style: payload.hook_style,
-          hook_text: payload.hook_text,
-        }
-      };
-
-      await db.collection("content").insertOne(doc);
-      return NextResponse.json({ success: true, data: doc });
+    if (error) {
+      console.error("[POST /api/videos] Supabase error:", error);
+      return NextResponse.json(
+        { success: false, error: "Không thể lưu video", details: error.message },
+        { status: 500 }
+      );
     }
 
-    if (payload.channel === "album") {
-      const jobId = payload.job_id;
-      
-      const existing = await db.collection("content").findOne({ job_id: jobId });
-      if (existing) {
-        return NextResponse.json({ success: true, data: existing, message: "Album already synced in MongoDB" });
-      }
-
-      const doc = {
-        job_id: jobId,
-        content_type: "album",
-        status: "pending_review",
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-        data: {
-          topic: payload.topic,
-          title: payload.title,
-          subtitle: payload.subtitle,
-          images: payload.images,
-        }
-      };
-
-      await db.collection("content").insertOne(doc);
-      return NextResponse.json({ success: true, data: doc });
-    }
-
-    // Default manual or legacy POST handler
-    const { topic, templateId, seeds, creator, script, captions, images } = payload;
-    const doc = {
-      content_type: "video",
-      status: "pending_review",
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-      data: {
-        topic: topic || "Vietnam",
-        template_id: templateId || "default",
-        creator_name: creator || "AI Pipeline",
-        seeds: seeds || [],
-        script,
-        captions,
-        images,
-      }
-    };
-    await db.collection("content").insertOne(doc);
-    return NextResponse.json({ success: true, data: doc });
-
+    return NextResponse.json({ success: true, data });
   } catch (error: any) {
     console.error("POST /api/videos error:", error);
     return NextResponse.json(
       { success: false, error: "Lỗi hệ thống khi lưu video", details: error.message },
-      { status: 500 },
+      { status: 500 }
     );
   }
 }
