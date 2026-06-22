@@ -50,6 +50,19 @@ ENV_PATH = Path(_DOTENV_PATH) if _DOTENV_PATH else (Path(__file__).parent / ".en
 # Thư mục ảnh địa điểm (upload/cào) + kho ảnh chung
 THUMB_DIR = Path(__file__).parent / "data" / "thumbs"
 ALBUM_DIR = Path(__file__).parent / "data" / "album"
+
+# ── Tạo ảnh (8 album template) — mỗi cái là 1 script CLI dựng slide PNG ────────
+# script: tên file CLI; seed: script có nhận --seed (random hoá) không; label: tên hiển thị.
+IMAGE_ALBUMS = {
+    "hien1": {"script": "generate_hien25111.py", "seed": True,  "label": "Hiền · Lưới quán"},
+    "hien2": {"script": "generate_hien21113.py", "seed": True,  "label": "Hiền · Bộ sưu tập"},
+    "le1":   {"script": "demo_mye26.py",          "seed": False, "label": "Lê · Mẫu Đà Lạt"},
+    "le2":   {"script": "generate_le2.py",        "seed": False, "label": "Lê · Cover + slide"},
+    "muoi1": {"script": "generate_muoi1912.py",   "seed": True,  "label": "Mười · Album 1"},
+    "muoi2": {"script": "generate_muoi1311.py",   "seed": True,  "label": "Mười · Album 2"},
+    "vy1":   {"script": "generate_vy1.py",        "seed": True,  "label": "Vy · Album 1"},
+    "vy2":   {"script": "generate_hien19111.py",  "seed": True,  "label": "Vy · Album 2"},
+}
 # Danh sách key cho trang Cài đặt. Tất cả TÙY CHỌN — thiếu vẫn chạy free.
 SETTINGS_KEYS = [
     {"key": "OPENROUTER_KEY",    "label": "OpenRouter",      "group": "AI viết kịch bản",
@@ -376,9 +389,7 @@ class AssembleHandler(BaseHTTPRequestHandler):
         elif self.path == "/assemble-listreview":
             self.handle_assemble_listreview()
         elif self.path == "/assemble-image":
-            # Stub phần ẢNH — sẽ cắm module tạo ảnh vào đây sau.
-            self._json_response({"success": False, "error": "coming_soon",
-                                 "message": "Tính năng tạo ảnh đang phát triển."}, 501)
+            self.handle_assemble_image()
         elif self.path == "/settings":
             self.handle_settings_save()
         elif self.path == "/venues":
@@ -448,7 +459,10 @@ class AssembleHandler(BaseHTTPRequestHandler):
                 ext = file_path.suffix.lower()
                 mime_map = {".mp4": "video/mp4", ".mov": "video/quicktime",
                             ".wav": "audio/wav", ".mp3": "audio/mpeg",
-                            ".srt": "text/plain"}
+                            ".srt": "text/plain",
+                            ".png": "image/png", ".jpg": "image/jpeg",
+                            ".jpeg": "image/jpeg", ".webp": "image/webp",
+                            ".gif": "image/gif"}
                 mime = mime_map.get(ext, "application/octet-stream")
                 self.send_response(200)
                 self._cors_headers()
@@ -1119,6 +1133,62 @@ class AssembleHandler(BaseHTTPRequestHandler):
                 time.sleep(60)
                 shutil.rmtree(str(job_temp), ignore_errors=True)
             threading.Thread(target=cleanup, daemon=True).start()
+
+    def handle_assemble_image(self):
+        """POST /assemble-image {album} → chạy script CLI dựng album ảnh, trả list ảnh PNG."""
+        try:
+            body = self._read_json_body()
+            album = (body.get("album") or "").strip()
+            cfg = IMAGE_ALBUMS.get(album)
+            if not cfg:
+                self._json_response({"success": False, "error": f"Album không hợp lệ: {album}"}, 400)
+                return
+
+            base = Path(__file__).parent
+            script_abs = base / cfg["script"]
+            if not script_abs.exists():
+                self._json_response({"success": False, "error": f"Thiếu script: {cfg['script']}"}, 500)
+                return
+
+            out_dir = base / "output" / "albums" / f"app_{album}_{uuid.uuid4().hex[:8]}"
+            out_dir.mkdir(parents=True, exist_ok=True)
+
+            cmd = [sys.executable, str(script_abs), "--out", str(out_dir)]
+            if cfg.get("seed"):
+                import random
+                cmd += ["--seed", str(random.randint(1, 999999))]
+
+            env = os.environ.copy()
+            env["PYTHONUTF8"] = "1"
+            env["PYTHONIOENCODING"] = "utf-8"
+
+            with _HEAVY_LOCK:
+                proc = subprocess.run(cmd, cwd=str(base), env=env,
+                                      capture_output=True, text=True,
+                                      encoding="utf-8", errors="replace", timeout=300)
+
+            if proc.returncode != 0:
+                tail = (proc.stderr or proc.stdout or "").strip()[-1200:]
+                print(f"[Server] ❌ tạo ảnh {album} lỗi (rc={proc.returncode}):\n{tail}", file=sys.stderr)
+                self._json_response({"success": False, "error": tail or "Script lỗi"}, 500)
+                return
+
+            files = sorted(out_dir.glob("*.png"))
+            if not files:
+                self._json_response({"success": False,
+                                     "error": "Script chạy xong nhưng không có ảnh PNG."}, 500)
+                return
+
+            images = [{"name": f.name, "url": _to_output_url(str(f))} for f in files]
+            self._json_response({"success": True, "album": album,
+                                 "label": cfg.get("label", album), "images": images})
+        except subprocess.TimeoutExpired:
+            self._json_response({"success": False, "error": "Quá thời gian (300s)."}, 500)
+        except Exception as e:
+            import traceback
+            tb = traceback.format_exc()
+            print(f"[Server] ❌ assemble-image lỗi: {e}\n{tb}", file=sys.stderr)
+            self._json_response({"success": False, "error": str(e)}, 500)
 
     def handle_listreview_prefill(self):
         """GET /listreview-prefill?employee=nv1&regen=0|1 → scene + nội dung AI điền sẵn (chỉ nv1)."""

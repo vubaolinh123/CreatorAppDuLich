@@ -4,120 +4,171 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>Đà Lạt Studio — Tạo video</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700&family=Be+Vietnam+Pro:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
   :root {
-    --pine: #2f6b4f; --pine2: #3c8a64; --sunset: #ef8aa0; --sun: #f6b25e;
-    --lav: #b9a7e6; --ink: #2b2f38; --muted: #7b8694; --line: #e6e2f0;
-    --card: #ffffff; --card2: #f7f5fb; --ok: #2f9d57; --err: #e2536b; --radius: 16px;
+    --bg:#F3EDE1; --bg2:#E9DECB; --surface:#FFFDF8; --surface2:#F6F0E4;
+    --ink:#23271F; --muted:#7a7d6e; --line:#E7DDCA;
+    --pine:#1F4B38; --pine2:#2C6A4E; --amber:#CF7E36; --amber2:#E0964B; --rose:#D6849C;
+    --ok:#2E8B57; --err:#BE4A45; --radius:16px;
+    --shadow:0 12px 38px rgba(40,52,38,.12); --shadow-sm:0 3px 12px rgba(40,52,38,.07);
+    --serif:"Fraunces",Georgia,"Times New Roman",serif;
+    --sans:"Be Vietnam Pro",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
   }
   * { box-sizing: border-box; }
-  body { margin: 0; color: var(--ink); font-size: 15px; line-height: 1.5;
-    font-family: -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-    background: linear-gradient(135deg, #dCeaf2 0%, #e9e3f6 42%, #ffe7da 100%); min-height: 100vh; }
-  button { font-family: inherit; cursor: pointer; border: none; border-radius: 10px; font-weight: 600; }
-  .btn { background: linear-gradient(135deg, var(--pine2), var(--pine)); color: #fff; padding: 11px 18px; font-size: 14px; }
-  .btn:hover { filter: brightness(1.06); }
-  .btn:disabled { opacity: .5; cursor: not-allowed; }
-  .btn-pink { background: linear-gradient(135deg, var(--sunset), #f3a6b6); }
-  .btn-ghost { background: #fff; border: 1px solid var(--line); color: var(--ink); }
-  input, textarea, select { width: 100%; background: #fff; border: 1px solid var(--line); color: var(--ink);
-    border-radius: 10px; padding: 10px 12px; font-size: 14px; font-family: inherit; resize: vertical; }
-  input:focus, textarea:focus { outline: none; border-color: var(--pine2); }
-  label { display: block; font-size: 12px; color: var(--muted); margin: 10px 0 5px; font-weight: 600; }
-  .card { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: 18px;
-    box-shadow: 0 8px 30px rgba(120,110,160,.10); }
+  body { margin: 0; color: var(--ink); font-size: 15px; line-height: 1.55; font-family: var(--sans);
+    background:
+      radial-gradient(1100px 620px at 88% -8%, rgba(207,126,54,.16), transparent 60%),
+      radial-gradient(900px 560px at 6% 4%, rgba(31,75,56,.14), transparent 55%),
+      linear-gradient(180deg, var(--bg) 0%, var(--bg2) 100%);
+    background-attachment: fixed; min-height: 100vh; -webkit-font-smoothing: antialiased; }
+  ::selection { background: rgba(207,126,54,.28); }
+  button { font-family: inherit; cursor: pointer; border: none; border-radius: 11px; font-weight: 600; transition: transform .12s ease, filter .15s ease, background .15s ease, box-shadow .15s ease; }
+  button:active { transform: translateY(1px); }
+  .btn { background: var(--pine); color: #FBF7EE; padding: 11px 18px; font-size: 14px; box-shadow: 0 6px 16px rgba(31,75,56,.22); }
+  .btn:hover { background: var(--pine2); }
+  .btn:disabled { opacity: .5; cursor: not-allowed; box-shadow: none; }
+  .btn-pink { background: linear-gradient(135deg, var(--amber2), var(--amber)); color: #fff; box-shadow: 0 6px 16px rgba(207,126,54,.28); }
+  .btn-ghost { background: var(--surface); border: 1px solid var(--line); color: var(--ink); box-shadow: var(--shadow-sm); }
+  .btn-ghost:hover { border-color: var(--pine2); color: var(--pine); }
+  input, textarea, select { width: 100%; background: var(--surface); border: 1px solid var(--line); color: var(--ink);
+    border-radius: 11px; padding: 10px 13px; font-size: 14px; font-family: inherit; resize: vertical; transition: border-color .15s, box-shadow .15s; }
+  input:focus, textarea:focus, select:focus { outline: none; border-color: var(--pine2); box-shadow: 0 0 0 3px rgba(44,106,78,.14); }
+  label { display: block; font-size: 11px; letter-spacing: .04em; text-transform: uppercase; color: var(--muted); margin: 12px 0 5px; font-weight: 700; }
+  .card { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 20px;
+    box-shadow: var(--shadow); animation: rise .45s cubic-bezier(.2,.7,.3,1) both; }
+  @keyframes rise { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
   .muted { color: var(--muted); font-size: 12px; }
   .hidden { display: none !important; }
 
   /* LOGIN */
   #login { min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 24px; }
-  #login .card { width: 100%; max-width: 380px; text-align: center; }
-  #login .logo { font-size: 30px; }
-  #login h1 { font-size: 20px; margin: 6px 0 2px; }
+  #login .card { width: 100%; max-width: 390px; text-align: center; padding: 34px 30px; }
+  #login .logo { font-size: 34px; }
+  #login h1 { font-family: var(--serif); font-weight: 600; font-size: 30px; margin: 8px 0 2px; color: var(--pine); letter-spacing: -.01em; }
   #login .err { color: var(--err); font-size: 13px; margin-top: 10px; min-height: 18px; }
 
   /* HEADER */
-  header { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 14px 22px;
-    background: rgba(255,255,255,.7); backdrop-filter: blur(8px); border-bottom: 1px solid var(--line);
+  header { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 13px 24px;
+    background: rgba(252,248,240,.82); backdrop-filter: blur(12px); border-bottom: 1px solid var(--line);
     position: sticky; top: 0; z-index: 20; }
-  header .brand { font-weight: 800; font-size: 17px; }
-  header .brand small { display: block; font-weight: 500; color: var(--muted); font-size: 11px; }
-  .hdr-right { display: flex; align-items: center; gap: 10px; }
-  .chip { padding: 6px 12px; border-radius: 999px; font-size: 12px; font-weight: 700; }
-  .chip-hook { background: rgba(47,107,79,.12); color: var(--pine); }
-  .chip-role { background: rgba(239,138,160,.16); color: #c14a66; }
+  header .brand { font-family: var(--serif); font-weight: 600; font-size: 21px; color: var(--pine); letter-spacing: -.01em; }
+  header .brand small { display: block; font-family: var(--sans); font-weight: 500; color: var(--muted); font-size: 11px; letter-spacing: 0; }
+  .hdr-right { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
+  .chip { padding: 7px 13px; border-radius: 999px; font-size: 12.5px; font-weight: 600; }
+  .chip-hook { background: rgba(31,75,56,.10); color: var(--pine); }
+  .chip-role { background: rgba(207,126,54,.15); color: #a85f24; }
+  button.chip { box-shadow: none; }
 
-  .wrap { max-width: 1240px; margin: 0 auto; padding: 22px; }
-  .grid5050 { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; align-items: start; }
+  .wrap { max-width: 1240px; margin: 0 auto; padding: 26px 22px 60px; }
+  .grid5050 { display: grid; grid-template-columns: 1fr 1fr; gap: 22px; align-items: start; }
   @media (max-width: 900px) { .grid5050 { grid-template-columns: 1fr; } }
-  h2.sec { font-size: 13px; text-transform: uppercase; letter-spacing: .05em; color: var(--pine); margin: 0 0 12px; }
+  h2.sec { font-family: var(--serif); font-weight: 600; font-size: 20px; letter-spacing: -.01em; color: var(--pine); margin: 0 0 14px; }
 
-  .scene { border: 1px solid var(--line); border-radius: 12px; padding: 12px; margin-top: 12px; background: var(--card2); }
-  .scene .tag { font-size: 11px; color: var(--pine); font-weight: 800; }
+  .scene { border: 1px solid var(--line); border-radius: 14px; padding: 14px; margin-top: 12px; background: var(--surface2); transition: box-shadow .15s, border-color .15s; }
+  .scene:hover { box-shadow: var(--shadow-sm); }
+  .scene .tag { font-size: 11px; color: var(--pine); font-weight: 800; letter-spacing: .03em; }
   .scene .tag .dur { color: var(--muted); font-weight: 600; }
   .scene-total { font-size: 12px; margin-top: 8px; font-weight: 700; }
-  .scene-total.ok { color: var(--ok); } .scene-total.low { color: #d98a1f; }
+  .scene-total.ok { color: var(--ok); } .scene-total.low { color: var(--amber); }
   .clip-list { margin-top: 8px; display: flex; flex-direction: column; gap: 6px; }
-  .clip-row { display: flex; align-items: center; gap: 8px; background: #fff; border: 1px solid var(--line);
-    border-radius: 8px; padding: 5px 8px; font-size: 12px; }
-  .clip-row img { width: 30px; height: 53px; object-fit: cover; border-radius: 4px; background: #eee; }
+  .clip-row { display: flex; align-items: center; gap: 8px; background: var(--surface); border: 1px solid var(--line);
+    border-radius: 9px; padding: 5px 8px; font-size: 12px; }
+  .clip-row img { width: 30px; height: 53px; object-fit: cover; border-radius: 5px; background: #eee; }
   .clip-row .nm { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .clip-row .du { color: var(--ok); font-weight: 700; } .clip-row .x { background: none; color: var(--err); font-size: 15px; }
-  .drop { border: 1.5px dashed var(--line); border-radius: 10px; padding: 12px; text-align: center; color: var(--muted);
-    font-size: 12px; cursor: pointer; margin-top: 8px; background: #fff; }
-  .drop.over { border-color: var(--pine2); background: rgba(47,107,79,.06); color: var(--pine); }
+  .clip-row .du { color: var(--ok); font-weight: 700; } .clip-row .x { background: none; color: var(--err); font-size: 15px; box-shadow: none; }
+  .drop { border: 1.5px dashed var(--line); border-radius: 11px; padding: 13px; text-align: center; color: var(--muted);
+    font-size: 12px; cursor: pointer; margin-top: 8px; background: var(--surface); transition: .15s; }
+  .drop:hover { border-color: var(--amber); color: var(--amber); }
+  .drop.over { border-color: var(--pine2); background: rgba(31,75,56,.06); color: var(--pine); }
   .pager { display: flex; align-items: center; gap: 8px; }
-  .pager button { padding: 4px 10px; background: #fff; border: 1px solid var(--line); color: var(--ink); }
-  .pager .idx { font-size: 12px; color: var(--muted); }
+  .pager button { padding: 4px 10px; background: var(--surface); border: 1px solid var(--line); color: var(--ink); }
+  .pager .idx { font-size: 12px; color: var(--muted); font-weight: 600; }
 
   /* preview phones */
   .preview-hint { color: var(--muted); font-size: 12px; margin: 0 0 12px; }
-  .phones { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; }
-  .phone { width: min(31%, 230px); aspect-ratio: 9/16; border-radius: 14px; border: 1px solid var(--line);
-    position: relative; overflow: hidden; background: #e9e9ef center/cover no-repeat; flex: 0 0 auto; box-shadow: 0 6px 20px rgba(0,0,0,.08); }
-  .phone .plabel { position: absolute; top: 6px; left: 0; right: 0; text-align: center; font-size: 9px; font-weight: 700;
-    color: #fff; z-index: 4; text-shadow: 0 1px 2px #000; }
+  .phones { display: flex; gap: 14px; justify-content: center; flex-wrap: wrap; }
+  .phone { width: min(31%, 230px); aspect-ratio: 9/16; border-radius: 18px; border: 1px solid var(--line);
+    position: relative; overflow: hidden; background: #e9e6dd center/cover no-repeat; flex: 0 0 auto; box-shadow: var(--shadow); }
+  .phone .plabel { position: absolute; top: 7px; left: 0; right: 0; text-align: center; font-size: 9px; font-weight: 700;
+    color: #fff; z-index: 4; text-shadow: 0 1px 3px rgba(0,0,0,.7); letter-spacing: .03em; }
   .phone .hookov { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; z-index: 3; }
   .phone .pcap { position: absolute; bottom: 5%; left: 0; right: 0; z-index: 4; text-align: center; color: #fff;
     font-size: clamp(8px,1.5vw,12px); font-weight: 700; padding: 0 8px; line-height: 1.2;
     text-shadow: 0 0 3px #000,1px 1px 2px #000; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
-  .phone .empty { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; color: #aaa; font-size: 10px; }
+  .phone .empty { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; color: #b3ae9f; font-size: 10px; }
+  .phone .pbadge { position: absolute; top: 13%; left: 8px; z-index: 4; color: #fff; font-size: clamp(8px,1.4vw,11px);
+    font-weight: 700; font-style: italic; text-shadow: 0 0 3px #000,1px 1px 2px #000; }
+  .phone .pbadge b { font-style: normal; background: var(--amber); padding: 1px 6px; border-radius: 6px; margin-left: 3px; }
+  .phone .pbadge .paddr { font-style: normal; font-weight: 600; font-size: clamp(6px,1.1vw,9px); margin-top: 2px; }
+
+  /* scene nav arrows (đối xứng, đẹp) */
+  .navarrow { position: fixed; top: 50%; transform: translateY(-50%); z-index: 50; width: 52px; height: 84px;
+    display: none; align-items: center; justify-content: center; border-radius: 16px; cursor: pointer;
+    background: rgba(31,75,56,.86); color: #FBF7EE; font-size: 26px; line-height: 1; backdrop-filter: blur(4px);
+    box-shadow: var(--shadow); transition: background .15s, transform .12s; }
+  .navarrow:hover { background: var(--pine2); }
+  .navarrow.l { left: 14px; } .navarrow.r { right: 14px; }
 
   /* news color pick */
   .colors { display: flex; gap: 8px; margin-top: 6px; }
-  .colordot { width: 30px; height: 30px; border-radius: 50%; cursor: pointer; border: 3px solid transparent; }
+  .colordot { width: 30px; height: 30px; border-radius: 50%; cursor: pointer; border: 3px solid transparent; box-shadow: var(--shadow-sm); transition: transform .12s; }
+  .colordot:hover { transform: scale(1.08); }
   .colordot.active { border-color: var(--ink); }
-  .srclist a { display: block; color: var(--pine); font-size: 13px; padding: 6px 0; border-bottom: 1px solid var(--line); text-decoration: none; word-break: break-all; }
+  .srclist a { display: block; color: var(--pine); font-size: 13px; padding: 8px 0; border-bottom: 1px solid var(--line); text-decoration: none; word-break: break-all; font-weight: 500; }
 
   /* library + viewer + overlays */
-  .lib { position: fixed; inset: 0; background: rgba(40,40,60,.55); backdrop-filter: blur(6px); z-index: 60; overflow-y: auto; padding: 30px; }
-  .lib-inner { max-width: 1100px; margin: 0 auto; }
-  .lib-top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 18px; color: #fff; }
-  .lib-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px,1fr)); gap: 16px; }
-  .lib-card { border-radius: 12px; overflow: hidden; background: #fff; box-shadow: 0 6px 20px rgba(0,0,0,.15); }
-  .lib-card video { width: 100%; display: block; background: #000; aspect-ratio: 9/16; object-fit: contain; }
-  .lib-card .cap { padding: 8px 10px; font-size: 12px; display: flex; justify-content: space-between; gap: 8px; align-items: center; }
-  .lib-card .expand { background: var(--card2); border: 1px solid var(--line); border-radius: 8px; padding: 3px 8px; font-size: 11px; }
-  .lib-card .btn-publish { background: linear-gradient(135deg, #3b82f6, #1d4ed8); color: #fff; border: none; border-radius: 8px; padding: 3px 8px; font-size: 11px; cursor: pointer; }
-  .lib-card .btn-publish:hover { filter: brightness(1.1); }
-  .lib-render { position: relative; aspect-ratio: 9/16; background: #1a1d24 center/cover; }
-  .lib-render .blur { position: absolute; inset: 0; background: inherit; filter: blur(7px) brightness(.6); }
-  .lib-render .mid { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; z-index: 2; color: #fff; }
-  .spin { width: 38px; height: 38px; border: 4px solid rgba(255,255,255,.25); border-top-color: #fff; border-radius: 50%; animation: spin 1s linear infinite; }
+  .lib { position: fixed; inset: 0; background: rgba(26,38,30,.62); backdrop-filter: blur(10px); z-index: 60; overflow-y: auto; padding: 34px 24px; animation: fadein .25s ease; }
+  @keyframes fadein { from { opacity: 0; } to { opacity: 1; } }
+  .lib-inner { max-width: 1140px; margin: 0 auto; }
+  .lib-top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 22px; color: #FBF7EE; }
+  .lib-top h2 { font-family: var(--serif); font-weight: 600; font-size: 26px; margin: 0; }
+  .lib-top .btn-ghost { background: rgba(255,253,248,.14); border-color: rgba(255,253,248,.3); color: #FBF7EE; backdrop-filter: blur(4px); }
+  .lib-top .btn-ghost:hover { background: rgba(255,253,248,.24); color: #fff; }
+  .lib-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px,1fr)); gap: 18px; }
+  .lib-card { border-radius: 16px; overflow: hidden; background: var(--surface); box-shadow: 0 14px 34px rgba(0,0,0,.28); transition: transform .18s ease; }
+  .lib-card:hover { transform: translateY(-4px); }
+  .lib-card video { width: 100%; display: block; background: #11140f; aspect-ratio: 9/16; object-fit: cover; }
+  .lib-card .cap { padding: 10px 12px; font-size: 12.5px; display: flex; justify-content: space-between; gap: 8px; align-items: center; }
+  .lib-card .cap span { overflow: hidden; text-overflow: ellipsis; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+  .lib-card .expand { background: var(--pine); color: #FBF7EE; border: none; border-radius: 9px; padding: 5px 11px; font-size: 11px; font-weight: 600; white-space: nowrap; }
+  .lib-card .expand:hover { background: var(--pine2); }
+  .lib-render { position: relative; aspect-ratio: 9/16; background: #161a13 center/cover; }
+  .lib-render .blur { position: absolute; inset: 0; background: inherit; filter: blur(8px) brightness(.5); }
+  .lib-render .mid { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; z-index: 2; color: #fff; font-size: 13px; font-weight: 600; }
+  .spin { width: 40px; height: 40px; border: 4px solid rgba(255,255,255,.22); border-top-color: var(--amber2); border-radius: 50%; animation: spin 1s linear infinite; }
   @keyframes spin { to { transform: rotate(360deg); } }
-  .lib-bar { position: absolute; bottom: 0; left: 0; height: 4px; background: var(--sunset); z-index: 3; }
-  .viewer { position: fixed; inset: 0; background: rgba(15,15,25,.92); z-index: 80; display: flex; align-items: center; justify-content: center; flex-direction: column; gap: 12px; }
-  .viewer video { height: 88vh; max-width: 96vw; aspect-ratio: 9/16; border-radius: 12px; background: #000; }
-  .viewer .close { position: absolute; top: 18px; right: 22px; color: #fff; font-size: 26px; background: none; }
-  .created { position: fixed; inset: 0; background: rgba(20,30,25,.55); backdrop-filter: blur(4px); z-index: 90; display: flex; align-items: center; justify-content: center; }
-  .created .box { background: #fff; border-radius: 18px; padding: 30px 40px; text-align: center; box-shadow: 0 20px 60px rgba(0,0,0,.3); }
-  .created .ok { font-size: 46px; }
+  .lib-bar { position: absolute; bottom: 0; left: 0; height: 6px; background: linear-gradient(90deg, var(--amber2), var(--amber)); z-index: 3; transition: width .4s ease; }
+  .viewer { position: fixed; inset: 0; background: rgba(14,18,14,.94); backdrop-filter: blur(6px); z-index: 80; display: flex; align-items: center; justify-content: center; flex-direction: column; gap: 12px; animation: fadein .2s ease; }
+  .viewer video { height: 88vh; max-width: 96vw; aspect-ratio: 9/16; border-radius: 16px; background: #000; box-shadow: 0 30px 80px rgba(0,0,0,.6); }
+  .viewer .close { position: absolute; top: 18px; right: 22px; color: #fff; font-size: 22px; width: 44px; height: 44px; border-radius: 50%; background: rgba(255,255,255,.14); backdrop-filter: blur(4px); }
+  .viewer .close:hover { background: rgba(255,255,255,.26); }
+  .created { position: fixed; inset: 0; background: rgba(20,30,25,.5); backdrop-filter: blur(5px); z-index: 90; display: flex; align-items: center; justify-content: center; }
+  .created .box { background: var(--surface); border-radius: 20px; padding: 32px 44px; text-align: center; box-shadow: 0 24px 70px rgba(0,0,0,.3); animation: rise .4s ease both; }
+  .created .ok { font-size: 48px; }
   .stat-table { width: 100%; border-collapse: collapse; }
-  .stat-table th, .stat-table td { text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--line); font-size: 14px; }
-  .stat-table th { color: var(--muted); font-size: 12px; text-transform: uppercase; }
-  .stat-table .num { font-weight: 800; color: var(--pine); }
-  .toast { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); background: #fff; border: 1px solid var(--line);
-    padding: 10px 18px; border-radius: 10px; font-size: 14px; z-index: 100; box-shadow: 0 8px 30px rgba(0,0,0,.15); }
+  .stat-table th, .stat-table td { text-align: left; padding: 11px 12px; border-bottom: 1px solid var(--line); font-size: 14px; }
+  .stat-table th { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .04em; }
+  .stat-table .num { font-weight: 800; color: var(--pine); font-family: var(--serif); }
+  .toast { position: fixed; bottom: 22px; left: 50%; transform: translateX(-50%); background: var(--ink); color: #FBF7EE; border: none;
+    padding: 11px 20px; border-radius: 12px; font-size: 14px; font-weight: 500; z-index: 100; box-shadow: 0 12px 34px rgba(0,0,0,.3); }
+  /* image album generator */
+  .alb-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px,1fr)); gap: 16px; }
+  .alb-card { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 16px;
+    display: flex; flex-direction: column; gap: 10px; box-shadow: 0 6px 20px rgba(120,110,160,.08); }
+  .alb-card .nm { font-weight: 700; font-size: 14px; }
+  .alb-card .id { font-size: 11px; color: var(--muted); }
+  .gal-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px,1fr)); gap: 12px; margin-top: 8px; }
+  .gal-card { border-radius: 10px; overflow: hidden; background: #fff; border: 1px solid var(--line); }
+  .gal-card img { width: 100%; display: block; aspect-ratio: 4/5; object-fit: cover; cursor: zoom-in; background: #eee; }
+  .gal-card .row { display: flex; gap: 6px; padding: 6px; }
+  .gal-card .row a { flex: 1; text-align: center; font-size: 11px; padding: 4px 6px;
+    border-radius: 7px; border: 1px solid var(--line); background: var(--card2); color: var(--ink); text-decoration: none; }
+  .imgview { position: fixed; inset: 0; background: rgba(15,15,25,.92); z-index: 85; display: flex; align-items: center; justify-content: center; }
+  .imgview img { max-height: 92vh; max-width: 96vw; border-radius: 12px; box-shadow: 0 20px 60px rgba(0,0,0,.5); }
+  .imgview .close { position: absolute; top: 18px; right: 22px; color: #fff; font-size: 26px; background: none; }
 </style>
 </head>
 <body>
@@ -153,6 +204,7 @@
   <div id="libEmpty" class="muted" style="color:#eee;margin-top:16px">Chưa có video nào.</div>
 </div></div>
 <div class="viewer hidden" id="viewer"><button class="close" onclick="closeViewer()">✕</button><video id="viewerVid" controls></video></div>
+<div class="imgview hidden" id="imgview" onclick="closeImg()"><button class="close" onclick="closeImg()">✕</button><img id="imgviewImg"></div>
 <div class="created hidden" id="created"><div class="box"><div class="ok">✅</div><div style="font-weight:700;font-size:18px;margin-top:6px">Đã tạo video!</div><div class="muted">Đang render ở nền — bạn cứ tạo clip mới.</div></div></div>
 
 <script>
@@ -161,6 +213,7 @@ let SESSION = null;
 const HOOK_NAMES = { hook_red:"Viền đỏ", hook_green:"Hộp xanh", hook_brown:"Hộp nâu", hook_serif:"Khung vuông", hook_meo:"Khung mèo", hook_news:"Tin tức" };
 const PAGE = 3;
 let currentScenes = [], scenePage = 0, jobs = [], rendering = false, prevTimer = null, hookOverlayUrl = "";
+let LR_ENGINE = "pil", LR_STYLE = "", LR_BADGE = "full";
 let newsColor = "pink";
 
 function toast(m){const t=document.createElement("div");t.className="toast";t.textContent=m;document.body.appendChild(t);setTimeout(()=>t.remove(),2800);}
@@ -173,10 +226,23 @@ async function doLogin(){
     const r=await fetch(API+"/login",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({username:u,password:p})});
     const j=await r.json();
     if(!j.ok){err.textContent=j.error||"Sai tài khoản";return;}
-    SESSION=j; localStorage.setItem("dalat_session",JSON.stringify(j)); startApp();
+    SESSION=j; sessionStorage.setItem("dalat_session",JSON.stringify(j)); startApp();
   }catch(e){err.textContent="Lỗi kết nối server";}
 }
-function logout(){ localStorage.removeItem("dalat_session"); location.reload(); }
+function logout(){ sessionStorage.removeItem("dalat_session"); history.replaceState(null,"",location.pathname); location.reload(); }
+
+// Auto-login theo hash: domain/#nv1 → luồng nv1, domain/#tintuc → luồng tin tức (per-tab session)
+const HASH_USERS = {tintuc:"tintuc",nv1:"nv1",nv2:"nv2",nv3:"nv3",nv4:"nv4",nv5:"nv5",admin:"admin"};
+async function autoLoginFromHash(){
+  const h=(location.hash||"").replace(/^#/,"").trim().toLowerCase();
+  const u=HASH_USERS[h]; if(!u)return false;
+  const p = u==="admin" ? "admin123" : "123";
+  try{
+    const r=await fetch(API+"/login",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({username:u,password:p})});
+    const j=await r.json(); if(!j.ok)return false;
+    SESSION=j; sessionStorage.setItem("dalat_session",JSON.stringify(j)); startApp(); return true;
+  }catch(e){return false;}
+}
 document.getElementById("lg-pass").addEventListener("keydown",e=>{if(e.key==="Enter")doLogin();});
 
 function startApp(){
@@ -187,11 +253,175 @@ function startApp(){
   let html = `<span class="chip chip-role">${SESSION.role==="admin"?"Quản lý":SESSION.role==="news"?"Tin tức":"Nhân viên"}</span>`;
   if(SESSION.role==="staff"||SESSION.role==="news") html += `<button class="btn-ghost chip" onclick="openLibrary()">📚 Thư viện</button>`;
   if(SESSION.role==="admin") html += `<button class="btn-ghost chip" onclick="openLibrary()">📚 Tất cả video</button>`;
+  html += `<button class="btn-ghost chip" onclick="renderVenues()">🗂 Địa điểm</button>`;
+  html += `<button class="btn-ghost chip" onclick="renderImages()">🖼 Ảnh chung</button>`;
+  html += `<button class="btn-ghost chip" onclick="${SESSION.role==='admin'?'renderImageGen':'renderImageSoon'}()">🎨 Tạo ảnh</button>`;
+  if(SESSION.role==="admin") html += `<button class="btn-ghost chip" onclick="renderSettings()">⚙️ Cài đặt</button>`;
   html += `<button class="btn-ghost chip" onclick="logout()">Đăng xuất</button>`;
   right.innerHTML=html;
+  renderHome();
+}
+
+// Dispatch theo vai trò (cũng dùng làm nút "Quay lại" từ placeholder Ảnh)
+function renderHome(){
   if(SESSION.role==="admin") renderAdmin();
   else if(SESSION.role==="news") renderNews();
   else renderStaff();
+}
+
+// Placeholder phần ẢNH — sẽ ráp module tạo ảnh vào đây sau (route /assemble-image đã chừa sẵn).
+function renderImageSoon(){
+  resetEditor && resetEditor();
+  document.getElementById("appbody").innerHTML = `
+    <div class="card" style="max-width:560px;margin:40px auto;text-align:center">
+      <div style="font-size:54px;margin-bottom:8px">🖼</div>
+      <h2 class="sec" style="justify-content:center">Tạo Ảnh — sắp ra mắt</h2>
+      <div class="muted" style="margin:10px 0 18px">Tính năng tạo ảnh (album/post) đang được phát triển và sẽ gắn vào ngay trong app này.</div>
+      <button class="btn-ghost" onclick="renderHome()">← Quay lại tạo video</button>
+    </div>`;
+}
+
+// ---------- CÀI ĐẶT API KEY (admin) — lưu vào .env ----------
+async function renderSettings(){
+  if(typeof resetEditor==="function") resetEditor();
+  document.getElementById("appbody").innerHTML = `
+    <div class="card" style="max-width:680px;margin:22px auto">
+      <h2 class="sec">⚙️ Cài đặt API key</h2>
+      <div class="muted" style="margin-bottom:14px">App chạy <b>FREE</b> không cần key. Chỉ điền nếu muốn bật tính năng trả phí. Key lưu ngay trên máy này (file <code>.env</code>), không gửi đi đâu, có hiệu lực ngay.</div>
+      <div id="setbox" class="muted">Đang tải…</div>
+    </div>`;
+  try{
+    const r=await fetch(API+"/settings",{cache:"no-store"}); const j=await r.json();
+    const groups={}; (j.keys||[]).forEach(k=>{(groups[k.group]=groups[k.group]||[]).push(k);});
+    let html="";
+    for(const g in groups){
+      html+=`<div style="margin:16px 0 8px;font-weight:800;color:var(--pine)">${g}</div>`;
+      groups[g].forEach(k=>{
+        const badge=k.is_set?`<span class="chip chip-hook">đã có</span>`:`<span class="chip" style="background:#eee;color:#999">chưa có</span>`;
+        const link=k.link?`<a href="${k.link}" target="_blank" style="font-size:12px">lấy key ↗</a>`:"";
+        html+=`<div style="margin-bottom:13px">
+          <label style="display:flex;justify-content:space-between;align-items:center;margin:0 0 4px">
+            <span>${k.label} ${badge}</span>${link}</label>
+          <input data-key="${k.key}" type="password" autocomplete="off" placeholder="${k.is_set?'•••••• (để trống = giữ nguyên)':'dán key vào đây'}">
+          <div class="muted" style="font-size:12px;margin-top:3px">${k.desc}</div>
+        </div>`;
+      });
+    }
+    html+=`<div style="display:flex;gap:8px;margin-top:18px">
+      <button class="btn" style="flex:1" onclick="saveSettings()">💾 Lưu</button>
+      <button class="btn-ghost" onclick="renderHome()">← Quay lại</button></div>`;
+    document.getElementById("setbox").innerHTML=html;
+  }catch(e){ document.getElementById("setbox").textContent="Lỗi tải cài đặt: "+e.message; }
+}
+async function saveSettings(){
+  const payload={};
+  document.querySelectorAll("#setbox input[data-key]").forEach(i=>{ const v=i.value.trim(); if(v) payload[i.getAttribute("data-key")]=v; });
+  if(!Object.keys(payload).length){ toast("Chưa nhập key mới nào"); return; }
+  try{
+    const r=await fetch(API+"/settings",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload)});
+    const j=await r.json();
+    if(j.success){ toast(j.message||"Đã lưu"); renderSettings(); } else toast(j.error||"Lưu lỗi");
+  }catch(e){ toast("Lỗi: "+e.message); }
+}
+
+// ---------- THƯ VIỆN ĐỊA ĐIỂM (admin, DB) ----------
+let VOPTS={loai_quan:["quán ăn","quán cà phê","khách sạn","tham quan"],loai:["cần seeding","không seeding"],co_nguoi:["có","không"]};
+let VENUE_CACHE=[], VFORM=null;
+function editVenueById(id){const v=VENUE_CACHE.find(x=>x.id===id);if(v)venueForm(v);else toast("Không thấy địa điểm");}
+function deleteVenueById(id){const v=VENUE_CACHE.find(x=>x.id===id);if(v)deleteVenue(id,v.name||"");}
+function esc(s){return (s||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");}
+async function renderVenues(){
+  if(typeof resetEditor==="function") resetEditor();
+  document.getElementById("appbody").innerHTML=`<div class="card"><div style="display:flex;justify-content:space-between;align-items:center"><h2 class="sec">🗂 Thư viện địa điểm</h2><button class="btn" onclick="venueForm({})">➕ Thêm địa điểm</button></div><div class="muted" style="margin:6px 0 12px">Quán <b>seeding</b> (nền vàng) luôn ở đầu — đây là nhóm dùng để tạo content. Sửa loại "cần/không seeding" để bật/tắt.</div><div id="vlist" class="muted">Đang tải…</div></div>`;
+  try{
+    const r=await fetch(API+"/venues",{cache:"no-store"}); const j=await r.json();
+    if(j.options) VOPTS=j.options;
+    VENUE_CACHE=j.venues||[];
+    const rows=VENUE_CACHE.map(v=>{
+      const seed=v.loai==="cần seeding";
+      const thumb=(v.image_urls&&v.image_urls[0])?`<img src="${v.image_urls[0]}?w=140" loading="lazy" decoding="async" style="width:64px;height:64px;object-fit:cover;border-radius:10px">`:`<div style="width:64px;height:64px;border-radius:10px;background:var(--surface2);display:flex;align-items:center;justify-content:center;font-size:22px">🍜</div>`;
+      const nimg=(v.image_urls||[]).length;
+      return `<div style="display:flex;gap:12px;align-items:center;padding:10px;border-bottom:1px solid var(--line);${seed?'background:#fff6cf':''}">
+        <div style="position:relative">${thumb}${nimg>1?`<span class="chip" style="position:absolute;right:-6px;bottom:-6px;background:#333;color:#fff;font-size:10px">${nimg}</span>`:''}</div>
+        <div style="flex:1;min-width:0">
+          <div style="font-weight:700">${esc(v.name)} ${seed?'<span class="chip" style="background:#f5b301;color:#3a2a00;font-size:10px;padding:1px 7px">★ Seeding</span>':''} <span class="chip" style="font-size:11px">${esc(v.loai_quan)}</span></div>
+          <div class="muted" style="font-size:13px">${esc(v.address)}</div>
+          <div class="muted" style="font-size:12px">${esc(v.feature||v.signature||"")}</div>
+        </div>
+        <div style="display:flex;gap:6px"><button class="btn-ghost chip" onclick="editVenueById(${v.id})">Sửa</button><button class="btn-ghost chip" onclick="deleteVenueById(${v.id})">Xóa</button></div>
+      </div>`;
+    }).join("");
+    document.getElementById("vlist").innerHTML=rows||"<div>Chưa có địa điểm nào.</div>";
+  }catch(e){ document.getElementById("vlist").textContent="Lỗi tải thư viện: "+e.message; }
+}
+function _sel(name,opts,val){return `<select data-f="${name}">`+opts.map(o=>`<option ${o===val?'selected':''}>${esc(o)}</option>`).join("")+`</select>`;}
+function venueForm(v){
+  v=v||{}; VFORM=v; const isNew=!v.id;
+  if(typeof resetEditor==="function") resetEditor();
+  const imgs=(v.image_urls||[]).map((u,i)=>`<div style="position:relative;display:inline-block;margin:4px"><img src="${u}?w=200" loading="lazy" decoding="async" style="width:84px;height:84px;object-fit:cover;border-radius:10px"><button onclick="deleteVenueImage(${v.id},${i})" style="position:absolute;top:-8px;right:-8px;border:none;background:#e44a60;color:#fff;border-radius:50%;width:22px;height:22px;cursor:pointer">×</button></div>`).join("");
+  document.getElementById("appbody").innerHTML=`<div class="card" style="max-width:640px;margin:0 auto" id="vform">
+    <h2 class="sec">${isNew?"➕ Thêm địa điểm":"✏️ Sửa: "+esc(v.name)}</h2>
+    <label>Tên quán</label><input data-f="name" value="${esc(v.name)}">
+    <label>Địa chỉ</label><input data-f="address" value="${esc(v.address)}">
+    <div style="display:flex;gap:8px"><div style="flex:1"><label>Loại quán</label>${_sel("loai_quan",VOPTS.loai_quan,v.loai_quan)}</div><div style="flex:1"><label>Seeding?</label>${_sel("loai",VOPTS.loai,v.loai)}</div></div>
+    <label>Món đặc trưng (signature)</label><input data-f="signature" value="${esc(v.signature)}">
+    <label>Đặc điểm (mô tả ngắn cho AI viết)</label><textarea data-f="feature" rows="2">${esc(v.feature)}</textarea>
+    <label>Link Facebook</label><input data-f="fb_link" value="${esc(v.fb_link)}">
+    <label>Link TikTok</label><input data-f="tiktok_link" value="${esc(v.tiktok_link)}">
+    <label>Google Map</label><input data-f="google_map" value="${esc(v.google_map)}">
+    <label style="margin-top:12px">Ảnh (${(v.image_urls||[]).length})</label>
+    <div id="vimgs">${imgs||(isNew?'<span class="muted">Lưu địa điểm trước rồi thêm ảnh.</span>':'<span class="muted">Chưa có ảnh.</span>')}</div>
+    ${isNew?'':`<div style="display:flex;gap:8px;align-items:center;margin-top:8px;flex-wrap:wrap"><input type="file" accept="image/*" multiple onchange="uploadVenueImages(${v.id},this.files)"><button class="btn-ghost chip" onclick="scrapeVenueImages(${v.id})">🔄 Lấy ảnh từ Google Maps</button></div>`}
+    <div style="display:flex;gap:8px;margin-top:16px"><button class="btn" style="flex:1" onclick="saveVenue(${v.id||'null'})">💾 Lưu</button><button class="btn-ghost" onclick="renderVenues()">← Quay lại</button></div>
+  </div>`;
+}
+function _collectVenue(id){const o={};if(id)o.id=id;document.querySelectorAll("#vform [data-f]").forEach(el=>o[el.getAttribute("data-f")]=el.value.trim());return o;}
+async function saveVenue(id){
+  const v=_collectVenue(id);
+  if(!v.name){toast("Chưa có tên quán");return;}
+  try{
+    const r=await fetch(API+"/venues",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(v)});
+    const j=await r.json();
+    if(j.success){ toast("Đã lưu"); (j.venue?venueForm(j.venue):renderVenues()); } else toast(j.error||"Lưu lỗi");
+  }catch(e){ toast("Lỗi: "+e.message); }
+}
+async function deleteVenue(id,name){
+  if(!confirm("Xóa '"+name+"' khỏi thư viện?"))return;
+  try{ const r=await fetch(API+"/venues-delete",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({id})}); const j=await r.json(); if(j.success){toast("Đã xóa");renderVenues();} else toast("Xóa lỗi"); }catch(e){ toast("Lỗi: "+e.message); }
+}
+async function uploadVenueImages(id,files){
+  if(!files||!files.length)return;
+  const fd=new FormData(); fd.append("id",id); [...files].forEach((f,i)=>fd.append("image_"+i,f,f.name));
+  toast("Đang tải ảnh…");
+  try{ const r=await fetch(API+"/venue-image",{method:"POST",body:fd}); const j=await r.json(); if(j.success){toast("Đã thêm ảnh");(j.venue?venueForm(j.venue):renderVenues());} else toast(j.error||"Tải ảnh lỗi"); }catch(e){ toast("Lỗi: "+e.message); }
+}
+async function deleteVenueImage(id,idx){
+  const path=(VFORM&&VFORM.images&&VFORM.images[idx])||""; if(!path)return;
+  try{ const r=await fetch(API+"/venue-image-delete",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({id,path})}); const j=await r.json(); if(j.success)(j.venue?venueForm(j.venue):renderVenues()); }catch(e){ toast("Lỗi: "+e.message); }
+}
+async function scrapeVenueImages(id){
+  if(!confirm("Lấy ảnh từ Google Maps cho quán này? (dùng APIFY, tốn ít credit)"))return;
+  toast("Đang lấy ảnh từ Google Maps…");
+  try{ const r=await fetch(API+"/venue-scrape-images",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({id})}); const j=await r.json(); if(j.success){toast("Đã thêm "+j.added+" ảnh");(j.venue?venueForm(j.venue):renderVenues());} else toast(j.error||"Lấy ảnh lỗi"); }catch(e){ toast("Lỗi: "+e.message); }
+}
+
+// ---------- ẢNH CHUNG (album Đà Lạt, admin) ----------
+async function renderImages(){
+  if(typeof resetEditor==="function") resetEditor();
+  document.getElementById("appbody").innerHTML=`<div class="card"><div style="display:flex;justify-content:space-between;align-items:center"><h2 class="sec">🖼 Ảnh chung</h2><label class="btn" style="cursor:pointer">➕ Thêm ảnh<input type="file" accept="image/*" multiple style="display:none" onchange="uploadAlbumImages(this.files)"></label></div><div class="muted" style="margin:6px 0 12px">Ảnh Đà Lạt không thuộc quán nào (phong cảnh, có người…). Dùng làm b-roll chung.</div><div id="imgrid" class="muted">Đang tải…</div></div>`;
+  try{
+    const r=await fetch(API+"/images",{cache:"no-store"}); const j=await r.json();
+    const cells=(j.images||[]).map(im=>`<div style="position:relative"><img src="${im.url}?w=380" loading="lazy" decoding="async" style="width:100%;aspect-ratio:1;object-fit:cover;border-radius:12px;background:var(--surface2)"><button onclick="deleteAlbumImage(${im.id})" style="position:absolute;top:4px;right:4px;border:none;background:rgba(228,74,96,.92);color:#fff;border-radius:50%;width:24px;height:24px;cursor:pointer">×</button></div>`).join("");
+    document.getElementById("imgrid").innerHTML=`<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:8px">${cells}</div><div class="muted" style="margin-top:10px">Tổng: ${(j.images||[]).length} ảnh</div>`;
+  }catch(e){ document.getElementById("imgrid").textContent="Lỗi tải ảnh: "+e.message; }
+}
+async function uploadAlbumImages(files){
+  if(!files||!files.length)return; const fd=new FormData(); [...files].forEach((f,i)=>fd.append("image_"+i,f,f.name));
+  toast("Đang tải "+files.length+" ảnh…");
+  try{ const r=await fetch(API+"/image-upload",{method:"POST",body:fd}); const j=await r.json(); if(j.success){toast("Đã thêm "+j.added+" ảnh");renderImages();} else toast(j.error||"Tải lỗi"); }catch(e){ toast("Lỗi: "+e.message); }
+}
+async function deleteAlbumImage(id){
+  try{ const r=await fetch(API+"/images-delete",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({id})}); const j=await r.json(); if(j.success)renderImages(); }catch(e){ toast("Lỗi: "+e.message); }
 }
 
 // ---------- shared clip meta ----------
@@ -200,52 +430,92 @@ function loadClipMeta(file){return new Promise(res=>{const url=URL.createObjectU
 // ---------- STAFF / NEWS create flow ----------
 function curHookStyle(){ return SESSION.role==="news" ? ("hook_news_"+newsColor) : SESSION.hook_style; }
 
+function lrIntro(){return {scene_id:"intro",kind:"intro",label:"HOOK",title:"",caption:"",min_duration_sec:13,type:"clip",files:[]};}
+function lrSpot(n){return {scene_id:"spot"+n,kind:"spot",label:"QUÁN "+n,name:"",rating:"",address:"",caption:"",min_duration_sec:9,type:"clip",files:[]};}
+function lrOutro(){return {scene_id:"outro",kind:"outro",label:"OUTRO",caption:"",min_duration_sec:5,type:"clip",files:[]};}
+
 function renderStaff(){
   document.getElementById("appbody").innerHTML = `
-    <div class="card" style="max-width:620px;margin:0 auto" id="genCard">
-      <h2 class="sec">① Tạo kịch bản</h2>
-      <label>Chủ đề (vd: "Khám phá Đà Lạt") — hoặc dán kịch bản nhiều dòng</label>
-      <textarea id="topic" rows="2" placeholder="Nhập chủ đề ngắn, AI viết kịch bản ~18s."></textarea>
-      <button class="btn" style="width:100%;margin-top:12px" id="genBtn" onclick="generateScript()">✨ Tạo theo framework</button>
-      <div class="muted" style="margin-top:8px">Hook: <b>${HOOK_NAMES[SESSION.hook_style]||SESSION.hook_style}</b> · giọng Google · dọc 9:16 · ~18s.</div>
+    <div class="card" style="max-width:600px;margin:34px auto 0;text-align:center">
+      <div style="font-size:42px;line-height:1">🍜</div>
+      <h2 class="sec" style="margin:10px 0 6px">Video review list quán Đà Lạt</h2>
+      <div class="muted" style="margin-bottom:20px;font-size:13px">AI sẽ soạn kịch bản + chia scene từ thư viện quán. Hook: <b>${HOOK_NAMES[SESSION.hook_style]||SESSION.hook_style}</b> · giọng Google · 9:16.</div>
+      <button class="btn-pink" style="color:#fff;padding:13px 30px;font-size:15px" onclick="genStaffContent()">🪄 Tạo nội dung</button>
+      <div id="prefillStatus" class="muted" style="margin-top:16px;min-height:18px"></div>
     </div>
     <div id="editor" class="hidden"></div>`;
+}
+async function genStaffContent(){
+  const st=document.getElementById("prefillStatus"); if(st)st.textContent="⏳ AI đang soạn nội dung…";
+  try{
+    const r=await fetch(API+`/listreview-prefill?employee=${SESSION.username}&regen=1`,{cache:"no-store"});
+    const j=await r.json(); if(!j.success||!j.scenes.length) throw new Error(j.error||"prefill rỗng");
+    // nv2/nv3 để lời thoại ở 'vo'; nv1 ở 'caption' → chuẩn hoá về caption để UI + render dùng chung.
+    currentScenes=j.scenes.map(s=>({...s,caption:(s.caption!=null?s.caption:(s.vo||"")),files:[]})); scenePage=0;
+    LR_ENGINE=j.overlay_engine||"pil"; LR_STYLE=j.style||""; LR_BADGE=j.badge_mode||"full";
+    openEditor();
+  }catch(e){
+    if(st)st.textContent="⚠ Không soạn được nội dung: "+e.message;
+    toast("Lỗi soạn nội dung: "+e.message);
+  }
+}
+function addSpot(){
+  const n=currentScenes.filter(s=>s.kind==="spot").length+1;
+  const oi=currentScenes.findIndex(s=>s.kind==="outro");
+  currentScenes.splice(oi<0?currentScenes.length:oi,0,lrSpot(n));
+  const pages=Math.ceil(currentScenes.length/PAGE); scenePage=pages-1;
+  renderSceneInputs(); renderPreview();
+}
+function moveSpot(i,dir){
+  const j=i+dir;
+  if(j<0||j>=currentScenes.length)return;
+  if(currentScenes[i].kind!=="spot"||currentScenes[j].kind!=="spot")return;
+  const t=currentScenes[i]; currentScenes[i]=currentScenes[j]; currentScenes[j]=t;  // clip (scene.files) đi theo
+  let n=0; currentScenes.forEach(s=>{if(s.kind==="spot"){n++;s.scene_id="spot"+n;s.label="QUÁN "+n;}});
+  scenePage=Math.floor(j/PAGE);
+  renderSceneInputs(); renderPreview();
+}
+function removeSpot(i){
+  if(currentScenes[i].kind!=="spot")return;
+  currentScenes.splice(i,1);
+  let n=0; currentScenes.forEach(s=>{if(s.kind==="spot"){n++;s.scene_id="spot"+n;s.label="QUÁN "+n;}});
+  const pages=Math.ceil(currentScenes.length/PAGE); if(scenePage>=pages)scenePage=pages-1;
+  renderSceneInputs(); renderPreview();
 }
 
 function renderNews(){
   document.getElementById("appbody").innerHTML = `
     <div class="card" style="max-width:680px;margin:0 auto" id="genCard">
-      <h2 class="sec">📰 Kênh tin tức Đà Lạt</h2>
-      <label>Từ khoá / chủ đề tin</label>
-      <input id="topic" placeholder="vd: ẩm thực Đà Lạt, check-in Đà Lạt tháng 6">
-      <div class="row" style="display:flex;gap:10px;margin-top:6px">
-        <label style="margin:0">Màu hook</label>
-        <div class="colors">
-          <div class="colordot active" style="background:#ef5da8" data-c="pink" onclick="pickColor('pink',this)"></div>
-          <div class="colordot" style="background:#3fbf6f" data-c="green" onclick="pickColor('green',this)"></div>
-          <div class="colordot" style="background:#9b5de5" data-c="purple" onclick="pickColor('purple',this)"></div>
-        </div>
-      </div>
-      <button class="btn" style="width:100%;margin-top:12px" id="genBtn" onclick="researchNews()">🔎 Research tin + tìm source</button>
-      <div class="muted" style="margin-top:8px">AI viết kịch bản + trả <b>link source YouTube</b> để bạn tải về thả vào (giống luồng nhân viên). Hook full-nền · 1080p.</div>
-      <div id="srcbox" class="hidden" style="margin-top:14px"><h2 class="sec">Source gợi ý (tải về rồi thả vào scene)</h2><div class="srclist" id="srclist"></div></div>
+      <h2 class="sec">📰 Kênh tin tức / review Đà Lạt</h2>
+      <button class="btn" style="width:100%;margin-top:4px" id="autoBtn" onclick="researchNews('auto')">🔄 Quét tin tức (tự động)</button>
+      <div class="muted" style="margin:10px 0 4px;text-align:center">— hoặc —</div>
+      <label>Dán link TikTok → tạo kịch bản</label>
+      <input id="manualLink" placeholder="https://www.tiktok.com/@.../video/...">
+      <button class="btn-ghost" style="width:100%;margin-top:8px;padding:10px" id="manualBtn" onclick="researchNews('manual')">✍️ Tạo từ link này</button>
+      <div class="muted" style="margin-top:8px">AI viết kịch bản MỚI (hook 10s + lịch trình/list) từ video nguồn. Quét tin tức từ Facebook sẽ cài sau.</div>
+      <div id="srcbox" class="hidden" style="margin-top:14px"></div>
     </div>
     <div id="editor" class="hidden"></div>`;
 }
 function pickColor(c,el){ newsColor=c; document.querySelectorAll(".colordot").forEach(d=>d.classList.toggle("active",d===el)); updateHookOverlay(); }
 
-async function researchNews(){
-  const kw=document.getElementById("topic").value.trim(); if(!kw){toast("Nhập từ khoá");return;}
-  const btn=document.getElementById("genBtn"); btn.disabled=true; btn.textContent="⏳ Đang research...";
+async function researchNews(mode){
+  const link = mode==="manual" ? document.getElementById("manualLink").value.trim() : "";
+  if(mode==="manual" && !link){toast("Dán link trước");return;}
+  const btn=document.getElementById(mode==="manual"?"manualBtn":"autoBtn"); const old=btn.textContent;
+  btn.disabled=true; btn.textContent="⏳ Đang research (APIFY)…";
   try{
-    const r=await fetch(API+"/news-research",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({keyword:kw})});
+    const r=await fetch(API+"/news-research",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({mode,link})});
     const j=await r.json(); if(!j.success) throw new Error(j.error||"lỗi");
-    const sb=document.getElementById("srcbox"), sl=document.getElementById("srclist");
-    sb.classList.remove("hidden");
-    sl.innerHTML = (j.sources||[]).map(s=>`<a href="${s.url}" target="_blank">▶ ${s.title||s.url} ${s.duration?("· "+Math.round(s.duration/60)+"ph"):""}</a>`).join("") || "<div class='muted'>Không tìm được source — thử từ khoá khác.</div>";
-    currentScenes = makeScenes(j.script); scenePage=0;
-    openEditor();
-  }catch(e){toast("Lỗi: "+e.message);} finally{btn.disabled=false;btn.textContent="🔎 Research tin + tìm source";}
+    const sb=document.getElementById("srcbox"); sb.classList.remove("hidden");
+    const src=(j.sources||[])[0];
+    const dot=(c,bg)=>`<div class="colordot ${newsColor===c?'active':''}" style="background:${bg}" onclick="pickColor('${c}',this)"></div>`;
+    sb.innerHTML=`<div style="display:flex;gap:10px;align-items:center;margin-bottom:12px"><label style="margin:0">Màu hook</label><div class="colors">${dot('pink','#ef5da8')}${dot('green','#3fbf6f')}${dot('purple','#9b5de5')}</div></div>
+      <h2 class="sec" style="font-size:15px;margin-top:0">Video nguồn (tải về thả vào scene)</h2>
+      <div class="srclist">${src?`<a href="${src.url}" target="_blank">▶ ${((src.text||src.title||src.url)||"").slice(0,72)} ${src.views?("· "+Number(src.views).toLocaleString()+" views"):""}</a>`:"<div class='muted'>Không có video.</div>"}</div>`;
+    if(!j.script){toast("Lấy được video nhưng chưa viết được kịch bản (thiếu OpenRouter key?)");return;}
+    currentScenes=makeScenes(j.script); scenePage=0; openEditor();
+  }catch(e){toast("Lỗi: "+e.message);} finally{btn.disabled=false;btn.textContent=old;}
 }
 
 function makeScenes(s){
@@ -274,7 +544,9 @@ function openEditor(){
       <div class="card">
         <div style="display:flex;justify-content:space-between;align-items:center"><h2 class="sec" style="margin:0">② Scene & source</h2><div class="pager" id="pager"></div></div>
         <div class="muted">Mỗi scene 1 câu. Thả 1+ clip (số giây hiện sẵn). Dư tự cắt.</div>
+        <button class="btn-pink" style="width:100%;color:#fff;margin:10px 0 6px" onclick="createVideo()">🎬 Tạo video</button>
         <div id="scenes"></div>
+        ${SESSION.role==="staff"?`<div style="display:flex;gap:8px;margin-top:10px"><button class="btn-ghost" style="flex:1" onclick="addSpot()">➕ Thêm quán</button><button class="btn-ghost" style="flex:1" onclick="genStaffContent()">🔄 Tạo lại nội dung</button></div>`:""}
         <div style="display:flex;gap:10px;margin-top:14px">
           <button class="btn-pink" style="flex:1;color:#fff" onclick="createVideo()">🎬 Tạo video</button>
           <button class="btn-ghost" onclick="resetEditor()">↺ làm lại</button>
@@ -285,13 +557,22 @@ function openEditor(){
         <div class="preview-hint">Scene 1 = hook. Thả source để xem khớp khung.</div>
         <div class="phones" id="phones"></div>
       </div>
-    </div>`;
+    </div>
+    <button id="navLeft" class="navarrow l" onclick="pageScene(-1)" title="Scene trước">‹</button>
+    <button id="navRight" class="navarrow r" onclick="pageScene(1)" title="Scene sau">›</button>`;
   renderSceneInputs(); updateHookOverlay(); renderPreview();
   document.getElementById("editor").scrollIntoView({behavior:"smooth"});
 }
-function resetEditor(){ currentScenes=[]; scenePage=0; document.getElementById("editor").classList.add("hidden"); document.getElementById("editor").innerHTML=""; }
+function resetEditor(){ currentScenes=[]; scenePage=0; const e=document.getElementById("editor"); if(e){ e.classList.add("hidden"); e.innerHTML=""; } }
 
-function renderPager(){const total=currentScenes.length,pages=Math.ceil(total/PAGE),box=document.getElementById("pager");if(!box)return;if(pages<=1){box.innerHTML="";return;}const a=scenePage*PAGE+1,b=Math.min(total,(scenePage+1)*PAGE);box.innerHTML=`<button onclick="pageScene(-1)" ${scenePage===0?"disabled":""}>‹</button><span class="idx">Scene ${a}-${b}/${total}</span><button onclick="pageScene(1)" ${scenePage>=pages-1?"disabled":""}>›</button>`;}
+function renderPager(){
+  const total=currentScenes.length,pages=Math.ceil(total/PAGE),box=document.getElementById("pager");
+  const a=scenePage*PAGE+1,b=Math.min(total,(scenePage+1)*PAGE);
+  if(box) box.innerHTML = pages<=1?"":`<span class="idx">Scene ${a}-${b}/${total}</span>`;
+  const nl=document.getElementById("navLeft"),nr=document.getElementById("navRight"),show=pages>1;
+  if(nl){nl.style.display=show?"flex":"none";nl.style.opacity=scenePage===0?.35:1;nl.style.pointerEvents=scenePage===0?"none":"auto";}
+  if(nr){nr.style.display=show?"flex":"none";nr.style.opacity=scenePage>=pages-1?.35:1;nr.style.pointerEvents=scenePage>=pages-1?"none":"auto";}
+}
 function pageScene(d){const pages=Math.ceil(currentScenes.length/PAGE);scenePage=Math.max(0,Math.min(pages-1,scenePage+d));renderSceneInputs();renderPreview();}
 
 function renderSceneInputs(){
@@ -299,21 +580,62 @@ function renderSceneInputs(){
   const start=scenePage*PAGE;
   currentScenes.slice(start,start+PAGE).forEach((sc,k)=>{
     const i=start+k; const div=document.createElement("div"); div.className="scene";
-    let head;
-    if(i===0){
+    const esc=s=>(s||"").replace(/</g,"&lt;"); const escA=s=>(s||"").replace(/&/g,"&amp;").replace(/"/g,"&quot;").replace(/</g,"&lt;");
+    const isLR=SESSION.role==="staff"&&sc.kind;
+    let head, extra="";
+    if(isLR){
+      const htmlEng = LR_ENGINE==="html";   // nv2/nv3: chữ section; nv1: tên quán/điểm
+      if(sc.kind==="intro"){
+        head = htmlEng
+          ? `<label style="margin-top:0">Câu hook (mỗi dòng 1 câu)</label><textarea rows="2" data-hooklines="${i}">${esc((sc.hook_lines||[]).join("\n"))}</textarea>
+             <label>Lời thoại mở đầu</label><textarea rows="2" data-cap="${i}">${esc(sc.caption)}</textarea>`
+          : `<label style="margin-top:0">Tiêu đề hook</label><textarea rows="1" data-title="${i}">${esc(sc.title)}</textarea>
+             <label>Lời thoại mở đầu</label><textarea rows="2" data-cap="${i}">${esc(sc.caption)}</textarea>`;
+      } else if(sc.kind==="spot"){
+        head = htmlEng
+          ? `<div style="display:flex;gap:8px">
+               <div style="flex:1"><label style="margin-top:0">Tiêu đề mục</label><input data-section="${i}" value="${escA(sc.section_title)}" placeholder="vd: Chỗ ở"></div>
+               <div style="width:110px"><label style="margin-top:0">Emoji</label><input data-emoji="${i}" value="${escA(sc.emoji)}" placeholder="🏡🌳"></div>
+             </div>
+             <label>Chữ hiển thị (mỗi dòng 1 ý)</label><textarea rows="3" data-body="${i}">${esc((sc.body||[]).join("\n"))}</textarea>
+             <label>Lời thoại</label><textarea rows="2" data-cap="${i}">${esc(sc.caption)}</textarea>`
+          : (LR_BADGE==="name"
+            ? `<label style="margin-top:0">Tên quán</label><input data-name="${i}" value="${escA(sc.name)}" placeholder="vd: Trạm Nắng BBQ">
+               <label>Lời thoại</label><textarea rows="2" data-cap="${i}">${esc(sc.caption)}</textarea>`
+            : `<div style="display:flex;gap:8px">
+                 <div style="flex:1"><label style="margin-top:0">Tên quán</label><input data-name="${i}" value="${escA(sc.name)}" placeholder="vd: Bếp khói sườn cay"></div>
+                 <div style="width:96px"><label style="margin-top:0">Điểm /10</label><input data-rating="${i}" value="${escA(sc.rating)}" placeholder="8.5"></div>
+               </div>
+               <label>Địa chỉ</label><input data-address="${i}" value="${escA(sc.address)}" placeholder="vd: 18 Đống Đa, Đà Lạt">
+               <label>Lời thoại / review</label><textarea rows="2" data-cap="${i}">${esc(sc.caption)}</textarea>`);
+        extra=`<div style="display:flex;gap:6px;margin-top:8px"><button class="btn-ghost" style="padding:6px 13px;font-size:13px" onclick="moveSpot(${i},-1)" title="Đưa lên">▲</button><button class="btn-ghost" style="padding:6px 13px;font-size:13px" onclick="moveSpot(${i},1)" title="Đưa xuống">▼</button><button class="btn-ghost" style="flex:1;padding:6px 10px;font-size:13px" onclick="removeSpot(${i})">✕ xoá mục</button></div>`;
+      } else {
+        head = htmlEng
+          ? `<label style="margin-top:0">Chữ hiển thị (mỗi dòng 1 ý)</label><textarea rows="2" data-body="${i}">${esc((sc.body||[]).join("\n"))}</textarea>
+             <label>Lời thoại (outro)</label><textarea rows="2" data-cap="${i}">${esc(sc.caption)}</textarea>`
+          : `<label style="margin-top:0">Lời chốt (outro)</label><textarea rows="2" data-cap="${i}">${esc(sc.caption)}</textarea>`;
+      }
+    } else if(i===0){
       head=`<label style="margin-top:0">${SESSION.role==="news"?"Caption hook (chữ to)":"Tiêu đề hook"}</label>
-        <textarea rows="2" data-title="${i}">${(sc.title||"").replace(/</g,"&lt;")}</textarea>`;
-      if(SESSION.role!=="news") head+=`<label>Dòng phụ hook</label><textarea rows="2" data-cap="${i}">${(sc.caption||"").replace(/</g,"&lt;")}</textarea>`;
+        <textarea rows="2" data-title="${i}">${esc(sc.title)}</textarea>`;
+      if(SESSION.role!=="news") head+=`<label>Dòng phụ hook</label><textarea rows="2" data-cap="${i}">${esc(sc.caption)}</textarea>`;
     } else {
-      head=`<label style="margin-top:0">Lời thoại / phụ đề scene</label><textarea rows="2" data-cap="${i}">${(sc.caption||"").replace(/</g,"&lt;")}</textarea>`;
+      head=`<label style="margin-top:0">Lời thoại / phụ đề scene</label><textarea rows="2" data-cap="${i}">${esc(sc.caption)}</textarea>`;
     }
-    div.innerHTML=`<div class="tag">SCENE ${i+1} · ${sc.label} <span class="dur">· mục tiêu ~${sc.min_duration_sec}s</span></div>${head}
+    div.innerHTML=`<div class="tag">${sc.label} <span class="dur">· mục tiêu ~${sc.min_duration_sec}s${sc.sources_needed?` · cần ~${sc.sources_needed} source`:""}</span></div>${head}
       <div class="scene-total" id="total-${i}"></div><div class="clip-list" id="clips-${i}"></div>
       <div class="drop" id="drop-${i}">+ Kéo-thả / bấm thêm clip</div>
-      <input type="file" accept="video/*,.mov,.mp4" multiple class="hidden" id="file-${i}">`;
+      <input type="file" accept="video/*,.mov,.mp4" multiple class="hidden" id="file-${i}">${extra}`;
     box.appendChild(div);
     const tEl=div.querySelector(`[data-title="${i}"]`); if(tEl)tEl.oninput=()=>{currentScenes[i].title=tEl.value;updateHookOverlay();};
+    const nEl=div.querySelector(`[data-name="${i}"]`); if(nEl)nEl.oninput=()=>{currentScenes[i].name=nEl.value;renderPreview();};
+    const rEl=div.querySelector(`[data-rating="${i}"]`); if(rEl)rEl.oninput=()=>{currentScenes[i].rating=rEl.value;renderPreview();};
+    const aEl=div.querySelector(`[data-address="${i}"]`); if(aEl)aEl.oninput=()=>{currentScenes[i].address=aEl.value;renderPreview();};
     const cEl=div.querySelector(`[data-cap="${i}"]`); if(cEl)cEl.oninput=()=>{currentScenes[i].caption=cEl.value;if(i===0)updateHookOverlay();renderPreview();};
+    const hlEl=div.querySelector(`[data-hooklines="${i}"]`); if(hlEl)hlEl.oninput=()=>{currentScenes[i].hook_lines=hlEl.value.split("\n").map(x=>x.trim()).filter(Boolean);updateHookOverlay();renderPreview();};
+    const stEl=div.querySelector(`[data-section="${i}"]`); if(stEl)stEl.oninput=()=>{currentScenes[i].section_title=stEl.value;renderPreview();};
+    const emEl=div.querySelector(`[data-emoji="${i}"]`); if(emEl)emEl.oninput=()=>{currentScenes[i].emoji=emEl.value;renderPreview();};
+    const bdEl=div.querySelector(`[data-body="${i}"]`); if(bdEl)bdEl.oninput=()=>{currentScenes[i].body=bdEl.value.split("\n").map(x=>x.trim()).filter(Boolean);renderPreview();};
     const drop=div.querySelector("#drop-"+i),input=div.querySelector("#file-"+i);
     drop.onclick=()=>input.click(); input.onchange=()=>{addFiles(i,input.files);input.value="";};
     drop.ondragover=e=>{e.preventDefault();drop.classList.add("over");};drop.ondragleave=()=>drop.classList.remove("over");
@@ -324,13 +646,13 @@ function renderSceneInputs(){
 function updateHookOverlay(){
   if(!currentScenes[0])return; if(prevTimer)clearTimeout(prevTimer);
   prevTimer=setTimeout(async()=>{
-    const payload={style:curHookStyle(),title:currentScenes[0].title||"",subtitle:(SESSION.role==="news")?"":(currentScenes[0].caption||"")};
+    const payload={style:curHookStyle(),title:currentScenes[0].title||"",subtitle:(SESSION.role==="news"||SESSION.role==="staff")?"":(currentScenes[0].caption||"")};
     try{const r=await fetch(API+"/hookpreview",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload)});if(!r.ok)return;const b=await r.blob();if(hookOverlayUrl)URL.revokeObjectURL(hookOverlayUrl);hookOverlayUrl=URL.createObjectURL(b);const el=document.getElementById("hookov-0");if(el)el.src=hookOverlayUrl;}catch{}
   },350);
 }
 function renderPreview(){
   const box=document.getElementById("phones"); if(!box)return; const start=scenePage*PAGE; box.innerHTML="";
-  currentScenes.slice(start,start+PAGE).forEach((sc,k)=>{const i=start+k;const ph=document.createElement("div");ph.className="phone";const thumb=sc.files[0]&&sc.files[0].thumb;if(thumb)ph.style.backgroundImage=`url(${thumb})`;let inner=`<div class="plabel">SCENE ${i+1} · ${sc.label}</div>`;if(!thumb)inner+=`<div class="empty">Chưa có clip</div>`;if(i===0)inner+=`<img class="hookov" id="hookov-0" ${hookOverlayUrl?`src="${hookOverlayUrl}"`:""}>`;else inner+=`<div class="pcap">${(sc.caption||"").replace(/</g,"&lt;")}</div>`;ph.innerHTML=inner;box.appendChild(ph);});
+  currentScenes.slice(start,start+PAGE).forEach((sc,k)=>{const i=start+k;const ph=document.createElement("div");ph.className="phone";const thumb=sc.files[0]&&sc.files[0].thumb;if(thumb)ph.style.backgroundImage=`url(${thumb})`;let inner=`<div class="plabel">SCENE ${i+1} · ${sc.label}</div>`;if(!thumb)inner+=`<div class="empty">Chưa có clip</div>`;if(i===0)inner+=`<img class="hookov" id="hookov-0" ${hookOverlayUrl?`src="${hookOverlayUrl}"`:""}>`;else{if(SESSION.role==="staff"&&sc.kind==="spot"){if(LR_ENGINE==="html"){if(sc.section_title||sc.emoji)inner+=`<div class="pbadge">${(sc.emoji||"")} ${(sc.section_title||"").replace(/</g,"&lt;")}</div>`;}else if(sc.name||sc.rating)inner+=`<div class="pbadge">${(sc.name||"").replace(/</g,"&lt;")}${sc.rating?` <b>${(sc.rating+"").replace(/</g,"&lt;")}/10</b>`:""}${sc.address?`<div class="paddr">📍 ${(sc.address||"").replace(/</g,"&lt;")}</div>`:""}</div>`;}inner+=`<div class="pcap">${(sc.caption||"").replace(/</g,"&lt;")}</div>`;}ph.innerHTML=inner;box.appendChild(ph);});
 }
 async function addFiles(i,fl){const drop=document.getElementById("drop-"+i);if(drop)drop.textContent="⏳ đọc clip…";for(const f of fl){const m=await loadClipMeta(f);currentScenes[i].files.push({file:f,dur:m.dur||0,thumb:m.thumb||""});renderClipList(i);renderPreview();}if(drop)drop.textContent="+ Kéo-thả / bấm thêm clip";}
 function removeClip(i,k){currentScenes[i].files.splice(k,1);renderClipList(i);renderPreview();}
@@ -339,6 +661,7 @@ function renderClipList(i){const sc=currentScenes[i],box=document.getElementById
 
 async function createVideo(){
   const empty=currentScenes.filter(s=>s.files.length===0); if(empty.length){toast("Còn "+empty.length+" scene chưa có clip");return;}
+  if(SESSION.role==="staff") return createVideoLR();
   const isNews=SESSION.role==="news";
   const sub=isNews?"":(currentScenes[0].caption||"").trim();
   const job={id:"job_"+Date.now().toString(36),topic:((currentScenes[0].title||"")||"Clip").slice(0,50),
@@ -353,12 +676,49 @@ async function createVideo(){
   setTimeout(()=>{ cr.classList.add("hidden"); resetEditor(); const tp=document.getElementById("topic"); if(tp)tp.value=""; }, 2000);
 }
 
+function createVideoLR(){
+  const intro=currentScenes.find(s=>s.kind==="intro");
+  const spots=currentScenes.filter(s=>s.kind==="spot");
+  const outro=currentScenes.find(s=>s.kind==="outro");
+  if(!spots.length){toast("Thêm ít nhất 1 quán");return;}
+  const isHtml = LR_ENGINE==="html";
+  if(!isHtml){ for(const s of spots){ if(!(s.name||"").trim()){toast("Còn quán chưa có tên");return;} } }
+  const spec={
+    overlay_engine:LR_ENGINE, style:LR_STYLE,
+    intro:{scene_id:"intro",title:(intro.title||"").trim(),hook_lines:intro.hook_lines||null,vo:(intro.caption||"").trim()},
+    spots:spots.map(s=>({scene_id:s.scene_id,name:(s.name||"").trim(),rating:(s.rating||"").trim(),address:(s.address||"").trim(),
+      section_title:(s.section_title||"").trim(),emoji:(s.emoji||"").trim(),align:s.align||"left",no_pill:!!s.no_pill,body:s.body||null,vo:(s.caption||"").trim()})),
+    outro:{scene_id:"outro",section_title:(outro&&outro.section_title||"").trim(),emoji:(outro&&outro.emoji||"").trim(),body:(outro&&outro.body)||null,vo:(outro?(outro.caption||""):"").trim()}
+  };
+  const job={id:"lr_"+Date.now().toString(36),mode:"listreview",topic:((intro.title||"")||"List review").slice(0,50),
+    spec,hookStyle:curHookStyle(),
+    scenes:currentScenes.filter(s=>s.files.length).map(s=>({scene_id:s.scene_id,files:s.files.map(c=>c.file)})),
+    status:"pending",progress:0,videoUrl:"",error:""};
+  hookOverlayUrl="";
+  jobs.unshift(job); renderAll();
+  const cr=document.getElementById("created"); cr.classList.remove("hidden");
+  setTimeout(()=>{ cr.classList.add("hidden"); resetEditor(); }, 2000);
+}
+
 async function renderAll(){
   if(rendering)return; rendering=true;
   let job;
   while((job=jobs.find(j=>j.status==="pending"))){
     job.status="rendering"; job.progress=15; renderLibrary();
     try{
+      if(job.mode==="listreview"){
+        const fd=new FormData();
+        fd.append("job_id",job.id); fd.append("user",SESSION.username); fd.append("creator_id",SESSION.username);
+        fd.append("hook_style",job.hookStyle); fd.append("voice_mode",SESSION.voice||"gtts"); fd.append("voice_id","");
+        fd.append("spec",JSON.stringify(job.spec));
+        job.scenes.forEach(s=>s.files.forEach((f,k)=>fd.append(s.scene_id+"__"+k,f,f.name)));
+        job.progress=55; renderLibrary();
+        const r=await fetch(API+"/assemble-listreview",{method:"POST",body:fd}); const t=await r.text();
+        let res; try{res=JSON.parse(t);}catch{throw new Error("Phản hồi lạ");}
+        if(!res.success) throw new Error(res.error||"render fail");
+        job.status="done"; job.progress=100; job.videoUrl=res.video_url||"";
+        renderLibrary(); continue;
+      }
       const fd=new FormData();
       fd.append("job_id",job.id); fd.append("video_type","personal"); fd.append("creator_id",SESSION.username);
       fd.append("user",SESSION.username); fd.append("topic",job.topic);
@@ -394,41 +754,7 @@ function renderLibrary(){
   libVideos.forEach(v=>{if(shown.has(v.video_url))return;cards.push(libCard(v.video_url,v.topic||"video",v.user));});
   grid.innerHTML=cards.join(""); const e=document.getElementById("libEmpty"); if(e)e.style.display=cards.length?"none":"block";
 }
-function libCard(url,topic,user,jobId){return `<div class="lib-card"><video src="${API+url}" preload="metadata"></video><div class="cap"><span>${topic||""}${user?" · "+user:""}</span><div style="display:flex;gap:4px;"><button class="expand" onclick="openViewer('${url}')">⤢ Phóng to</button><button class="btn-publish" onclick="publishToDashboard('${jobId||''}','${topic||''}')" title="Đăng lên Dashboard">📤</button></div></div></div>`;}
-
-async function publishToDashboard(jobId, topic) {
-  if (!jobId) { toast("Không tìm thấy job ID"); return; }
-  const job = jobs.find(j => j.id === jobId);
-  if (!job || !job.videoUrl) { toast("Video chưa hoàn tất"); return; }
-  
-  try {
-    toast("Đang đăng lên Dashboard...");
-    const r = await fetch(API + "/publish-to-dashboard", {
-      method: "POST",
-      headers: {"Content-Type": "application/json"},
-      body: JSON.stringify({
-        job_id: jobId,
-        user_id: SESSION.username,
-        title: job.hookTitle || topic,
-        topic: topic,
-        script: job.script,
-        drive_url: job.videoUrl,
-        local_path: job.videoUrl,
-        hook_style: job.hookStyle,
-        hook_text: job.hookTitle,
-        video_type: "video"
-      })
-    });
-    const res = await r.json();
-    if (res.success) {
-      toast("✅ Đã đăng lên Dashboard thành công!");
-    } else {
-      toast("❌ Lỗi: " + (res.error || "Không rõ lỗi"));
-    }
-  } catch (e) {
-    toast("❌ Lỗi kết nối: " + e.message);
-  }
-}
+function libCard(url,topic,user){return `<div class="lib-card"><video src="${API+url}" preload="metadata"></video><div class="cap"><span>${topic||""}${user?" · "+user:""}</span><button class="expand" onclick="openViewer('${url}')">⤢ Phóng to</button></div></div>`;}
 
 // ---------- ADMIN ----------
 async function renderAdmin(){
@@ -439,8 +765,60 @@ async function renderAdmin(){
   }catch(e){document.getElementById("statbox").textContent="Lỗi tải thống kê";}
 }
 
-// boot
-(function(){const s=localStorage.getItem("dalat_session");if(s){try{SESSION=JSON.parse(s);startApp();}catch{}}})();
+// ---------- ADMIN: tạo ảnh (8 album) ----------
+const ALBUMS = [
+  {id:"hien1", label:"Hiền · Lưới quán"},
+  {id:"hien2", label:"Hiền · Bộ sưu tập"},
+  {id:"le1",   label:"Lê · Mẫu Đà Lạt"},
+  {id:"le2",   label:"Lê · Cover + slide"},
+  {id:"muoi1", label:"Mười · Album 1"},
+  {id:"muoi2", label:"Mười · Album 2"},
+  {id:"vy1",   label:"Vy · Album 1"},
+  {id:"vy2",   label:"Vy · Album 2"},
+];
+function renderImageGen(){
+  resetEditor && resetEditor();
+  document.getElementById("appbody").innerHTML=`
+    <div class="card" style="margin-bottom:18px;display:flex;justify-content:space-between;align-items:center;gap:12px">
+      <div><h2 class="sec" style="margin:0">🎨 Tạo ảnh — chọn mẫu album</h2>
+        <div class="muted">Bấm "Tạo album", hệ thống dựng bộ ảnh slide từ thư viện địa điểm. ~10-60s/album.</div></div>
+      <button class="btn-ghost" onclick="renderHome()">← Trang chủ</button>
+    </div>
+    <div class="alb-grid">
+      ${ALBUMS.map(a=>`
+        <div class="alb-card" id="alb-${a.id}">
+          <div><div class="nm">${a.label}</div><div class="id">${a.id}</div></div>
+          <button class="btn" onclick="genAlbum('${a.id}')">Tạo album</button>
+          <div class="gal-grid hidden" id="gal-${a.id}"></div>
+        </div>`).join("")}
+    </div>`;
+}
+async function genAlbum(id){
+  const card=document.getElementById("alb-"+id); if(!card)return;
+  const btn=card.querySelector("button.btn"); const gal=document.getElementById("gal-"+id);
+  btn.disabled=true; btn.textContent="⏳ Đang dựng…"; gal.classList.add("hidden"); gal.innerHTML="";
+  try{
+    const r=await fetch(API+"/assemble-image",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({album:id})});
+    const j=await r.json(); if(!j.success) throw new Error(j.error||"lỗi");
+    gal.innerHTML=(j.images||[]).map(im=>`
+      <div class="gal-card">
+        <img src="${API+im.url}" loading="lazy" onclick="openImg('${im.url}')">
+        <div class="row"><a href="${API+im.url}" download="${im.name}">⤓ Tải</a></div>
+      </div>`).join("") || "<div class='muted'>Không có ảnh.</div>";
+    gal.classList.remove("hidden");
+    toast(`Đã tạo ${(j.images||[]).length} ảnh — ${j.label||id}`);
+  }catch(e){ toast("Lỗi: "+e.message); }
+  finally{ btn.disabled=false; btn.textContent="Tạo lại"; }
+}
+function openImg(url){document.getElementById("imgviewImg").src=API+url;document.getElementById("imgview").classList.remove("hidden");}
+function closeImg(){document.getElementById("imgview").classList.add("hidden");document.getElementById("imgviewImg").removeAttribute("src");}
+
+// boot — phiên per-tab (sessionStorage); nếu chưa có thì auto-login theo hash (#nv1, #tintuc...)
+(function(){
+  const s=sessionStorage.getItem("dalat_session");
+  if(s){try{SESSION=JSON.parse(s);startApp();return;}catch{}}
+  autoLoginFromHash();
+})();
 </script>
 </body>
 </html>
