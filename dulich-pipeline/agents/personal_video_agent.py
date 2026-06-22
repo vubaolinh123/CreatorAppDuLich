@@ -512,6 +512,8 @@ def run_assemble_video(
     durations = {}
     word_lists = {}
 
+    NEWS_HOOK_MIN = 4.0  # tin tức: scene Hook giữ tối thiểu 4s để overlay (màu+pill+caption) hiện trọn
+
     for name, text in segments:
         seg_output_name = f"{audio_output_name}_{name}"
         try:
@@ -527,6 +529,19 @@ def run_assemble_video(
             dur = get_audio_duration(path)
             if dur is None or dur <= 0:
                 dur = max(1.0, len(text) / 12.0)
+            # Tin tức: pad lặng đuôi đoạn hook để scene Hook ≥ NEWS_HOOK_MIN (overlay hiện trọn, không lệch tiếng)
+            if video_type == "news" and name == "hook" and dur < NEWS_HOOK_MIN:
+                try:
+                    import subprocess as _sp
+                    padded = str(Path(path).with_name(Path(path).stem + "_pad" + Path(path).suffix))
+                    r = _sp.run(["ffmpeg", "-y", "-i", path, "-af", "apad", "-t", f"{NEWS_HOOK_MIN:.2f}", padded],
+                                capture_output=True, text=True)
+                    if r.returncode == 0 and os.path.exists(padded):
+                        os.replace(padded, path)
+                        dur = NEWS_HOOK_MIN
+                        append_job_log(job_id, "INFO", f"[Voice] Hook tin tức pad lặng → {dur:.2f}s (overlay hiện trọn scene)")
+                except Exception as _ex:
+                    append_job_log(job_id, "WARNING", f"[Voice] Pad hook tin tức lỗi: {_ex}")
             durations[name] = dur
             
             # Check for word timing JSON

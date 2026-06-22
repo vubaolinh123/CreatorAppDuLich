@@ -14,6 +14,7 @@ import {
   Settings,
   Home,
   Wand2,
+  Clapperboard,
 } from "lucide-react";
 
 const navItems = [
@@ -21,6 +22,7 @@ const navItems = [
   { href: "/dashboard/create", icon: Wand2, label: "Tạo bài (Local)" },
   { href: "/dashboard/videos", icon: Film, label: "Video" },
   { href: "/dashboard/albums", icon: Images, label: "Album ảnh" },
+  { href: "/dashboard/pipeline", icon: Clapperboard, label: "Pipeline Editor" },
   { href: "/dashboard/seeding", icon: Store, label: "Seeding" },
   { href: "/dashboard/templates", icon: LayoutTemplate, label: "Templates" },
   { href: "/dashboard/creators", icon: Users, label: "Creators" },

@@ -35,11 +35,71 @@ if sys.platform.startswith("win"):
 sys.path.insert(0, str(Path(__file__).parent))
 
 # Load .env (keys: OPENROUTER_KEY, VBEE_APP_ID, VBEE_API_KEY, ...) for all handlers.
+_DOTENV_PATH = ""
 try:
     from dotenv import load_dotenv, find_dotenv
-    load_dotenv(find_dotenv())
+    _DOTENV_PATH = find_dotenv(usecwd=True)   # file .env thực sự đang load (có thể ở thư mục cha)
+    load_dotenv(_DOTENV_PATH)
 except Exception:
     pass
+
+# ── Cài đặt API key trong app (trang Settings) ──────────────────────────────
+# Ghi đúng file .env đang được load; nếu chưa có thì dùng .env cạnh server.py.
+ENV_PATH = Path(_DOTENV_PATH) if _DOTENV_PATH else (Path(__file__).parent / ".env")
+
+# Thư mục ảnh địa điểm (upload/cào) + kho ảnh chung
+THUMB_DIR = Path(__file__).parent / "data" / "thumbs"
+ALBUM_DIR = Path(__file__).parent / "data" / "album"
+# Danh sách key cho trang Cài đặt. Tất cả TÙY CHỌN — thiếu vẫn chạy free.
+SETTINGS_KEYS = [
+    {"key": "OPENROUTER_KEY",    "label": "OpenRouter",      "group": "AI viết kịch bản",
+     "desc": "AI tự viết script cho nv1. Thiếu → dùng nội dung mẫu/clone.", "link": "https://openrouter.ai/keys"},
+    {"key": "APIFY_API_KEY",     "label": "Apify",           "group": "Tin tức",
+     "desc": "Quét TikTok/Facebook cho luồng tin tức. Thiếu → không tự quét.", "link": "https://console.apify.com/account/integrations"},
+    {"key": "VBEE_API_KEY",      "label": "Vbee API key",    "group": "Giọng đọc",
+     "desc": "Giọng tiếng Việt xịn hơn gTTS.", "link": "https://vbee.vn"},
+    {"key": "VBEE_APP_ID",       "label": "Vbee App ID",     "group": "Giọng đọc",
+     "desc": "Đi kèm Vbee API key.", "link": "https://vbee.vn"},
+    {"key": "ELEVENLABS_API_KEY","label": "ElevenLabs",      "group": "Giọng đọc",
+     "desc": "Giọng/voice clone. Thiếu → fallback gTTS/Edge (free).", "link": "https://elevenlabs.io/app/settings/api-keys"},
+    {"key": "PEXELS_API_KEY",    "label": "Pexels",          "group": "Phần Ảnh (sắp ra mắt)",
+     "desc": "Ảnh stock cho module ảnh. Free tier.", "link": "https://www.pexels.com/api/"},
+    {"key": "GEMINI_API_KEY",    "label": "Gemini",          "group": "Phần Ảnh (sắp ra mắt)",
+     "desc": "AI vision dựng khung ảnh.", "link": "https://aistudio.google.com/apikey"},
+    {"key": "OPENAI_API_KEY",    "label": "OpenAI",          "group": "Khác",
+     "desc": "TTS/Vision OpenAI.", "link": "https://platform.openai.com/api-keys"},
+    {"key": "MONGO_URI",         "label": "MongoDB URI",     "group": "Khác",
+     "desc": "Lưu DB. Thiếu → tự dùng file mock.", "link": ""},
+]
+_SETTINGS_ALLOWED = {k["key"] for k in SETTINGS_KEYS}
+_ENV_LOCK = threading.Lock()
+
+
+def _env_is_set(key: str) -> bool:
+    v = (os.getenv(key) or "").strip()
+    return bool(v) and not v.lower().startswith("your-")
+
+
+def _update_env(updates: dict) -> None:
+    """Ghi/cập nhật các cặp KEY=value vào file .env và os.environ (hiệu lực ngay)."""
+    with _ENV_LOCK:
+        lines = ENV_PATH.read_text(encoding="utf-8").splitlines() if ENV_PATH.exists() else []
+        seen, out = set(), []
+        for line in lines:
+            stripped = line.strip()
+            if stripped and not stripped.startswith("#") and "=" in stripped:
+                k = stripped.split("=", 1)[0].strip()
+                if k in updates:
+                    out.append(f"{k}={updates[k]}")
+                    seen.add(k)
+                    continue
+            out.append(line)
+        for k, v in updates.items():
+            if k not in seen:
+                out.append(f"{k}={v}")
+        ENV_PATH.write_text("\n".join(out) + "\n", encoding="utf-8")
+        for k, v in updates.items():
+            os.environ[k] = v
 
 PORT = 7788
 UPLOAD_TEMP_DIR = Path(__file__).parent / "output" / "temp_uploads"
@@ -313,6 +373,28 @@ class AssembleHandler(BaseHTTPRequestHandler):
     def do_POST(self):
         if self.path == "/assemble":
             self.handle_assemble()
+        elif self.path == "/assemble-listreview":
+            self.handle_assemble_listreview()
+        elif self.path == "/assemble-image":
+            # Stub phần ẢNH — sẽ cắm module tạo ảnh vào đây sau.
+            self._json_response({"success": False, "error": "coming_soon",
+                                 "message": "Tính năng tạo ảnh đang phát triển."}, 501)
+        elif self.path == "/settings":
+            self.handle_settings_save()
+        elif self.path == "/venues":
+            self.handle_venue_save()
+        elif self.path == "/venues-delete":
+            self.handle_venue_delete()
+        elif self.path == "/venue-image":
+            self.handle_venue_image()
+        elif self.path == "/venue-image-delete":
+            self.handle_venue_image_delete()
+        elif self.path == "/venue-scrape-images":
+            self.handle_venue_scrape_images()
+        elif self.path == "/image-upload":
+            self.handle_image_upload()
+        elif self.path == "/images-delete":
+            self.handle_image_delete()
         elif self.path == "/generate-script":
             self.handle_generate_script()
         elif self.path == "/login":
@@ -337,6 +419,16 @@ class AssembleHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         if self.path in ("/", "/app", "/index.html"):
             self._serve_index()
+        elif self.path == "/settings":
+            self.handle_settings_get()
+        elif self.path == "/venues":
+            self.handle_venues_get()
+        elif self.path.startswith("/venue-thumb/"):
+            self._serve_thumb(self.path[len("/venue-thumb/"):])
+        elif self.path == "/images":
+            self.handle_images_get()
+        elif self.path.startswith("/album-img/"):
+            self._serve_album(self.path[len("/album-img/"):])
         elif self.path.startswith("/hookframe/"):
             self._serve_hookframe(self.path[len("/hookframe/"):])
         elif self.path.startswith("/font/"):
@@ -347,6 +439,8 @@ class AssembleHandler(BaseHTTPRequestHandler):
             self._serve_library()
         elif self.path == "/stats":
             self._serve_stats()
+        elif self.path.startswith("/listreview-prefill"):
+            self.handle_listreview_prefill()
         elif self.path.startswith("/output/"):
             # Serve output files statically for preview/playback
             file_path = Path(__file__).parent / self.path.lstrip("/")
@@ -924,6 +1018,363 @@ class AssembleHandler(BaseHTTPRequestHandler):
                 time.sleep(60)
                 shutil.rmtree(str(job_temp), ignore_errors=True)
             threading.Thread(target=cleanup, daemon=True).start()
+
+    def handle_assemble_listreview(self):
+        """Luồng nhân viên (list-review, mẫu nv1): intro + N quán (tên+điểm+VO+clip) + outro."""
+        print("[Server] /assemble-listreview — nhận request...", file=sys.stderr)
+        try:
+            fields, files = parse_multipart(self)
+        except Exception as e:
+            self._json_response({"success": False, "error": f"Lỗi đọc request: {e}"}, 400)
+            return
+
+        job_id = fields.get("job_id", f"lr_{uuid.uuid4().hex[:8]}")
+        user = fields.get("user", "") or fields.get("creator_id", "nv1")
+        hook_style = fields.get("hook_style", "hook_red")
+        voice_provider = fields.get("voice_mode", "gtts")
+        voice_id = fields.get("voice_id", "")
+        try:
+            spec_in = json.loads(fields.get("spec", "{}"))
+        except Exception:
+            spec_in = {}
+
+        job_temp = UPLOAD_TEMP_DIR / job_id
+        job_temp.mkdir(parents=True, exist_ok=True)
+
+        def _save_clips(scene_id: str) -> list:
+            def _idx(fn):
+                tail = fn.rsplit("__", 1)[1] if "__" in fn else "0"
+                return int(tail) if tail.isdigit() else 0
+            names = sorted([fn for fn in files if fn == scene_id or fn.startswith(scene_id + "__")], key=_idx)
+            out = []
+            for k, fn in enumerate(names):
+                filename, file_bytes = files[fn]
+                ext = Path(filename).suffix or ".mp4"
+                dest = job_temp / f"{scene_id}_{k}{ext}"
+                with open(str(dest), "wb") as f:
+                    f.write(file_bytes)
+                out.append(str(dest))
+            return out
+
+        # Build render spec với đường dẫn clip đã lưu
+        intro = spec_in.get("intro") or {}
+        outro = spec_in.get("outro") or {}
+        # Engine overlay: HTML (nv2/nv3) hay PIL (nv1) — lấy từ request hoặc prefill nhân viên
+        overlay_engine = (fields.get("overlay_engine") or spec_in.get("overlay_engine") or "").strip().lower()
+        style = (fields.get("style") or spec_in.get("style") or "").strip().lower()
+        if not overlay_engine:
+            try:
+                from tools.listreview_content import build_prefill
+                pf = build_prefill(user)
+                overlay_engine = (pf.get("overlay_engine") or "pil").lower()
+                style = style or (pf.get("style") or "").lower()
+            except Exception:
+                overlay_engine = "pil"
+        spec = {
+            "job_id": job_id, "hook_style": hook_style,
+            "voice_provider": voice_provider, "voice_id": voice_id,
+            "overlay_engine": overlay_engine, "style": style,
+            "intro": {"title": intro.get("title", ""), "hook_lines": intro.get("hook_lines"),
+                      "vo": intro.get("vo", ""), "clips": _save_clips(intro.get("scene_id", "intro"))},
+            "spots": [{"name": s.get("name", ""), "rating": s.get("rating", ""),
+                       "address": s.get("address", ""), "vo": s.get("vo", ""),
+                       "section_title": s.get("section_title", ""), "emoji": s.get("emoji", ""),
+                       "align": s.get("align", "left"), "no_pill": s.get("no_pill", False),
+                       "body": s.get("body"),
+                       "clips": _save_clips(s.get("scene_id", f"spot{i}"))}
+                      for i, s in enumerate(spec_in.get("spots", []), start=1)],
+            "outro": {"vo": outro.get("vo", ""), "section_title": outro.get("section_title", ""),
+                      "emoji": outro.get("emoji", ""), "body": outro.get("body"),
+                      "clips": _save_clips(outro.get("scene_id", "outro"))},
+        }
+
+        try:
+            with _HEAVY_LOCK:
+                for m in list(sys.modules.keys()):
+                    if m.startswith("tools.list_review_render"):
+                        sys.modules.pop(m, None)
+                from tools.list_review_render import render_list_review
+                result = render_list_review(spec)
+            if not result.get("success"):
+                self._json_response({"success": False, "error": result.get("error", "render fail")}, 500)
+                return
+            video_url = _to_output_url(result.get("video_path", ""))
+            try:
+                import time as _t
+                _append_product({"user": user, "topic": intro.get("title", "") or "List review",
+                                 "hook_style": hook_style, "video_url": video_url, "time": _t.time()})
+            except Exception as _e:
+                print(f"[Server] product log lỗi: {_e}", file=sys.stderr)
+            self._json_response({"success": True, "video_url": video_url,
+                                 "video_path": result.get("video_path", ""),
+                                 "duration": result.get("duration"), "job_id": job_id})
+        except Exception as e:
+            import traceback
+            tb = traceback.format_exc()
+            print(f"[Server] ❌ list-review lỗi: {e}\n{tb}", file=sys.stderr)
+            self._json_response({"success": False, "error": str(e), "traceback": tb}, 500)
+        finally:
+            def cleanup():
+                import time
+                time.sleep(60)
+                shutil.rmtree(str(job_temp), ignore_errors=True)
+            threading.Thread(target=cleanup, daemon=True).start()
+
+    def handle_listreview_prefill(self):
+        """GET /listreview-prefill?employee=nv1&regen=0|1 → scene + nội dung AI điền sẵn (chỉ nv1)."""
+        try:
+            from urllib.parse import urlparse, parse_qs
+            q = parse_qs(urlparse(self.path).query)
+            employee = (q.get("employee", ["nv1"])[0] or "nv1")
+            regen = q.get("regen", ["0"])[0] == "1"
+            hook_style = (_load_users().get(employee, {}) or {}).get("hook_style", "hook_red")
+            from tools.listreview_content import build_prefill
+            data = build_prefill(employee, regen=regen)
+            self._json_response({"success": bool(data.get("scenes")),
+                                 "hook_style": data.get("hook_style", hook_style),
+                                 "style": data.get("style", ""),
+                                 "overlay_engine": data.get("overlay_engine", "pil"),
+                                 "badge_mode": data.get("badge_mode", "full"),
+                                 "scenes": data.get("scenes", []), "generated_by": data.get("generated_by"),
+                                 "error": data.get("error", "")})
+        except Exception as e:
+            import traceback
+            print(f"[Server] /listreview-prefill error: {e}\n{traceback.format_exc()}", file=sys.stderr)
+            self._json_response({"success": False, "error": str(e)}, 500)
+
+    def handle_settings_get(self):
+        """GET /settings → danh sách key + đã điền hay chưa (KHÔNG trả giá trị key)."""
+        items = [{**meta, "is_set": _env_is_set(meta["key"])} for meta in SETTINGS_KEYS]
+        self._json_response({"success": True, "keys": items})
+
+    def handle_settings_save(self):
+        """POST /settings {KEY: value, ...} → ghi .env + áp dụng ngay. Bỏ qua value rỗng/ẩn."""
+        try:
+            data = self._read_json_body()
+        except Exception as e:
+            self._json_response({"success": False, "error": f"Body lỗi: {e}"}, 400)
+            return
+        updates = {}
+        for k, v in (data or {}).items():
+            if k not in _SETTINGS_ALLOWED:
+                continue
+            v = (v or "").strip()
+            if not v or set(v) <= {"•", "*"}:   # rỗng hoặc chuỗi ẩn → giữ nguyên key cũ
+                continue
+            updates[k] = v
+        if not updates:
+            self._json_response({"success": True, "saved": [], "message": "Không có thay đổi."})
+            return
+        try:
+            _update_env(updates)
+            self._json_response({"success": True, "saved": sorted(updates.keys()),
+                                 "message": f"Đã lưu {len(updates)} key. Có hiệu lực ngay."})
+        except Exception as e:
+            import traceback
+            print(f"[Server] /settings save error: {e}\n{traceback.format_exc()}", file=sys.stderr)
+            self._json_response({"success": False, "error": str(e)}, 500)
+
+    # ── Thư viện địa điểm (DB) ─────────────────────────────────────────────
+    @staticmethod
+    def _venue_view(v: dict) -> dict:
+        """Thêm image_urls (URL trình duyệt) — chỉ ảnh thật sự có trong data/thumbs.
+        Ảnh cũ đường dẫn tuyệt đối (máy khác) bị bỏ qua → UI hiện placeholder."""
+        urls, kept = [], []
+        for p in (v.get("images") or []):
+            name = Path(p).name
+            if (THUMB_DIR / name).exists():
+                urls.append(f"/venue-thumb/{name}")
+                kept.append(p)
+        return {**v, "images": kept, "image_urls": urls}
+
+    def handle_venues_get(self):
+        try:
+            from tools import venues_db
+            venues = [self._venue_view(v) for v in venues_db.get_all()]
+            # seeding lên đầu, giữ thứ tự còn lại
+            venues.sort(key=lambda v: 0 if v.get("loai") == "cần seeding" else 1)
+            self._json_response({"success": True, "venues": venues, "options": {
+                "loai_quan": list(venues_db.LOAI_QUAN_OPTIONS),
+                "loai": list(venues_db.LOAI_OPTIONS),
+                "co_nguoi": list(venues_db.CO_NGUOI_OPTIONS)}})
+        except Exception as e:
+            import traceback
+            print(f"[Server] /venues GET error: {e}\n{traceback.format_exc()}", file=sys.stderr)
+            self._json_response({"success": False, "error": str(e)}, 500)
+
+    def handle_venue_save(self):
+        try:
+            from tools import venues_db
+            v = self._read_json_body()
+            saved = venues_db.save_venue(v or {})
+            self._json_response({"success": True, "venue": self._venue_view(saved)})
+        except Exception as e:
+            self._json_response({"success": False, "error": str(e)}, 500)
+
+    def handle_venue_delete(self):
+        try:
+            from tools import venues_db
+            vid = (self._read_json_body() or {}).get("id")
+            ok = venues_db.delete_by_id(int(vid)) if vid is not None else False
+            self._json_response({"success": ok})
+        except Exception as e:
+            self._json_response({"success": False, "error": str(e)}, 500)
+
+    def handle_venue_image(self):
+        """Multipart: id + 1..n file (field bắt đầu 'image'). Lưu data/thumbs, append vào images."""
+        try:
+            from tools import venues_db
+            fields, files = parse_multipart(self)
+            vid = int(fields.get("id"))
+            THUMB_DIR.mkdir(parents=True, exist_ok=True)
+            imgs = []
+            for fn in sorted(files):
+                if not fn.startswith("image"):
+                    continue
+                filename, file_bytes = files[fn]
+                ext = (Path(filename).suffix or ".jpg").lower()
+                safe = "".join(c if c.isalnum() else "_" for c in Path(filename).stem)[:40]
+                dest = THUMB_DIR / f"{vid}_{uuid.uuid4().hex[:6]}_{safe}{ext}"
+                with open(dest, "wb") as f:
+                    f.write(file_bytes)
+                imgs = venues_db.add_image(vid, f"data/thumbs/{dest.name}")
+            venue = next((v for v in venues_db.get_all() if v["id"] == vid), {})
+            self._json_response({"success": True, "venue": self._venue_view(venue)})
+        except Exception as e:
+            import traceback
+            print(f"[Server] /venue-image error: {e}\n{traceback.format_exc()}", file=sys.stderr)
+            self._json_response({"success": False, "error": str(e)}, 500)
+
+    def handle_venue_image_delete(self):
+        try:
+            from tools import venues_db
+            body = self._read_json_body() or {}
+            vid, path = int(body.get("id")), body.get("path", "")
+            venues_db.remove_image(vid, path)
+            # xoá file vật lý nếu nằm trong data/thumbs
+            fp = Path(__file__).parent / path
+            if fp.exists() and THUMB_DIR in fp.parents:
+                try: fp.unlink()
+                except Exception: pass
+            venue = next((v for v in venues_db.get_all() if v["id"] == vid), {})
+            self._json_response({"success": True, "venue": self._venue_view(venue)})
+        except Exception as e:
+            self._json_response({"success": False, "error": str(e)}, 500)
+
+    def _serve_image(self, base_dir, raw: str):
+        """Serve ảnh từ base_dir. Hỗ trợ ?w=<px> → resize (PIL) + cache trong _cache/ để nhẹ + nhanh."""
+        from urllib.parse import unquote, urlparse, parse_qs
+        parsed = urlparse(raw)
+        name = unquote(parsed.path)
+        try:
+            w = int((parse_qs(parsed.query).get("w") or ["0"])[0])
+        except Exception:
+            w = 0
+        fp = base_dir / name
+        if not fp.exists() or not fp.is_file() or base_dir not in fp.parents:
+            self.send_response(404); self._cors_headers(); self.end_headers(); return
+        serve = fp
+        if 0 < w <= 1600:
+            try:
+                cache = base_dir / "_cache"; cache.mkdir(parents=True, exist_ok=True)
+                cp = cache / f"{w}_{fp.stem}.jpg"
+                if (not cp.exists()) or cp.stat().st_mtime < fp.stat().st_mtime:
+                    from PIL import Image
+                    im = Image.open(fp)
+                    if im.mode not in ("RGB", "L"):
+                        im = im.convert("RGB")
+                    ow, oh = im.size
+                    if ow > w:
+                        im = im.resize((w, max(1, round(oh * w / ow))), Image.LANCZOS)
+                    im.save(cp, "JPEG", quality=82)
+                if cp.exists():
+                    serve = cp
+            except Exception as e:
+                print(f"[img] resize lỗi {name}: {e}", file=sys.stderr)
+        mime = {".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png",
+                ".webp": "image/webp", ".gif": "image/gif", ".avif": "image/avif"}.get(serve.suffix.lower(), "application/octet-stream")
+        self.send_response(200); self._cors_headers()
+        self.send_header("Content-Type", mime)
+        self.send_header("Cache-Control", "public, max-age=86400")
+        self.send_header("Content-Length", str(serve.stat().st_size))
+        self.send_header("Connection", "close"); self.end_headers()
+        with open(serve, "rb") as f:
+            while chunk := f.read(65536):
+                self.wfile.write(chunk)
+        self.close_connection = True
+
+    def _serve_thumb(self, name: str):
+        self._serve_image(THUMB_DIR, name)
+
+    # ── Ảnh quán: cào Google Maps (APIFY) ─────────────────────────────────
+    def handle_venue_scrape_images(self):
+        try:
+            from tools import venues_db
+            vid = int((self._read_json_body() or {}).get("id"))
+            venue = next((v for v in venues_db.get_all() if v["id"] == vid), None)
+            if not venue:
+                self._json_response({"success": False, "error": "Không thấy địa điểm."}, 404); return
+            with _HEAVY_LOCK:
+                from tools.venue_images_scrape import scrape_venue_images
+                n = scrape_venue_images(venue)
+            venue = next((v for v in venues_db.get_all() if v["id"] == vid), {})
+            self._json_response({"success": True, "added": n, "venue": self._venue_view(venue)})
+        except Exception as e:
+            import traceback
+            print(f"[Server] /venue-scrape-images error: {e}\n{traceback.format_exc()}", file=sys.stderr)
+            self._json_response({"success": False, "error": str(e)}, 500)
+
+    # ── Ảnh chung (album) ─────────────────────────────────────────────────
+    @staticmethod
+    def _album_view(im: dict) -> dict:
+        return {**im, "url": f"/album-img/{Path(im['file']).name}"}
+
+    def handle_images_get(self):
+        try:
+            from tools import album_db
+            self._json_response({"success": True, "images": [self._album_view(i) for i in album_db.get_all()]})
+        except Exception as e:
+            self._json_response({"success": False, "error": str(e)}, 500)
+
+    def handle_image_upload(self):
+        try:
+            from tools import album_db
+            fields, files = parse_multipart(self)
+            ALBUM_DIR.mkdir(parents=True, exist_ok=True)
+            added = 0
+            for fn in sorted(files):
+                if not fn.startswith("image"):
+                    continue
+                filename, file_bytes = files[fn]
+                ext = (Path(filename).suffix or ".jpg").lower()
+                safe = "".join(c if c.isalnum() else "_" for c in Path(filename).stem)[:30]
+                dest = ALBUM_DIR / f"up_{uuid.uuid4().hex[:8]}_{safe}{ext}"
+                with open(dest, "wb") as f:
+                    f.write(file_bytes)
+                album_db.add(f"data/album/{dest.name}"); added += 1
+            self._json_response({"success": True, "added": added,
+                                 "images": [self._album_view(i) for i in album_db.get_all()]})
+        except Exception as e:
+            import traceback
+            print(f"[Server] /image-upload error: {e}\n{traceback.format_exc()}", file=sys.stderr)
+            self._json_response({"success": False, "error": str(e)}, 500)
+
+    def handle_image_delete(self):
+        try:
+            from tools import album_db
+            iid = int((self._read_json_body() or {}).get("id"))
+            rel = album_db.delete_by_id(iid)
+            if rel:
+                fp = Path(__file__).parent / rel
+                if fp.exists() and ALBUM_DIR in fp.parents:
+                    try: fp.unlink()
+                    except Exception: pass
+            self._json_response({"success": True})
+        except Exception as e:
+            self._json_response({"success": False, "error": str(e)}, 500)
+
+    def _serve_album(self, name: str):
+        self._serve_image(ALBUM_DIR, name)
 
     def handle_publish_to_dashboard(self):
         """Publish content to dashboard via Supabase with Google Drive upload."""

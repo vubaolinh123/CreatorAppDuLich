@@ -386,11 +386,7 @@ def build_news_hook(caption: str, out_path: str, color: str = "pink",
                stroke_width=2, stroke_fill=(0, 0, 0, 120))
         y += cap_lh
 
-    # 4) Footer: username + hashtags
-    foot_font = _load(NOTO_FONT, 30, weight=600)
-    d.text((70, H - 110), f"{username} · 5-31", font=foot_font, fill=(255, 255, 255, 235))
-    tag_font = _load(NOTO_FONT, 26, weight=500)
-    d.text((70, H - 66), tags, font=tag_font, fill=(255, 255, 255, 200))
+    # (Bỏ footer username + dòng hashtag theo yêu cầu — giữ title + pill + caption)
 
     out = Path(out_path); out.parent.mkdir(parents=True, exist_ok=True)
     canvas.save(out)
