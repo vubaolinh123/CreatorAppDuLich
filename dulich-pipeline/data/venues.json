@@ -1,0 +1,1042 @@
+{
+  "_next_id": 64,
+  "venues": [
+    {
+      "id": 1,
+      "name": "Trạm Nắng BBQ",
+      "address": "18 Đống Đa, phường Xuân Hương - Đà Lạt",
+      "image_path": "D:\\thanh\\CONTENTTA AGENCY\\8. Personal projects\\he thong edit video du lich\\CreatorAppDuLich\\thumbs\\Trạm Nắng BBQ.jpg",
+      "loai": "cần seeding",
+      "co_nguoi": "không",
+      "loai_quan": "quán ăn",
+      "signature": "Gà đốt Kampot",
+      "fb_link": "https://www.facebook.com/tramnangdalat",
+      "tiktok_link": "https://www.tiktok.com/@tramnangbbqmore",
+      "google_map": "https://www.google.com/maps/place/Tr%E1%BA%A1m+N%E1%BA%AFng+BBQ",
+      "feature": "Quán nướng BBQ view ngoài trời, gần trung tâm",
+      "images": [
+        "D:\\thanh\\CONTENTTA AGENCY\\8. Personal projects\\he thong edit video du lich\\CreatorAppDuLich\\thumbs\\Trạm Nắng BBQ.jpg",
+        "data/thumbs/1_gm_0.jpg",
+        "data/thumbs/1_gm_1.jpg",
+        "data/thumbs/1_gm_2.jpg",
+        "data/thumbs/1_gm_3.jpg",
+        "data/thumbs/1_gm_4.jpg",
+        "data/thumbs/1_gm_5.jpg",
+        "data/thumbs/1_gm_6.jpg",
+        "data/thumbs/1_gm_7.jpg"
+      ]
+    },
+    {
+      "id": 2,
+      "name": "Sườn cay khổng lồ",
+      "address": "42 Phan Chu Trinh, phường Lâm Viên - Đà Lạt",
+      "image_path": "D:\\thanh\\CONTENTTA AGENCY\\8. Personal projects\\he thong edit video du lich\\CreatorAppDuLich\\thumbs\\Sườn cay khổng lồ.jpg",
+      "loai": "cần seeding",
+      "co_nguoi": "không",
+      "loai_quan": "quán ăn",
+      "signature": "Sườn cay",
+      "fb_link": "https://www.facebook.com/Bepkhoidalat",
+      "tiktok_link": "https://www.tiktok.com/@suoncaykhonglodalat",
+      "google_map": "https://www.google.com/maps/place/suon+cay+khong+lo",
+      "feature": "Quán local, ngay trung tâm, giá rẻ (sườn cay nhiều size nhiều cấp dộ)",
+      "images": [
+        "D:\\thanh\\CONTENTTA AGENCY\\8. Personal projects\\he thong edit video du lich\\CreatorAppDuLich\\thumbs\\Sườn cay khổng lồ.jpg",
+        "data/thumbs/2_gm_0.jpg",
+        "data/thumbs/2_gm_1.jpg",
+        "data/thumbs/2_gm_2.jpg",
+        "data/thumbs/2_gm_3.jpg",
+        "data/thumbs/2_gm_4.jpg",
+        "data/thumbs/2_gm_5.jpg",
+        "data/thumbs/2_gm_6.jpg",
+        "data/thumbs/2_gm_7.jpg"
+      ]
+    },
+    {
+      "id": 3,
+      "name": "Yod Thong",
+      "address": "04 Đoàn Thị Điểm, phường Xuân Hương - Đà Lạt",
+      "image_path": "D:\\thanh\\CONTENTTA AGENCY\\8. Personal projects\\he thong edit video du lich\\CreatorAppDuLich\\thumbs\\Yod Thong.jpg",
+      "loai": "cần seeding",
+      "co_nguoi": "không",
+      "loai_quan": "quán ăn",
+      "signature": "Somtum",
+      "fb_link": "https://www.facebook.com/profile.php?id=100090076840805",
+      "tiktok_link": "https://www.tiktok.com/@yodthongdalat",
+      "google_map": "https://www.google.com/maps/place/yod+thong",
+      "feature": "Quán Thái local, cách chợ đêm 300m, chuyên vị Thái nguyên bản",
+      "images": [
+        "D:\\thanh\\CONTENTTA AGENCY\\8. Personal projects\\he thong edit video du lich\\CreatorAppDuLich\\thumbs\\Yod Thong.jpg",
+        "data/thumbs/3_gm_0.jpg",
+        "data/thumbs/3_gm_1.jpg",
+        "data/thumbs/3_gm_2.jpg",
+        "data/thumbs/3_gm_3.jpg",
+        "data/thumbs/3_gm_4.jpg",
+        "data/thumbs/3_gm_5.jpg",
+        "data/thumbs/3_gm_6.jpg",
+        "data/thumbs/3_gm_7.jpg"
+      ]
+    },
+    {
+      "id": 4,
+      "name": "Anmai Boutique Hotel",
+      "address": "1A Đ. Lữ Gia, Lâm Viên - Đà Lạt",
+      "image_path": "D:\\thanh\\CONTENTTA AGENCY\\8. Personal projects\\he thong edit video du lich\\CreatorAppDuLich\\thumbs\\Anmai Boutique Hotel.jpg",
+      "loai": "cần seeding",
+      "co_nguoi": "không",
+      "loai_quan": "khách sạn",
+      "signature": "500k-1tr/đêm",
+      "fb_link": "https://www.facebook.com/AnMaiBoutique",
+      "tiktok_link": "",
+      "google_map": "https://www.google.com/maps/place/an+mai+boutique",
+      "feature": "",
+      "images": [
+        "D:\\thanh\\CONTENTTA AGENCY\\8. Personal projects\\he thong edit video du lich\\CreatorAppDuLich\\thumbs\\Anmai Boutique Hotel.jpg",
+        "data/thumbs/4_gm_0.jpg",
+        "data/thumbs/4_gm_1.jpg",
+        "data/thumbs/4_gm_2.jpg",
+        "data/thumbs/4_gm_3.jpg",
+        "data/thumbs/4_gm_4.jpg",
+        "data/thumbs/4_gm_5.jpg",
+        "data/thumbs/4_gm_6.jpg",
+        "data/thumbs/4_gm_7.jpg"
+      ]
+    },
+    {
+      "id": 5,
+      "name": "Cozy Garden Boutique Hotel",
+      "address": "94 Đ. Lữ Gia, Lâm Viên - Đà Lạt",
+      "image_path": "D:\\thanh\\CONTENTTA AGENCY\\8. Personal projects\\he thong edit video du lich\\CreatorAppDuLich\\thumbs\\Cozy Garden Boutique Hotel.jpg",
+      "loai": "cần seeding",
+      "co_nguoi": "không",
+      "loai_quan": "khách sạn",
+      "signature": "500k-1tr/đêm",
+      "fb_link": "https://www.facebook.com/cozygardenboutiquehotel",
+      "tiktok_link": "",
+      "google_map": "https://www.google.com/maps/place/Cozy+Garden+Boutique+Hotel",
+      "feature": "Khách sạn tầm trung 500-1tr",
+      "images": [
+        "D:\\thanh\\CONTENTTA AGENCY\\8. Personal projects\\he thong edit video du lich\\CreatorAppDuLich\\thumbs\\Cozy Garden Boutique Hotel.jpg",
+        "data/thumbs/5_gm_0.jpg",
+        "data/thumbs/5_gm_1.jpg",
+        "data/thumbs/5_gm_2.jpg",
+        "data/thumbs/5_gm_3.jpg",
+        "data/thumbs/5_gm_4.jpg",
+        "data/thumbs/5_gm_5.jpg",
+        "data/thumbs/5_gm_6.jpg",
+        "data/thumbs/5_gm_7.jpg"
+      ]
+    },
+    {
+      "id": 6,
+      "name": "Lẩu bò Gia Lâm",
+      "address": "30 Ngô Quyền, phường Cam Ly - Đà Lạt",
+      "image_path": "D:\\thanh\\CONTENTTA AGENCY\\8. Personal projects\\he thong edit video du lich\\CreatorAppDuLich\\thumbs\\Lẩu bò Gia Lâm.jpg",
+      "loai": "cần seeding",
+      "co_nguoi": "không",
+      "loai_quan": "quán ăn",
+      "signature": "Lẩu bò",
+      "fb_link": "",
+      "tiktok_link": "",
+      "google_map": "https://www.google.com/maps/place/lau+bo+gia+lam",
+      "feature": "Lẩu bò local hoạt động đc nhiều năm",
+      "images": [
+        "D:\\thanh\\CONTENTTA AGENCY\\8. Personal projects\\he thong edit video du lich\\CreatorAppDuLich\\thumbs\\Lẩu bò Gia Lâm.jpg",
+        "data/thumbs/6_gm_0.jpg",
+        "data/thumbs/6_gm_1.jpg",
+        "data/thumbs/6_gm_2.jpg",
+        "data/thumbs/6_gm_3.jpg",
+        "data/thumbs/6_gm_4.jpg",
+        "data/thumbs/6_gm_5.jpg",
+        "data/thumbs/6_gm_6.jpg",
+        "data/thumbs/6_gm_7.jpg"
+      ]
+    },
+    {
+      "id": 7,
+      "name": "Oh-mi Vegan",
+      "address": "35/6 Yersin, Xuân Hương - Đà Lạt",
+      "image_path": "D:\\thanh\\CONTENTTA AGENCY\\8. Personal projects\\he thong edit video du lich\\CreatorAppDuLich\\thumbs\\Oh-mi Vegan.jpg",
+      "loai": "không seeding",
+      "co_nguoi": "không",
+      "loai_quan": "quán ăn",
+      "signature": "Mì tiềm chay",
+      "fb_link": "",
+      "tiktok_link": "",
+      "google_map": "https://www.google.com/search?q=oh+mi+vegan",
+      "feature": "Quán chay mở bởi người Đà lạt",
+      "images": [
+        "D:\\thanh\\CONTENTTA AGENCY\\8. Personal projects\\he thong edit video du lich\\CreatorAppDuLich\\thumbs\\Oh-mi Vegan.jpg",
+        "data/thumbs/7_gm_0.jpg",
+        "data/thumbs/7_gm_1.jpg",
+        "data/thumbs/7_gm_2.jpg",
+        "data/thumbs/7_gm_3.jpg",
+        "data/thumbs/7_gm_4.jpg",
+        "data/thumbs/7_gm_5.jpg",
+        "data/thumbs/7_gm_6.jpg",
+        "data/thumbs/7_gm_7.jpg"
+      ]
+    },
+    {
+      "id": 8,
+      "name": "Tiệm cà phê Chạng Vạng",
+      "address": "119 Huỳnh Tấn Phát, Đà Lạt",
+      "image_path": "D:\\thanh\\CONTENTTA AGENCY\\8. Personal projects\\he thong edit video du lich\\CreatorAppDuLich\\thumbs\\Tiệm cà phê Chạng Vạng.jpg",
+      "loai": "cần seeding",
+      "co_nguoi": "không",
+      "loai_quan": "quán cà phê",
+      "signature": "View hoàng hôn",
+      "fb_link": "",
+      "tiktok_link": "",
+      "google_map": "https://www.google.com/search?q=chang+vang+cafe",
+      "feature": "CF ngắm view hoàng hôn, cách trung tâm 15km, khu Xóm Lèo",
+      "images": [
+        "D:\\thanh\\CONTENTTA AGENCY\\8. Personal projects\\he thong edit video du lich\\CreatorAppDuLich\\thumbs\\Tiệm cà phê Chạng Vạng.jpg",
+        "data/thumbs/8_gm_0.jpg",
+        "data/thumbs/8_gm_1.jpg",
+        "data/thumbs/8_gm_2.jpg",
+        "data/thumbs/8_gm_3.jpg",
+        "data/thumbs/8_gm_4.jpg",
+        "data/thumbs/8_gm_5.jpg",
+        "data/thumbs/8_gm_6.jpg",
+        "data/thumbs/8_gm_7.jpg"
+      ]
+    },
+    {
+      "id": 9,
+      "name": "Langbiang Land",
+      "address": "93A Đường Bidoup, Lạc Dương, Đà Lạt",
+      "image_path": "D:\\thanh\\CONTENTTA AGENCY\\8. Personal projects\\he thong edit video du lich\\CreatorAppDuLich\\thumbs\\Langbiang Land.jpg",
+      "loai": "không seeding",
+      "co_nguoi": "không",
+      "loai_quan": "tham quan",
+      "signature": "",
+      "fb_link": "",
+      "tiktok_link": "",
+      "google_map": "https://www.google.com/maps/search/langbiang+land+da+lat",
+      "feature": "",
+      "images": [
+        "D:\\thanh\\CONTENTTA AGENCY\\8. Personal projects\\he thong edit video du lich\\CreatorAppDuLich\\thumbs\\Langbiang Land.jpg",
+        "data/thumbs/9_gm_0.jpg",
+        "data/thumbs/9_gm_1.jpg",
+        "data/thumbs/9_gm_2.jpg",
+        "data/thumbs/9_gm_3.jpg",
+        "data/thumbs/9_gm_4.jpg",
+        "data/thumbs/9_gm_5.jpg",
+        "data/thumbs/9_gm_6.jpg",
+        "data/thumbs/9_gm_7.jpg"
+      ]
+    },
+    {
+      "id": 10,
+      "name": "Đồi chè Cầu Đất",
+      "address": "Xã Xuân Trường, Đà Lạt",
+      "image_path": "D:\\thanh\\CONTENTTA AGENCY\\8. Personal projects\\he thong edit video du lich\\CreatorAppDuLich\\thumbs\\Đồi chè Cầu Đất.jpg",
+      "loai": "không seeding",
+      "co_nguoi": "không",
+      "loai_quan": "tham quan",
+      "signature": "",
+      "fb_link": "",
+      "tiktok_link": "",
+      "google_map": "https://www.google.com/maps/search/doi+che+cau+dat+da+lat",
+      "feature": "",
+      "images": [
+        "D:\\thanh\\CONTENTTA AGENCY\\8. Personal projects\\he thong edit video du lich\\CreatorAppDuLich\\thumbs\\Đồi chè Cầu Đất.jpg",
+        "data/thumbs/10_gm_0.jpg",
+        "data/thumbs/10_gm_1.jpg",
+        "data/thumbs/10_gm_2.jpg",
+        "data/thumbs/10_gm_3.jpg",
+        "data/thumbs/10_gm_4.jpg",
+        "data/thumbs/10_gm_5.jpg",
+        "data/thumbs/10_gm_6.jpg",
+        "data/thumbs/10_gm_7.jpg"
+      ]
+    },
+    {
+      "id": 11,
+      "name": "Chợ Đà Lạt",
+      "address": "Đường Nguyễn Thị Minh Khai, Đà Lạt",
+      "image_path": "D:\\thanh\\CONTENTTA AGENCY\\8. Personal projects\\he thong edit video du lich\\CreatorAppDuLich\\thumbs\\Chợ Đà Lạt.jpg",
+      "loai": "không seeding",
+      "co_nguoi": "không",
+      "loai_quan": "tham quan",
+      "signature": "",
+      "fb_link": "",
+      "tiktok_link": "",
+      "google_map": "https://www.google.com/maps/search/cho+da+lat",
+      "feature": "",
+      "images": [
+        "D:\\thanh\\CONTENTTA AGENCY\\8. Personal projects\\he thong edit video du lich\\CreatorAppDuLich\\thumbs\\Chợ Đà Lạt.jpg"
+      ]
+    },
+    {
+      "id": 12,
+      "name": "Bánh mì Đà Lạt",
+      "address": "65 Phan Đình Phùng, Đà Lạt",
+      "image_path": "D:\\thanh\\CONTENTTA AGENCY\\8. Personal projects\\he thong edit video du lich\\CreatorAppDuLich\\thumbs\\Bánh mì Đà Lạt.jpg",
+      "loai": "không seeding",
+      "co_nguoi": "không",
+      "loai_quan": "quán ăn",
+      "signature": "",
+      "fb_link": "",
+      "tiktok_link": "",
+      "google_map": "https://www.google.com/maps/search/banh+mi+65+phan+dinh+phung+da+lat",
+      "feature": "",
+      "images": [
+        "D:\\thanh\\CONTENTTA AGENCY\\8. Personal projects\\he thong edit video du lich\\CreatorAppDuLich\\thumbs\\Bánh mì Đà Lạt.jpg"
+      ]
+    },
+    {
+      "id": 13,
+      "name": "Thác Datanla",
+      "address": "Đèo Prenn, Đà Lạt",
+      "image_path": "D:\\thanh\\CONTENTTA AGENCY\\8. Personal projects\\he thong edit video du lich\\CreatorAppDuLich\\thumbs\\Thác Datanla.jpg",
+      "loai": "không seeding",
+      "co_nguoi": "không",
+      "loai_quan": "tham quan",
+      "signature": "",
+      "fb_link": "",
+      "tiktok_link": "",
+      "google_map": "https://www.google.com/maps/search/thac+datanla+da+lat",
+      "feature": "",
+      "images": [
+        "D:\\thanh\\CONTENTTA AGENCY\\8. Personal projects\\he thong edit video du lich\\CreatorAppDuLich\\thumbs\\Thác Datanla.jpg"
+      ]
+    },
+    {
+      "id": 14,
+      "name": "Nem nướng Tân Long",
+      "address": "290 Bùi Thị Xuân, Đà Lạt",
+      "image_path": "D:\\thanh\\CONTENTTA AGENCY\\8. Personal projects\\he thong edit video du lich\\CreatorAppDuLich\\thumbs\\Nem nướng Tân Long.jpg",
+      "loai": "không seeding",
+      "co_nguoi": "không",
+      "loai_quan": "quán ăn",
+      "signature": "",
+      "fb_link": "",
+      "tiktok_link": "",
+      "google_map": "https://www.google.com/maps/search/nem+nuong+tan+long+da+lat",
+      "feature": "",
+      "images": [
+        "D:\\thanh\\CONTENTTA AGENCY\\8. Personal projects\\he thong edit video du lich\\CreatorAppDuLich\\thumbs\\Nem nướng Tân Long.jpg"
+      ]
+    },
+    {
+      "id": 15,
+      "name": "Cà phê Ollin",
+      "address": "9 Nguyễn Chí Thanh, Đà Lạt",
+      "image_path": "D:\\thanh\\CONTENTTA AGENCY\\8. Personal projects\\he thong edit video du lich\\CreatorAppDuLich\\thumbs\\Cà phê Ollin.jpg",
+      "loai": "không seeding",
+      "co_nguoi": "không",
+      "loai_quan": "quán ăn",
+      "signature": "",
+      "fb_link": "",
+      "tiktok_link": "",
+      "google_map": "https://www.google.com/maps/search/ca+phe+ollin+nguyen+chi+thanh+da+lat",
+      "feature": "",
+      "images": [
+        "D:\\thanh\\CONTENTTA AGENCY\\8. Personal projects\\he thong edit video du lich\\CreatorAppDuLich\\thumbs\\Cà phê Ollin.jpg"
+      ]
+    },
+    {
+      "name": "Gà Nướng Cơm Lam Tư Béo",
+      "address": "321 Hai Bà Trưng, Phường 6, Đà Lạt",
+      "description": "Quán đặc sản lâu năm chuyên gà nướng cơm lam, không gian rộng rãi ở trung tâm, luôn đông khách cả ngày lẫn tối. Gà nướng vàng ươm thơm phức, cơm lam mềm dẻo, thêm lẩu gà lá é cay nhẹ đúng vị phố núi.",
+      "signature": "Gà nướng cơm lam",
+      "co_nguoi": "có",
+      "loai_quan": "quán ăn",
+      "loai": "Không seeding",
+      "fb_link": "",
+      "tiktok_link": "",
+      "google_map": "https://www.google.com/maps/search/Ga+Nuong+Com+Lam+Tu+Beo+Da+Lat",
+      "id": 16,
+      "image_path": "D:\\thanh\\CONTENTTA AGENCY\\8. Personal projects\\he thong edit video du lich\\CreatorAppDuLich\\thumbs\\Gà Nướng Cơm Lam Tư Béo.jpg",
+      "feature": "",
+      "images": [
+        "D:\\thanh\\CONTENTTA AGENCY\\8. Personal projects\\he thong edit video du lich\\CreatorAppDuLich\\thumbs\\Gà Nướng Cơm Lam Tư Béo.jpg"
+      ]
+    },
+    {
+      "name": "Bánh Tráng Nướng Dì Đinh",
+      "address": "26 Hoàng Diệu, Phường 5, Đà Lạt",
+      "description": "Một trong những quán bánh tráng nướng lâu đời và nổi tiếng nhất Đà Lạt, nướng trên bếp than hồng với cả hai kiểu bánh giòn và bánh dẻo. Topping đa dạng: hải sản, bò, xíu mại, gà, hến.",
+      "signature": "Bánh tráng nướng than hồng",
+      "co_nguoi": "có",
+      "loai_quan": "quán ăn",
+      "loai": "Không seeding",
+      "fb_link": "",
+      "tiktok_link": "",
+      "google_map": "https://www.google.com/maps/search/Banh+Trang+Nuong+Di+Dinh+Da+Lat",
+      "id": 17,
+      "image_path": "D:\\thanh\\CONTENTTA AGENCY\\8. Personal projects\\he thong edit video du lich\\CreatorAppDuLich\\thumbs\\Bánh Tráng Nướng Dì Đinh.jpg",
+      "feature": "",
+      "images": [
+        "D:\\thanh\\CONTENTTA AGENCY\\8. Personal projects\\he thong edit video du lich\\CreatorAppDuLich\\thumbs\\Bánh Tráng Nướng Dì Đinh.jpg"
+      ]
+    },
+    {
+      "name": "Bánh Tráng Nướng Cô Hạnh",
+      "address": "73 Nguyễn Công Trứ, Phường 8, Đà Lạt",
+      "description": "Quán bánh tráng nướng nổi tiếng với trứng lòng đào béo ngậy, là địa chỉ quen thuộc của giới trẻ và du khách mỗi buổi chiều tối. Giá bình dân, bánh nướng thơm giòn.",
+      "signature": "Bánh tráng nướng trứng lòng đào",
+      "co_nguoi": "có",
+      "loai_quan": "quán ăn",
+      "loai": "Không seeding",
+      "fb_link": "",
+      "tiktok_link": "",
+      "google_map": "https://www.google.com/maps/search/Banh+Trang+Nuong+Co+Hanh+Da+Lat",
+      "id": 18,
+      "image_path": "D:\\thanh\\CONTENTTA AGENCY\\8. Personal projects\\he thong edit video du lich\\CreatorAppDuLich\\thumbs\\Bánh Tráng Nướng Cô Hạnh.jpg",
+      "feature": "",
+      "images": [
+        "D:\\thanh\\CONTENTTA AGENCY\\8. Personal projects\\he thong edit video du lich\\CreatorAppDuLich\\thumbs\\Bánh Tráng Nướng Cô Hạnh.jpg"
+      ]
+    },
+    {
+      "name": "Phở Thố Đá Chu Gia",
+      "address": "23 Tăng Bạt Hổ, Phường 1, Đà Lạt",
+      "description": "Quán phở thố đá nổi tiếng bậc nhất Đà Lạt, nước dùng hầm xương bò 12 tiếng đậm đà, phục vụ trong thố đá giữ nhiệt, sức chứa lớn vẫn luôn đông khách. Phong cách ẩm thực độc đáo không nơi nào có.",
+      "signature": "Phở thố đá bò",
+      "co_nguoi": "có",
+      "loai_quan": "quán ăn",
+      "loai": "Không seeding",
+      "fb_link": "",
+      "tiktok_link": "",
+      "google_map": "https://www.google.com/maps/search/Pho+Tho+Da+Chu+Gia+Da+Lat",
+      "id": 19,
+      "image_path": "D:\\thanh\\CONTENTTA AGENCY\\8. Personal projects\\he thong edit video du lich\\CreatorAppDuLich\\thumbs\\Phở Thố Đá Chu Gia.jpg",
+      "feature": "",
+      "images": [
+        "D:\\thanh\\CONTENTTA AGENCY\\8. Personal projects\\he thong edit video du lich\\CreatorAppDuLich\\thumbs\\Phở Thố Đá Chu Gia.jpg"
+      ]
+    },
+    {
+      "name": "Lẩu Gà Lá É Tao Ngộ",
+      "address": "10 Đường 3/4, Phường 3, Đà Lạt",
+      "description": "Quán lẩu gà lá é nổi tiếng nhất Đà Lạt, hương vị chính gốc Phú Yên với gà thả vườn và lá é tươi. Nước lẩu ngọt thanh, thơm lá é, ăn vào mùa lạnh là chuẩn nhất.",
+      "signature": "Lẩu gà lá é",
+      "co_nguoi": "có",
+      "loai_quan": "quán ăn",
+      "loai": "Không seeding",
+      "fb_link": "",
+      "tiktok_link": "",
+      "google_map": "https://www.google.com/maps/search/Lau+Ga+La+E+Tao+Ngo+Da+Lat",
+      "id": 20,
+      "image_path": "D:\\thanh\\CONTENTTA AGENCY\\8. Personal projects\\he thong edit video du lich\\CreatorAppDuLich\\thumbs\\Lẩu Gà Lá É Tao Ngộ.jpg",
+      "feature": "",
+      "images": [
+        "D:\\thanh\\CONTENTTA AGENCY\\8. Personal projects\\he thong edit video du lich\\CreatorAppDuLich\\thumbs\\Lẩu Gà Lá É Tao Ngộ.jpg"
+      ]
+    },
+    {
+      "name": "Bánh Mì Xíu Mại Bé Linh",
+      "address": "26 Hoàng Diệu, Phường 5, Đà Lạt",
+      "description": "Quán bánh mì xíu mại lâu đời hơn 50 năm, đã truyền qua hai thế hệ, là bữa sáng kinh điển của người Đà Lạt. Xíu mại nước ngọt đậm, bánh mì giòn, giá chỉ từ 15.000 đồng.",
+      "signature": "Bánh mì xíu mại",
+      "co_nguoi": "có",
+      "loai_quan": "quán ăn",
+      "loai": "Không seeding",
+      "fb_link": "",
+      "tiktok_link": "",
+      "google_map": "https://www.google.com/maps/search/Banh+Mi+Xiu+Mai+Be+Linh+Hoang+Dieu+Da+Lat",
+      "id": 21,
+      "image_path": "D:\\thanh\\CONTENTTA AGENCY\\8. Personal projects\\he thong edit video du lich\\CreatorAppDuLich\\thumbs\\Bánh Mì Xíu Mại Bé Linh.jpg",
+      "feature": "",
+      "images": [
+        "D:\\thanh\\CONTENTTA AGENCY\\8. Personal projects\\he thong edit video du lich\\CreatorAppDuLich\\thumbs\\Bánh Mì Xíu Mại Bé Linh.jpg"
+      ]
+    },
+    {
+      "name": "Bánh Mì Xíu Mại 79",
+      "address": "119C Nguyễn Văn Trỗi, Phường 2, Đà Lạt",
+      "description": "Quán ăn sáng quen thuộc của người dân địa phương và du khách, bánh mì xíu mại chuẩn vị Đà Lạt, mở từ 5 giờ sáng. Luôn đông khách xếp hàng vào buổi sáng sớm.",
+      "signature": "Bánh mì xíu mại truyền thống",
+      "co_nguoi": "có",
+      "loai_quan": "quán ăn",
+      "loai": "Không seeding",
+      "fb_link": "",
+      "tiktok_link": "",
+      "google_map": "https://www.google.com/maps/search/Banh+Mi+Xiu+Mai+79+Nguyen+Van+Troi+Da+Lat",
+      "id": 22,
+      "image_path": "D:\\thanh\\CONTENTTA AGENCY\\8. Personal projects\\he thong edit video du lich\\CreatorAppDuLich\\thumbs\\Bánh Mì Xíu Mại 79.jpg",
+      "feature": "",
+      "images": [
+        "D:\\thanh\\CONTENTTA AGENCY\\8. Personal projects\\he thong edit video du lich\\CreatorAppDuLich\\thumbs\\Bánh Mì Xíu Mại 79.jpg"
+      ]
+    },
+    {
+      "name": "Bánh Ướt Lòng Gà Thảo",
+      "address": "15F Tăng Bạt Hổ, Phường 1, Đà Lạt",
+      "description": "Quán bánh ướt lòng gà được xếp top đầu Đà Lạt, bánh ướt nóng hổi mềm mịn kết hợp lòng gà tươi, trứng gà non, nước mắm chua ngọt kích thích vị giác.",
+      "signature": "Bánh ướt lòng gà",
+      "co_nguoi": "có",
+      "loai_quan": "quán ăn",
+      "loai": "Không seeding",
+      "fb_link": "",
+      "tiktok_link": "",
+      "google_map": "https://www.google.com/maps/search/Banh+Uot+Long+Ga+Thao+Da+Lat",
+      "id": 23,
+      "image_path": "D:\\thanh\\CONTENTTA AGENCY\\8. Personal projects\\he thong edit video du lich\\CreatorAppDuLich\\thumbs\\Bánh Ướt Lòng Gà Thảo.jpg",
+      "feature": "",
+      "images": [
+        "D:\\thanh\\CONTENTTA AGENCY\\8. Personal projects\\he thong edit video du lich\\CreatorAppDuLich\\thumbs\\Bánh Ướt Lòng Gà Thảo.jpg"
+      ]
+    },
+    {
+      "name": "Cơm Gà Hải Phan Rang",
+      "address": "28 Trần Nhật Duật, Phường 5, Đà Lạt",
+      "description": "Quán cơm gà nổi tiếng dùng gà ta nhập từ Phan Rang lên nên thịt chắc và ngọt tự nhiên, cơm thơm mềm không bở. Giá bình dân, đông khách từ sáng đến tối.",
+      "signature": "Cơm gà Phan Rang",
+      "co_nguoi": "có",
+      "loai_quan": "quán ăn",
+      "loai": "Không seeding",
+      "fb_link": "",
+      "tiktok_link": "",
+      "google_map": "https://www.google.com/maps/search/Com+Ga+Hai+Phan+Rang+Da+Lat",
+      "id": 24,
+      "image_path": "D:\\thanh\\CONTENTTA AGENCY\\8. Personal projects\\he thong edit video du lich\\CreatorAppDuLich\\thumbs\\Cơm Gà Hải Phan Rang.jpg",
+      "feature": "",
+      "images": [
+        "D:\\thanh\\CONTENTTA AGENCY\\8. Personal projects\\he thong edit video du lich\\CreatorAppDuLich\\thumbs\\Cơm Gà Hải Phan Rang.jpg"
+      ]
+    },
+    {
+      "name": "Cơm Gà Như Ý",
+      "address": "36 Hà Huy Tập, Phường 3, Đà Lạt",
+      "description": "Quán cơm gà xối mỡ ngon nổi tiếng ở Đà Lạt, cơm chiên cùng hành lá thơm phức, không ngấy dầu. Mỗi phần từ 40.000 đồng, gà xối mỡ vàng giòn bên ngoài, mềm ngọt bên trong.",
+      "signature": "Cơm gà xối mỡ",
+      "co_nguoi": "có",
+      "loai_quan": "quán ăn",
+      "loai": "Không seeding",
+      "fb_link": "",
+      "tiktok_link": "",
+      "google_map": "https://www.google.com/maps/search/Com+Ga+Nhu+Y+Ha+Huy+Tap+Da+Lat",
+      "id": 25,
+      "image_path": "D:\\thanh\\CONTENTTA AGENCY\\8. Personal projects\\he thong edit video du lich\\CreatorAppDuLich\\thumbs\\Cơm Gà Như Ý.jpg",
+      "feature": "",
+      "images": [
+        "D:\\thanh\\CONTENTTA AGENCY\\8. Personal projects\\he thong edit video du lich\\CreatorAppDuLich\\thumbs\\Cơm Gà Như Ý.jpg"
+      ]
+    },
+    {
+      "name": "Hủ Tiếu Nam Vang Gia Cát",
+      "address": "45 Trần Phú, Phường 3, Đà Lạt",
+      "description": "Quán hủ tiếu Nam Vang nằm ngay trung tâm gần hồ Xuân Hương, nước dùng ngọt thanh từ xương hầm kỹ, sợi hủ tiếu dai giòn, thịt heo giữ màu hồng tự nhiên.",
+      "signature": "Hủ tiếu Nam Vang",
+      "co_nguoi": "có",
+      "loai_quan": "quán ăn",
+      "loai": "Không seeding",
+      "fb_link": "",
+      "tiktok_link": "",
+      "google_map": "https://www.google.com/maps/search/Hu+Tieu+Nam+Vang+Gia+Cat+Da+Lat",
+      "id": 26,
+      "image_path": "D:\\thanh\\CONTENTTA AGENCY\\8. Personal projects\\he thong edit video du lich\\CreatorAppDuLich\\thumbs\\Hủ Tiếu Nam Vang Gia Cát.jpg",
+      "feature": "",
+      "images": [
+        "D:\\thanh\\CONTENTTA AGENCY\\8. Personal projects\\he thong edit video du lich\\CreatorAppDuLich\\thumbs\\Hủ Tiếu Nam Vang Gia Cát.jpg"
+      ]
+    },
+    {
+      "name": "Bún Bò Thố Đá Sông Hương",
+      "address": "4 Hoàng Văn Thụ, Phường 4, Đà Lạt",
+      "description": "Quán bún bò phong cách đặc biệt phục vụ trong thố đá giữ nhiệt, hương vị chuẩn gốc Huế đậm đà mà vẫn giữ nóng trọn bữa. Là địa chỉ yêu thích của cả người địa phương lẫn du khách.",
+      "signature": "Bún bò thố đá",
+      "co_nguoi": "có",
+      "loai_quan": "quán ăn",
+      "loai": "Không seeding",
+      "fb_link": "",
+      "tiktok_link": "",
+      "google_map": "https://www.google.com/maps/search/Bun+Bo+Tho+Da+Song+Huong+Da+Lat",
+      "id": 27,
+      "image_path": "D:\\thanh\\CONTENTTA AGENCY\\8. Personal projects\\he thong edit video du lich\\CreatorAppDuLich\\thumbs\\Bún Bò Thố Đá Sông Hương.jpg",
+      "feature": "",
+      "images": [
+        "D:\\thanh\\CONTENTTA AGENCY\\8. Personal projects\\he thong edit video du lich\\CreatorAppDuLich\\thumbs\\Bún Bò Thố Đá Sông Hương.jpg"
+      ]
+    },
+    {
+      "name": "Vuông Pizza",
+      "address": "7 Đường 3 Tháng 2, Phường 1, Đà Lạt",
+      "description": "Nhà hàng pizza độc đáo nổi tiếng toàn quốc với concept pizza hình vuông thuần nhất từ đĩa, ly đến bánh. Không gian đẹp, lãng mạn giữa trung tâm Đà Lạt, thu hút đông đảo giới trẻ.",
+      "signature": "Pizza vuông cá hồi măng tây",
+      "co_nguoi": "có",
+      "loai_quan": "quán ăn",
+      "loai": "Không seeding",
+      "fb_link": "https://www.facebook.com/vuongpizzadalat",
+      "tiktok_link": "",
+      "google_map": "https://www.google.com/maps/search/Vuong+Pizza+Da+Lat",
+      "id": 28,
+      "image_path": "D:\\thanh\\CONTENTTA AGENCY\\8. Personal projects\\he thong edit video du lich\\CreatorAppDuLich\\thumbs\\Vuông Pizza.jpg",
+      "feature": "",
+      "images": [
+        "D:\\thanh\\CONTENTTA AGENCY\\8. Personal projects\\he thong edit video du lich\\CreatorAppDuLich\\thumbs\\Vuông Pizza.jpg"
+      ]
+    },
+    {
+      "name": "Lẩu Cá Tầm Ngư Sơn",
+      "address": "Đường Phạm Ngũ Lão, Phường 4, Đà Lạt",
+      "description": "Quán lẩu cá tầm nổi tiếng với cá tầm và cá hồi nuôi ngay tại Đà Lạt, tươi sống đảm bảo. Không gian rộng rãi thoáng đãng, phù hợp cho gia đình và nhóm bạn đông người.",
+      "signature": "Lẩu cá tầm",
+      "co_nguoi": "có",
+      "loai_quan": "quán ăn",
+      "loai": "Không seeding",
+      "fb_link": "",
+      "tiktok_link": "",
+      "google_map": "https://www.google.com/maps/search/Lau+Ca+Tam+Ngu+Son+Da+Lat",
+      "id": 29,
+      "image_path": "D:\\thanh\\CONTENTTA AGENCY\\8. Personal projects\\he thong edit video du lich\\CreatorAppDuLich\\thumbs\\Lẩu Cá Tầm Ngư Sơn.jpg",
+      "feature": "",
+      "images": [
+        "D:\\thanh\\CONTENTTA AGENCY\\8. Personal projects\\he thong edit video du lich\\CreatorAppDuLich\\thumbs\\Lẩu Cá Tầm Ngư Sơn.jpg"
+      ]
+    },
+    {
+      "name": "Bánh Căn Cô Hoa",
+      "address": "12 Phan Đình Phùng, Phường 2, Đà Lạt",
+      "description": "Quán bánh căn truyền thống nổi tiếng nhất Đà Lạt, mang đậm hương vị đặc sản phố núi, bánh vừa ra lò giòn ngoài mềm trong. Mở cả sáng lẫn chiều, luôn có khách xếp hàng.",
+      "signature": "Bánh căn trứng gà nhân tôm",
+      "co_nguoi": "có",
+      "loai_quan": "quán ăn",
+      "loai": "Không seeding",
+      "fb_link": "",
+      "tiktok_link": "",
+      "google_map": "https://www.google.com/maps/search/Banh+Can+Co+Hoa+Phan+Dinh+Phung+Da+Lat",
+      "id": 30,
+      "image_path": "D:\\thanh\\CONTENTTA AGENCY\\8. Personal projects\\he thong edit video du lich\\CreatorAppDuLich\\thumbs\\Bánh Căn Cô Hoa.jpg",
+      "feature": "",
+      "images": [
+        "D:\\thanh\\CONTENTTA AGENCY\\8. Personal projects\\he thong edit video du lich\\CreatorAppDuLich\\thumbs\\Bánh Căn Cô Hoa.jpg"
+      ]
+    },
+    {
+      "name": "Kem Bơ Thanh Thảo",
+      "address": "76 Nguyễn Văn Trỗi, Phường 2, Đà Lạt",
+      "description": "Địa chỉ kem bơ đi đầu và nổi tiếng nhất Đà Lạt, kem bơ tươi béo ngậy từ bơ trồng tại chỗ, chỉ 25.000 đồng một ly. Là điểm đến không thể bỏ qua khi du lịch Đà Lạt.",
+      "signature": "Kem bơ Đà Lạt",
+      "co_nguoi": "có",
+      "loai_quan": "quán ăn",
+      "loai": "Không seeding",
+      "fb_link": "",
+      "tiktok_link": "",
+      "google_map": "https://www.google.com/maps/search/Kem+Bo+Thanh+Thao+Da+Lat",
+      "id": 31,
+      "image_path": "D:\\thanh\\CONTENTTA AGENCY\\8. Personal projects\\he thong edit video du lich\\CreatorAppDuLich\\thumbs\\Kem Bơ Thanh Thảo.jpg",
+      "feature": "",
+      "images": [
+        "D:\\thanh\\CONTENTTA AGENCY\\8. Personal projects\\he thong edit video du lich\\CreatorAppDuLich\\thumbs\\Kem Bơ Thanh Thảo.jpg"
+      ]
+    },
+    {
+      "name": "Chè Hé Đà Lạt",
+      "address": "11A Đường 3 Tháng 2, Phường 1, Đà Lạt",
+      "description": "Tiệm chè bí ẩn không biển hiệu tồn tại hơn 15 năm, chuyên phục vụ từ 16h30 đến 22h00. Hơn 10 loại chè nóng lạnh từ công thức truyền thống, không gian ấm cúng như bước vào thế giới chè riêng.",
+      "signature": "Chè hé thập cẩm",
+      "co_nguoi": "có",
+      "loai_quan": "quán ăn",
+      "loai": "Không seeding",
+      "fb_link": "",
+      "tiktok_link": "",
+      "google_map": "https://www.google.com/maps/search/Che+He+Da+Lat",
+      "id": 32,
+      "image_path": "D:\\thanh\\CONTENTTA AGENCY\\8. Personal projects\\he thong edit video du lich\\CreatorAppDuLich\\thumbs\\Chè Hé Đà Lạt.jpg",
+      "feature": "",
+      "images": [
+        "D:\\thanh\\CONTENTTA AGENCY\\8. Personal projects\\he thong edit video du lich\\CreatorAppDuLich\\thumbs\\Chè Hé Đà Lạt.jpg"
+      ]
+    },
+    {
+      "name": "Cơm Tấm Mei",
+      "address": "5 Khu Hòa Bình, Phường 1, Đà Lạt",
+      "description": "Quán cơm tấm sườn bì chả phong cách Sài Gòn ngay trung tâm Đà Lạt, được người Sài Gòn lên đây nhận ngay là đúng vị. Nằm khu Hòa Bình sầm uất, luôn đông khách trưa và tối.",
+      "signature": "Cơm tấm sườn bì chả",
+      "co_nguoi": "có",
+      "loai_quan": "quán ăn",
+      "loai": "Không seeding",
+      "fb_link": "",
+      "tiktok_link": "",
+      "google_map": "https://www.google.com/maps/search/Com+Tam+Mei+Hoa+Binh+Da+Lat",
+      "id": 33,
+      "image_path": "D:\\thanh\\CONTENTTA AGENCY\\8. Personal projects\\he thong edit video du lich\\CreatorAppDuLich\\thumbs\\Cơm Tấm Mei.jpg",
+      "feature": "",
+      "images": [
+        "D:\\thanh\\CONTENTTA AGENCY\\8. Personal projects\\he thong edit video du lich\\CreatorAppDuLich\\thumbs\\Cơm Tấm Mei.jpg"
+      ]
+    },
+    {
+      "name": "Bún Bò Vy Vy",
+      "address": "15A Nguyễn Du, Phường 9, Đà Lạt",
+      "description": "Quán bún bò luôn đông khách, nước dùng đậm đà chuẩn vị, nổi bật thêm các món tráng miệng như panna cotta và yaourt phô mai tự làm độc đáo.",
+      "signature": "Bún bò Huế",
+      "co_nguoi": "có",
+      "loai_quan": "quán ăn",
+      "loai": "Không seeding",
+      "fb_link": "",
+      "tiktok_link": "",
+      "google_map": "https://www.google.com/maps/search/Bun+Bo+Vy+Vy+Nguyen+Du+Da+Lat",
+      "id": 34,
+      "image_path": "D:\\thanh\\CONTENTTA AGENCY\\8. Personal projects\\he thong edit video du lich\\CreatorAppDuLich\\thumbs\\Bún Bò Vy Vy.jpg",
+      "feature": "",
+      "images": [
+        "D:\\thanh\\CONTENTTA AGENCY\\8. Personal projects\\he thong edit video du lich\\CreatorAppDuLich\\thumbs\\Bún Bò Vy Vy.jpg"
+      ]
+    },
+    {
+      "name": "Bánh Ướt Lòng Gà Long",
+      "address": "Hẻm 202 Phan Đình Phùng, Phường 2, Đà Lạt",
+      "description": "Quán bánh ướt lòng gà đầu tiên xuất hiện trong tâm trí du khách khi nghĩ đến đặc sản Đà Lạt, nằm trong hẻm nhưng nổi tiếng khắp nơi. Bánh mềm mịn, lòng gà tươi, nước mắm pha chua ngọt kích thích.",
+      "signature": "Bánh ướt lòng gà hẻm",
+      "co_nguoi": "có",
+      "loai_quan": "quán ăn",
+      "loai": "Không seeding",
+      "fb_link": "",
+      "tiktok_link": "",
+      "google_map": "https://www.google.com/maps/search/Banh+Uot+Long+Ga+Long+Phan+Dinh+Phung+Da+Lat",
+      "id": 35,
+      "image_path": "D:\\thanh\\CONTENTTA AGENCY\\8. Personal projects\\he thong edit video du lich\\CreatorAppDuLich\\thumbs\\Bánh Ướt Lòng Gà Long.jpg",
+      "feature": "",
+      "images": [
+        "D:\\thanh\\CONTENTTA AGENCY\\8. Personal projects\\he thong edit video du lich\\CreatorAppDuLich\\thumbs\\Bánh Ướt Lòng Gà Long.jpg"
+      ]
+    },
+    {
+      "name": "Dalat Palace Heritage Hotel",
+      "address": "02 Trần Phú, Phường 3, Đà Lạt",
+      "description": "Khách sạn di sản 5 sao xây dựng từ năm 1922, nhìn ra Hồ Xuân Hương, mang phong cách Pháp thuộc cổ điển sang trọng với 73 phòng. Biểu tượng du lịch Đà Lạt.",
+      "signature": "2.5-30tr/đêm",
+      "co_nguoi": "có",
+      "loai_quan": "khách sạn",
+      "loai": "Không seeding",
+      "fb_link": "https://www.facebook.com/dalatpalace/",
+      "tiktok_link": "",
+      "google_map": "https://www.google.com/maps/search/Dalat+Palace+Heritage+Hotel+Da+Lat",
+      "id": 36,
+      "image_path": "D:\\thanh\\CONTENTTA AGENCY\\8. Personal projects\\he thong edit video du lich\\CreatorAppDuLich\\thumbs\\Dalat Palace Heritage Hotel.jpg",
+      "feature": "",
+      "images": [
+        "D:\\thanh\\CONTENTTA AGENCY\\8. Personal projects\\he thong edit video du lich\\CreatorAppDuLich\\thumbs\\Dalat Palace Heritage Hotel.jpg"
+      ]
+    },
+    {
+      "name": "Ana Mandara Villas Dalat Resort",
+      "address": "Đường Lê Lai, Phường 5, Đà Lạt",
+      "description": "Resort 5 sao độc đáo với 17 biệt thự Pháp nguyên bản được phục dựng từ thập niên 1920, nằm giữa rừng thông cổ thụ, cách trung tâm Đà Lạt 10 phút.",
+      "signature": "2.3-5tr/đêm",
+      "co_nguoi": "có",
+      "loai_quan": "khách sạn",
+      "loai": "Không seeding",
+      "fb_link": "https://www.facebook.com/anamandaravillasdalat/",
+      "tiktok_link": "",
+      "google_map": "https://www.google.com/maps/search/Ana+Mandara+Villas+Dalat+Resort+Spa",
+      "id": 37,
+      "image_path": "D:\\thanh\\CONTENTTA AGENCY\\8. Personal projects\\he thong edit video du lich\\CreatorAppDuLich\\thumbs\\Ana Mandara Villas Dalat Resort.jpg",
+      "feature": "",
+      "images": [
+        "D:\\thanh\\CONTENTTA AGENCY\\8. Personal projects\\he thong edit video du lich\\CreatorAppDuLich\\thumbs\\Ana Mandara Villas Dalat Resort.jpg"
+      ]
+    },
+    {
+      "name": "Dalat Edensee Lake Resort & Spa",
+      "address": "Hồ Tuyền Lâm, Khu VII.2, Phường 4, Đà Lạt",
+      "description": "Resort 5 sao chuẩn quốc tế mang phong cách Châu Âu, tọa lạc ngay bờ Hồ Tuyền Lâm với 112 phòng, nhà hàng Riesling và spa La Roseraie rộng 2.000m².",
+      "signature": "2.8-8tr/đêm",
+      "co_nguoi": "có",
+      "loai_quan": "khách sạn",
+      "loai": "Không seeding",
+      "fb_link": "https://www.facebook.com/dalatedensee.resort/",
+      "tiktok_link": "",
+      "google_map": "https://www.google.com/maps/search/Dalat+Edensee+Lake+Resort+Spa",
+      "id": 38,
+      "image_path": "D:\\thanh\\CONTENTTA AGENCY\\8. Personal projects\\he thong edit video du lich\\CreatorAppDuLich\\thumbs\\Dalat Edensee Lake Resort & Spa.jpg",
+      "feature": "",
+      "images": [
+        "D:\\thanh\\CONTENTTA AGENCY\\8. Personal projects\\he thong edit video du lich\\CreatorAppDuLich\\thumbs\\Dalat Edensee Lake Resort & Spa.jpg"
+      ]
+    },
+    {
+      "name": "MerPerle Dalat Hotel",
+      "address": "01 Hùng Vương, Phường 10, Đà Lạt",
+      "description": "Khách sạn 5 sao quy mô lớn với 389 phòng, hồ bơi trong nhà, spa, sauna và khuôn viên vườn đẹp, nằm ngay trung tâm thành phố Đà Lạt.",
+      "signature": "2-6tr/đêm",
+      "co_nguoi": "có",
+      "loai_quan": "khách sạn",
+      "loai": "Không seeding",
+      "fb_link": "https://www.facebook.com/Merperledalathotel/",
+      "tiktok_link": "",
+      "google_map": "https://www.google.com/maps/search/MerPerle+Dalat+Hotel",
+      "id": 39,
+      "image_path": "D:\\thanh\\CONTENTTA AGENCY\\8. Personal projects\\he thong edit video du lich\\CreatorAppDuLich\\thumbs\\MerPerle Dalat Hotel.jpg",
+      "feature": "",
+      "images": [
+        "D:\\thanh\\CONTENTTA AGENCY\\8. Personal projects\\he thong edit video du lich\\CreatorAppDuLich\\thumbs\\MerPerle Dalat Hotel.jpg"
+      ]
+    },
+    {
+      "name": "Golden Imperial Hotel Da Lat",
+      "address": "Lô A1, Khu Trung tâm Thương mại Quốc tế, Phường 10, Đà Lạt",
+      "description": "Khách sạn 5 sao mới với 166 phòng lấy cảm hứng từ họa sĩ Claude Monet, sở hữu hồ bơi view đẹp, phòng tập yoga và spa cao cấp.",
+      "signature": "3-8tr/đêm",
+      "co_nguoi": "có",
+      "loai_quan": "khách sạn",
+      "loai": "Không seeding",
+      "fb_link": "https://www.facebook.com/GoldenImperialHotel1/",
+      "tiktok_link": "",
+      "google_map": "https://www.google.com/maps/search/Golden+Imperial+Hotel+Da+Lat",
+      "id": 40,
+      "image_path": "D:\\thanh\\CONTENTTA AGENCY\\8. Personal projects\\he thong edit video du lich\\CreatorAppDuLich\\thumbs\\Golden Imperial Hotel Da Lat.jpg",
+      "feature": "",
+      "images": [
+        "D:\\thanh\\CONTENTTA AGENCY\\8. Personal projects\\he thong edit video du lich\\CreatorAppDuLich\\thumbs\\Golden Imperial Hotel Da Lat.jpg"
+      ]
+    },
+    {
+      "name": "Grand Mercure Dalat Resort",
+      "address": "03 Nguyễn Du, Đà Lạt",
+      "description": "Resort 4 sao quốc tế thuộc tập đoàn Accor, phong cách kiến trúc Pháp cổ điển, 131 phòng, cách Hồ Xuân Hương 2km. Resort mang thương hiệu quốc tế nổi tiếng tại Đà Lạt.",
+      "signature": "2-5tr/đêm",
+      "co_nguoi": "có",
+      "loai_quan": "khách sạn",
+      "loai": "Không seeding",
+      "fb_link": "https://www.facebook.com/GrandMercureDalatResort/",
+      "tiktok_link": "",
+      "google_map": "https://www.google.com/maps/search/Grand+Mercure+Dalat+Resort",
+      "id": 41,
+      "image_path": "D:\\thanh\\CONTENTTA AGENCY\\8. Personal projects\\he thong edit video du lich\\CreatorAppDuLich\\thumbs\\Grand Mercure Dalat Resort.jpg",
+      "feature": "",
+      "images": [
+        "D:\\thanh\\CONTENTTA AGENCY\\8. Personal projects\\he thong edit video du lich\\CreatorAppDuLich\\thumbs\\Grand Mercure Dalat Resort.jpg"
+      ]
+    },
+    {
+      "name": "Terracotta Hotel & Resort Dalat",
+      "address": "Phân khu 7.9, Khu du lịch Tuyền Lâm, Phường 3, Đà Lạt",
+      "description": "Resort 4 sao rộng hơn 17 hecta ven Hồ Tuyền Lâm, gồm 240 phòng khách sạn và 90 căn biệt thự dưới tán thông. Nổi tiếng với không gian yên tĩnh và thiên nhiên trong lành.",
+      "signature": "1.5-4tr/đêm",
+      "co_nguoi": "có",
+      "loai_quan": "khách sạn",
+      "loai": "Không seeding",
+      "fb_link": "https://www.facebook.com/Terracottaresort/",
+      "tiktok_link": "",
+      "google_map": "https://www.google.com/maps/search/Terracotta+Hotel+Resort+Dalat",
+      "id": 42,
+      "image_path": "D:\\thanh\\CONTENTTA AGENCY\\8. Personal projects\\he thong edit video du lich\\CreatorAppDuLich\\thumbs\\Terracotta Hotel & Resort Dalat.jpg",
+      "feature": "",
+      "images": [
+        "D:\\thanh\\CONTENTTA AGENCY\\8. Personal projects\\he thong edit video du lich\\CreatorAppDuLich\\thumbs\\Terracotta Hotel & Resort Dalat.jpg"
+      ]
+    },
+    {
+      "name": "Cereja Hotel & Resort Dalat",
+      "address": "Đường Hoa Phượng Tím, Khu du lịch Hồ Tuyền Lâm, Phường 3, Đà Lạt",
+      "description": "Resort 4 sao chuẩn quốc tế mang phong cách châu Âu hiện đại với tông màu trắng chủ đạo, 134 phòng đầy đủ tiện nghi, nằm trong khu du lịch Tuyền Lâm thơ mộng.",
+      "signature": "1.5-4tr/đêm",
+      "co_nguoi": "có",
+      "loai_quan": "khách sạn",
+      "loai": "Không seeding",
+      "fb_link": "https://www.facebook.com/cerejahotelresort/",
+      "tiktok_link": "",
+      "google_map": "https://www.google.com/maps/search/Cereja+Hotel+Resort+Dalat",
+      "id": 43,
+      "image_path": "D:\\thanh\\CONTENTTA AGENCY\\8. Personal projects\\he thong edit video du lich\\CreatorAppDuLich\\thumbs\\Cereja Hotel & Resort Dalat.jpg",
+      "feature": "",
+      "images": [
+        "D:\\thanh\\CONTENTTA AGENCY\\8. Personal projects\\he thong edit video du lich\\CreatorAppDuLich\\thumbs\\Cereja Hotel & Resort Dalat.jpg"
+      ]
+    },
+    {
+      "name": "TTC Hotel - Ngọc Lan",
+      "address": "42 Nguyễn Chí Thanh, Phường 1, Đà Lạt",
+      "description": "Khách sạn 4 sao nằm ngay trung tâm Đà Lạt với 91 phòng view Hồ Xuân Hương, phong cách châu Âu, có spa, nhà hàng và phòng tập gym.",
+      "signature": "1.3-2.8tr/đêm",
+      "co_nguoi": "có",
+      "loai_quan": "khách sạn",
+      "loai": "Không seeding",
+      "fb_link": "https://www.facebook.com/ttchotelngoclan/",
+      "tiktok_link": "",
+      "google_map": "https://www.google.com/maps/search/TTC+Hotel+Ngoc+Lan+Da+Lat",
+      "id": 44,
+      "image_path": "D:\\thanh\\CONTENTTA AGENCY\\8. Personal projects\\he thong edit video du lich\\CreatorAppDuLich\\thumbs\\TTC Hotel - Ngọc Lan.jpg",
+      "feature": "",
+      "images": [
+        "D:\\thanh\\CONTENTTA AGENCY\\8. Personal projects\\he thong edit video du lich\\CreatorAppDuLich\\thumbs\\TTC Hotel - Ngọc Lan.jpg"
+      ]
+    },
+    {
+      "name": "Ladalat Hotel",
+      "address": "106A Mai Anh Đào, Phường 8, Đà Lạt",
+      "description": "Khách sạn 5 sao đối diện Thung Lũng Tình Yêu, nổi bật với hồ bơi nước ấm trong nhà, khu vui chơi Kid Center rộng 10.000m² và chuỗi nhà hàng ẩm thực Á-Âu đa dạng.",
+      "signature": "900k-2.5tr/đêm",
+      "co_nguoi": "có",
+      "loai_quan": "khách sạn",
+      "loai": "Không seeding",
+      "fb_link": "",
+      "tiktok_link": "",
+      "google_map": "https://www.google.com/maps/search/Ladalat+Hotel+Da+Lat",
+      "id": 45,
+      "image_path": "D:\\thanh\\CONTENTTA AGENCY\\8. Personal projects\\he thong edit video du lich\\CreatorAppDuLich\\thumbs\\Ladalat Hotel.jpg",
+      "feature": "",
+      "images": [
+        "D:\\thanh\\CONTENTTA AGENCY\\8. Personal projects\\he thong edit video du lich\\CreatorAppDuLich\\thumbs\\Ladalat Hotel.jpg"
+      ]
+    },
+    {
+      "name": "Peach Valley Hotel Dalat",
+      "address": "26K Yersin, Phường 10, Đà Lạt",
+      "description": "Khách sạn boutique 3 sao mang phong cách kiến trúc Pháp tân cổ điển sang trọng, nội thất tinh tế, nằm gần trung tâm Đà Lạt và chợ đêm.",
+      "signature": "684k-912k/đêm",
+      "co_nguoi": "có",
+      "loai_quan": "khách sạn",
+      "loai": "Không seeding",
+      "fb_link": "",
+      "tiktok_link": "",
+      "google_map": "https://www.google.com/maps/search/Peach+Valley+Hotel+Dalat",
+      "id": 46,
+      "image_path": "D:\\thanh\\CONTENTTA AGENCY\\8. Personal projects\\he thong edit video du lich\\CreatorAppDuLich\\thumbs\\Peach Valley Hotel Dalat.jpg",
+      "feature": "",
+      "images": [
+        "D:\\thanh\\CONTENTTA AGENCY\\8. Personal projects\\he thong edit video du lich\\CreatorAppDuLich\\thumbs\\Peach Valley Hotel Dalat.jpg"
+      ]
+    },
+    {
+      "name": "Dreams Hotel Dalat",
+      "address": "14 Phan Đình Phùng, Phường 2, Đà Lạt",
+      "description": "Khách sạn boutique nằm trung tâm Đà Lạt, cách Hồ Xuân Hương 1.3km, có sauna, bồn tắm nóng và nhà hàng, phù hợp cho cặp đôi và khách du lịch lần đầu đến Đà Lạt.",
+      "signature": "800k-1.8tr/đêm",
+      "co_nguoi": "có",
+      "loai_quan": "khách sạn",
+      "loai": "Không seeding",
+      "fb_link": "",
+      "tiktok_link": "",
+      "google_map": "https://www.google.com/maps/search/Dreams+Hotel+Dalat",
+      "id": 47,
+      "image_path": "D:\\thanh\\CONTENTTA AGENCY\\8. Personal projects\\he thong edit video du lich\\CreatorAppDuLich\\thumbs\\Dreams Hotel Dalat.jpg",
+      "feature": "",
+      "images": [
+        "D:\\thanh\\CONTENTTA AGENCY\\8. Personal projects\\he thong edit video du lich\\CreatorAppDuLich\\thumbs\\Dreams Hotel Dalat.jpg"
+      ]
+    },
+    {
+      "name": "Villa Pink House",
+      "address": "67/6 Đường Hai Thượng, Phường 5, Đà Lạt",
+      "description": "Khách sạn boutique mặt tiền hồng nổi bật với 21 phòng có ban công, không gian gia đình ấm áp, vườn xanh thoáng mát và nhà hàng phục vụ tại chỗ.",
+      "signature": "500k-1.2tr/đêm",
+      "co_nguoi": "có",
+      "loai_quan": "khách sạn",
+      "loai": "Không seeding",
+      "fb_link": "",
+      "tiktok_link": "",
+      "google_map": "https://www.google.com/maps/search/Villa+Pink+House+Da+Lat",
+      "id": 48,
+      "image_path": "D:\\thanh\\CONTENTTA AGENCY\\8. Personal projects\\he thong edit video du lich\\CreatorAppDuLich\\thumbs\\Villa Pink House.jpg",
+      "feature": "",
+      "images": [
+        "D:\\thanh\\CONTENTTA AGENCY\\8. Personal projects\\he thong edit video du lich\\CreatorAppDuLich\\thumbs\\Villa Pink House.jpg"
+      ]
+    },
+    {
+      "name": "Nhà của Khôi Homestay",
+      "address": "12/6 Lê Văn Tám, Phường 10, Đà Lạt",
+      "description": "Homestay villa view thung lũng và đồi thông xanh mướt, không gian rộng rãi yên tĩnh, cho thuê phòng đơn lẻ hoặc nguyên căn, cách trung tâm 5 phút.",
+      "signature": "350-500k/đêm",
+      "co_nguoi": "không",
+      "loai_quan": "khách sạn",
+      "loai": "Không seeding",
+      "fb_link": "https://www.facebook.com/NhaCuaKhoi/",
+      "tiktok_link": "",
+      "google_map": "https://www.google.com/maps/search/Nha+Cua+Khoi+Homestay+Da+Lat",
+      "id": 49,
+      "image_path": "D:\\thanh\\CONTENTTA AGENCY\\8. Personal projects\\he thong edit video du lich\\CreatorAppDuLich\\thumbs\\Nhà của Khôi Homestay.jpg",
+      "feature": "",
+      "images": [
+        "D:\\thanh\\CONTENTTA AGENCY\\8. Personal projects\\he thong edit video du lich\\CreatorAppDuLich\\thumbs\\Nhà của Khôi Homestay.jpg"
+      ]
+    },
+    {
+      "name": "Nhà của Tre Homestay",
+      "address": "149A Võ Trường Toản, Phường 8, Đà Lạt",
+      "description": "Homestay hoài cổ độc đáo sử dụng toàn bộ nội thất bằng tre, gỗ và đồ tái chế, không gian nghệ thuật như triển lãm đồ cổ. Lọt top 30 homestay nổi tiếng nhất Đà Lạt.",
+      "signature": "150-550k/đêm",
+      "co_nguoi": "không",
+      "loai_quan": "khách sạn",
+      "loai": "Không seeding",
+      "fb_link": "https://www.facebook.com/NhacuaTre/",
+      "tiktok_link": "",
+      "google_map": "https://www.google.com/maps/search/Tre+House+Homestay+Da+Lat",
+      "id": 50,
+      "image_path": "D:\\thanh\\CONTENTTA AGENCY\\8. Personal projects\\he thong edit video du lich\\CreatorAppDuLich\\thumbs\\Nhà của Tre Homestay.jpg",
+      "feature": "",
+      "images": [
+        "D:\\thanh\\CONTENTTA AGENCY\\8. Personal projects\\he thong edit video du lich\\CreatorAppDuLich\\thumbs\\Nhà của Tre Homestay.jpg"
+      ]
+    },
+    {
+      "name": "The December Dalat",
+      "address": "17/1 Mạc Đĩnh Chi, Đà Lạt",
+      "description": "Homestay hiện đại tối giản với 9 phòng tone màu kem-trắng-nâu gỗ ấm áp, cho phép mang thú cưng, cách trung tâm 5 phút đi bộ. Phù hợp nghỉ dưỡng nhẹ nhàng.",
+      "signature": "450k-1.05tr/đêm",
+      "co_nguoi": "không",
+      "loai_quan": "khách sạn",
+      "loai": "Không seeding",
+      "fb_link": "https://www.facebook.com/latedecemberhome/",
+      "tiktok_link": "",
+      "google_map": "https://www.google.com/maps/search/The+December+Dalat+Homestay",
+      "id": 51,
+      "image_path": "D:\\thanh\\CONTENTTA AGENCY\\8. Personal projects\\he thong edit video du lich\\CreatorAppDuLich\\thumbs\\The December Dalat.jpg",
+      "feature": "",
+      "images": [
+        "D:\\thanh\\CONTENTTA AGENCY\\8. Personal projects\\he thong edit video du lich\\CreatorAppDuLich\\thumbs\\The December Dalat.jpg"
+      ]
+    },
+    {
+      "name": "Alee Dalat Homestay",
+      "address": "47/1 Đặng Thái Thân, Phường 3, Đà Lạt",
+      "description": "Homestay màu vàng đặc trưng với thiết kế giường công chúa và nhiều góc chụp ảnh dễ thương, cách trung tâm Đà Lạt 5 phút. Phù hợp cho khách trẻ yêu sống ảo.",
+      "signature": "250-700k/đêm",
+      "co_nguoi": "không",
+      "loai_quan": "khách sạn",
+      "loai": "Không seeding",
+      "fb_link": "",
+      "tiktok_link": "",
+      "google_map": "https://www.google.com/maps/search/Alee+Dalat+Homestay",
+      "id": 52,
+      "image_path": "D:\\thanh\\CONTENTTA AGENCY\\8. Personal projects\\he thong edit video du lich\\CreatorAppDuLich\\thumbs\\Alee Dalat Homestay.jpg",
+      "feature": "",
+      "images": [
+        "D:\\thanh\\CONTENTTA AGENCY\\8. Personal projects\\he thong edit video du lich\\CreatorAppDuLich\\thumbs\\Alee Dalat Homestay.jpg"
+      ]
+    },
+    {
+      "name": "Dalat Backpackers Alley Hostel",
+      "address": "Trung tâm Phường 1, Đà Lạt",
+      "description": "Hostel backpacker nằm ngay trung tâm Đà Lạt, cách Chợ Đêm 2 phút đi bộ, có view hồ, sân thượng, dịch vụ massage và không gian chung thoải mái cho khách tây lẫn ta.",
+      "signature": "150-400k/đêm",
+      "co_nguoi": "có",
+      "loai_quan": "khách sạn",
+      "loai": "Không seeding",
+      "fb_link": "https://www.facebook.com/alleyhostel/",
+      "tiktok_link": "",
+      "google_map": "https://www.google.com/maps/search/Dalat+Backpackers+Alley+Hostel",
+      "id": 53,
+      "image_path": "D:\\thanh\\CONTENTTA AGENCY\\8. Personal projects\\he thong edit video du lich\\CreatorAppDuLich\\thumbs\\Dalat Backpackers Alley Hostel.jpg",
+      "feature": "",
+      "images": [
+        "D:\\thanh\\CONTENTTA AGENCY\\8. Personal projects\\he thong edit video du lich\\CreatorAppDuLich\\thumbs\\Dalat Backpackers Alley Hostel.jpg"
+      ]
+    },
+    {
+      "name": "Dalat Memories Homestay",
+      "address": "56 Phạm Ngọc Thạch, Phường 3, Đà Lạt",
+      "description": "Homestay ấm cúng gần trung tâm Đà Lạt với nhiều loại phòng từ đôi, đơn đến phòng gia đình 4 người, thiết kế vintage mang lại cảm giác nostalgic đặc trưng phố núi.",
+      "signature": "400k-1.2tr/đêm",
+      "co_nguoi": "không",
+      "loai_quan": "khách sạn",
+      "loai": "Không seeding",
+      "fb_link": "",
+      "tiktok_link": "",
+      "google_map": "https://www.google.com/maps/search/Dalat+Memories+Homestay+Pham+Ngoc+Thach",
+      "id": 54,
+      "image_path": "D:\\thanh\\CONTENTTA AGENCY\\8. Personal projects\\he thong edit video du lich\\CreatorAppDuLich\\thumbs\\Dalat Memories Homestay.jpg",
+      "feature": "",
+      "images": [
+        "D:\\thanh\\CONTENTTA AGENCY\\8. Personal projects\\he thong edit video du lich\\CreatorAppDuLich\\thumbs\\Dalat Memories Homestay.jpg"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,39 @@
+# ── Python ───────────────────────────────────────────────
+.venv/
+.venv*/
+__pycache__/
+*.pyc
+*.pyo
+
+# ── Secrets (KHONG BAO GIO commit) ───────────────────────
+.env
+
+# ── Output / media sinh ra ───────────────────────────────
+output/
+*.mp4
+*.mov
+*.mp3
+*.wav
+
+# ── Cache sinh ra khi chay (giu template prefill nv1..nv3) ─
+data/prefill/*.json
+!data/prefill/nv1.json
+!data/prefill/nv2.json
+!data/prefill/nv3.json
+data/source_analysis/
+data/news_source/
+data/transcripts/
+data/check/
+data/mock_db.json
+# Thư viện ảnh dùng chung (quán + ảnh chung) — COMMIT để team xài chung.
+# data/thumbs + data/album giờ được track. (output/albums sinh ra vẫn ignore qua output/)
+
+# ── Temp dev ─────────────────────────────────────────────
+_nvframes/
+scratch/
+test_font.png
+*.log
+
+# ── OS ───────────────────────────────────────────────────
+.DS_Store
+Thumbs.db

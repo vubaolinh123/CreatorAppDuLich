@@ -1,0 +1,205 @@
+{
+  "images": [
+    {
+      "id": 1,
+      "file": "data/album/01_1_Header.jpg"
+    },
+    {
+      "id": 2,
+      "file": "data/album/02_1_Header.webp"
+    },
+    {
+      "id": 3,
+      "file": "data/album/03_1_Footer.jpg"
+    },
+    {
+      "id": 4,
+      "file": "data/album/04_2_Danh_mu_c_l_u_tru_c_n_h_dv.avif"
+    },
+    {
+      "id": 5,
+      "file": "data/album/05_2_Danh_mu_c_l_u_tru_farmstay.jpg"
+    },
+    {
+      "id": 6,
+      "file": "data/album/06_2_Danh_mu_c_l_u_tru_glamping.jpeg"
+    },
+    {
+      "id": 7,
+      "file": "data/album/07_2_Danh_mu_c_l_u_tru_homestay.jpg"
+    },
+    {
+      "id": 8,
+      "file": "data/album/08_2_Danh_mu_c_l_u_tru_Hotel.jpg"
+    },
+    {
+      "id": 9,
+      "file": "data/album/09_2_Danh_mu_c_l_u_tru_Resort_cao.jpg"
+    },
+    {
+      "id": 10,
+      "file": "data/album/10_2_Danh_mu_c_l_u_tru_villa.webp"
+    },
+    {
+      "id": 11,
+      "file": "data/album/11_3_N_i_b_t_An_Mai_Botique.jpg"
+    },
+    {
+      "id": 12,
+      "file": "data/album/12_3_N_i_b_t_Banla_botique_hotel.jpg"
+    },
+    {
+      "id": 13,
+      "file": "data/album/13_3_N_i_b_t_Cozy_Garden_Botique.jpg"
+    },
+    {
+      "id": 14,
+      "file": "data/album/14_3_N_i_b_t_De_Ank_h_Village_L_t.jpg"
+    },
+    {
+      "id": 15,
+      "file": "data/album/15_4_Phong_ca_ch_G_n_trung_t_m.jpg"
+    },
+    {
+      "id": 16,
+      "file": "data/album/16_4_Phong_ca_ch_Sang_tro_ng.jpg"
+    },
+    {
+      "id": 17,
+      "file": "data/album/17_4_Phong_ca_ch_View_r_ng_th_ng.jpg"
+    },
+    {
+      "id": 18,
+      "file": "data/album/18_4_Phong_ca_ch_Chill_b_n_h.jpg"
+    },
+    {
+      "id": 19,
+      "file": "data/album/19_4_Phong_ca_ch_View_s_n_m_y.jpg"
+    },
+    {
+      "id": 20,
+      "file": "data/album/20_5_Ba_i_vi_t_Top_resort_sang_tr.jpg"
+    },
+    {
+      "id": 21,
+      "file": "data/album/21_5_Ba_i_vi_t_Kinh_ngi_m_cho_n_h.jpg"
+    },
+    {
+      "id": 22,
+      "file": "data/album/22_5_Ba_i_vi_t_Top_homestay_view.jpg"
+    },
+    {
+      "id": 23,
+      "file": "data/album/23_5_Ba_i_vi_t_Top_villa_dep.jpg"
+    },
+    {
+      "id": 24,
+      "file": "data/album/24_5_Ba_i_vi_t_u_khi_i_a_la_t_2N1.jpg"
+    },
+    {
+      "id": 25,
+      "file": "data/album/25_B_n_sao_c_a_5_Top_villa_dep.jpg"
+    },
+    {
+      "id": 26,
+      "file": "data/album/26_IMG_1573.jpg"
+    },
+    {
+      "id": 27,
+      "file": "data/album/27_IMG_1574.jpg"
+    },
+    {
+      "id": 28,
+      "file": "data/album/28_IMG_1575.jpg"
+    },
+    {
+      "id": 29,
+      "file": "data/album/29_IMG_1576.jpg"
+    },
+    {
+      "id": 30,
+      "file": "data/album/30_IMG_1577.jpg"
+    },
+    {
+      "id": 31,
+      "file": "data/album/31_IMG_1578.jpg"
+    },
+    {
+      "id": 32,
+      "file": "data/album/32_IMG_1580.jpg"
+    },
+    {
+      "id": 33,
+      "file": "data/album/33_IMG_1583.jpg"
+    },
+    {
+      "id": 34,
+      "file": "data/album/34_IMG_1584.jpg"
+    },
+    {
+      "id": 35,
+      "file": "data/album/35_IMG_1585.jpg"
+    },
+    {
+      "id": 36,
+      "file": "data/album/36_IMG_1587.jpg"
+    },
+    {
+      "id": 37,
+      "file": "data/album/37_IMG_1588.jpg"
+    },
+    {
+      "id": 38,
+      "file": "data/album/38_IMG_1589.jpg"
+    },
+    {
+      "id": 39,
+      "file": "data/album/39_IMG_1590.jpg"
+    },
+    {
+      "id": 40,
+      "file": "data/album/40_IMG_1591.jpg"
+    },
+    {
+      "id": 41,
+      "file": "data/album/41_IMG_1592.jpg"
+    },
+    {
+      "id": 42,
+      "file": "data/album/42_IMG_1593.jpg"
+    },
+    {
+      "id": 43,
+      "file": "data/album/43_IMG_1594.jpg"
+    },
+    {
+      "id": 44,
+      "file": "data/album/44_IMG_1595.jpg"
+    },
+    {
+      "id": 45,
+      "file": "data/album/45_IMG_1597.jpg"
+    },
+    {
+      "id": 46,
+      "file": "data/album/46_IMG_1796.jpg"
+    },
+    {
+      "id": 47,
+      "file": "data/album/47_IMG_1804.jpg"
+    },
+    {
+      "id": 48,
+      "file": "data/album/48_IMG_1824.jpg"
+    },
+    {
+      "id": 49,
+      "file": "data/album/49_IMG_1881.jpg"
+    },
+    {
+      "id": 50,
+      "file": "data/album/50_IMG_1906.jpg"
+    }
+  ],
+  "_next_id": 51
+}
