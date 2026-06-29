@@ -31,7 +31,7 @@ def _load_examples(max_chars: int = 4500) -> str:
     return "\n".join(blocks)
 
 
-def generate_script_ai(topic: str) -> dict | None:
+def generate_script_ai(topic: str, employee: str = "tintuc") -> dict | None:
     key = os.getenv("OPENROUTER_KEY") or os.getenv("OPENROUTER_API_KEY")
     if not key:
         return None
@@ -40,11 +40,13 @@ def generate_script_ai(topic: str) -> dict | None:
     except ImportError:
         return None
 
-    examples = _load_examples()
+    # Persona sửa được theo nhân viên; examples = custom hoặc transcript mẫu sẵn.
+    from tools.script_prompts import effective_persona, get_script_prompt
+    persona = effective_persona(employee)
+    examples = get_script_prompt(employee)["examples"] or _load_examples()
     system = (
-        "Bạn là copywriter viết kịch bản video du lịch ngắn (TikTok/Reels) tiếng Việt. "
-        "Học PHONG CÁCH (giọng thân mật, hook gây tò mò, nhịp nhanh, xưng hô gần gũi như 'các vợ/mình/nha') "
-        "từ các transcript mẫu dưới đây:\n\n" + (examples or "(không có mẫu)") +
+        persona +
+        "\n\nMẫu tham khảo (học giọng, đừng chép):\n" + (examples or "(không có mẫu)") +
         "\n\nViết kịch bản MỚI dài ~18 giây cho chủ đề người dùng đưa. Tổng lời đọc khoảng 60-70 từ (đủ ~18s khi đọc). "
         "Trả về DUY NHẤT một JSON: {\"title\":\"...\",\"hook\":\"...\",\"body\":\"...\",\"cta\":\"...\"}. "
         "title = cụm RẤT NGẮN (2-4 từ, thường là địa danh) để in trong khung hook. "

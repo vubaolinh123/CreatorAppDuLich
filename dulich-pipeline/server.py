@@ -408,6 +408,8 @@ class AssembleHandler(BaseHTTPRequestHandler):
             self.handle_image_delete()
         elif self.path == "/generate-script":
             self.handle_generate_script()
+        elif self.path == "/script-prompt":
+            self.handle_script_prompt_save()
         elif self.path == "/login":
             self.handle_login()
         elif self.path == "/news-research":
@@ -452,6 +454,8 @@ class AssembleHandler(BaseHTTPRequestHandler):
             self._serve_stats()
         elif self.path.startswith("/listreview-prefill"):
             self.handle_listreview_prefill()
+        elif self.path.startswith("/script-prompt"):
+            self.handle_script_prompt_get()
         elif self.path.startswith("/output/"):
             # Serve output files statically for preview/playback
             file_path = Path(__file__).parent / self.path.lstrip("/")
@@ -1076,18 +1080,26 @@ class AssembleHandler(BaseHTTPRequestHandler):
         # Engine overlay: HTML (nv2/nv3) hay PIL (nv1) — lấy từ request hoặc prefill nhân viên
         overlay_engine = (fields.get("overlay_engine") or spec_in.get("overlay_engine") or "").strip().lower()
         style = (fields.get("style") or spec_in.get("style") or "").strip().lower()
-        if not overlay_engine:
+        # badge_mode (full/name/none) + transition (none/swoosh): từ request, fallback prefill.
+        badge_mode = (fields.get("badge_mode") or spec_in.get("badge_mode") or "").strip().lower()
+        transition = (fields.get("transition") or spec_in.get("transition") or "").strip().lower()
+        if not overlay_engine or not badge_mode:
             try:
                 from tools.listreview_content import build_prefill
                 pf = build_prefill(user)
-                overlay_engine = (pf.get("overlay_engine") or "pil").lower()
+                overlay_engine = overlay_engine or (pf.get("overlay_engine") or "pil").lower()
                 style = style or (pf.get("style") or "").lower()
+                badge_mode = badge_mode or (pf.get("badge_mode") or "full").lower()
+                transition = transition or (pf.get("transition") or "none").lower()
             except Exception:
-                overlay_engine = "pil"
+                overlay_engine = overlay_engine or "pil"
+        badge_mode = badge_mode or "full"
+        transition = transition or "none"
         spec = {
             "job_id": job_id, "hook_style": hook_style,
             "voice_provider": voice_provider, "voice_id": voice_id,
             "overlay_engine": overlay_engine, "style": style,
+            "badge_mode": badge_mode, "transition": transition,
             "intro": {"title": intro.get("title", ""), "hook_lines": intro.get("hook_lines"),
                       "vo": intro.get("vo", ""), "clips": _save_clips(intro.get("scene_id", "intro"))},
             "spots": [{"name": s.get("name", ""), "rating": s.get("rating", ""),
@@ -1190,6 +1202,39 @@ class AssembleHandler(BaseHTTPRequestHandler):
             print(f"[Server] ❌ assemble-image lỗi: {e}\n{tb}", file=sys.stderr)
             self._json_response({"success": False, "error": str(e)}, 500)
 
+    def handle_script_prompt_get(self):
+        """GET /script-prompt?employee=nv1 → prompt persona + examples đã lưu + bản mặc định."""
+        try:
+            from urllib.parse import urlparse, parse_qs
+            q = parse_qs(urlparse(self.path).query)
+            employee = (q.get("employee", ["nv1"])[0] or "nv1").strip().lower()
+            from tools.script_prompts import get_script_prompt, default_persona
+            rec = get_script_prompt(employee)
+            self._json_response({"success": True, "employee": employee,
+                                 "prompt": rec["prompt"], "examples": rec["examples"],
+                                 "default_prompt": default_persona(employee)})
+        except Exception as e:
+            self._json_response({"success": False, "error": str(e)}, 500)
+
+    def handle_script_prompt_save(self):
+        """POST /script-prompt {employee, prompt, examples} → lưu prompt viết kịch bản."""
+        try:
+            body = self._read_json_body()
+            employee = (body.get("employee") or "").strip().lower()
+            if not employee:
+                self._json_response({"success": False, "error": "Thiếu employee"}, 400)
+                return
+            from tools.script_prompts import set_script_prompt
+            set_script_prompt(employee, body.get("prompt", ""), body.get("examples", ""))
+            # Xoá cache prefill để lần tạo nội dung sau dùng prompt mới.
+            try:
+                (Path(__file__).parent / "data" / "prefill" / f"{employee}.json").unlink(missing_ok=True)
+            except Exception:
+                pass
+            self._json_response({"success": True})
+        except Exception as e:
+            self._json_response({"success": False, "error": str(e)}, 500)
+
     def handle_listreview_prefill(self):
         """GET /listreview-prefill?employee=nv1&regen=0|1 → scene + nội dung AI điền sẵn (chỉ nv1)."""
         try:
@@ -1205,6 +1250,7 @@ class AssembleHandler(BaseHTTPRequestHandler):
                                  "style": data.get("style", ""),
                                  "overlay_engine": data.get("overlay_engine", "pil"),
                                  "badge_mode": data.get("badge_mode", "full"),
+                                 "transition": data.get("transition", "none"),
                                  "scenes": data.get("scenes", []), "generated_by": data.get("generated_by"),
                                  "error": data.get("error", "")})
         except Exception as e:
