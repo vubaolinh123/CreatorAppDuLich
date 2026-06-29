@@ -390,14 +390,11 @@ def render_list_review(spec: dict) -> dict:
             return {"success": False, "error": "Không render được segment nào (thiếu VO?)."}
 
         out_path = OUTPUT_DIR / f"listreview_{job_id}.mp4"
-        if transition == "swoosh" and len(segs) >= 2:
-            # nv4 montage: chuyển cảnh swoosh (slide, chỉ hiệu ứng hình)
-            _concat_with_xfade(segs, out_path, work, transition="slideleft", d=0.4)
+        if len(segs) >= 2:
+            # Chuyển cảnh fade mượt cho tất cả nv (thay vì cắt cứng).
+            _concat_with_xfade(segs, out_path, work, transition="fade", d=0.3)
         else:
-            # Concat hard-cut tất cả segment (re-encode cho đồng nhất)
-            lst = work / "segs.txt"
-            lst.write_text("".join(f"file '{Path(p).name}'\n" for p in segs), encoding="utf-8")
-            _run(["ffmpeg", "-y", "-f", "concat", "-safe", "0", "-i", "segs.txt",
+            _run(["ffmpeg", "-y", "-i", Path(segs[0]).name,
                   "-c:v", "libx264", "-preset", "medium", "-pix_fmt", "yuv420p",
                   "-c:a", "aac", "-b:a", "160k", str(out_path)], cwd=str(work))
 

@@ -162,6 +162,10 @@
     display: flex; flex-direction: column; gap: 10px; box-shadow: 0 6px 20px rgba(120,110,160,.08); }
   .alb-card .nm { font-weight: 700; font-size: 14px; }
   .alb-card .id { font-size: 11px; color: var(--muted); }
+  .alb-strip { display: flex; gap: 12px; overflow-x: auto; padding-bottom: 10px; }
+  .alb-slide { flex: 0 0 auto; }
+  .alb-slide img { height: 360px; width: auto; max-width: 60vw; border-radius: 10px; cursor: zoom-in; background: var(--surface2); display: block; }
+  .alb-slide a { display: block; font-size: 11px; text-align: center; margin-top: 5px; color: var(--muted); text-decoration: none; max-width: 230px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .gal-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px,1fr)); gap: 12px; margin-top: 8px; }
   .gal-card { border-radius: 10px; overflow: hidden; background: #fff; border: 1px solid var(--line); }
   .gal-card img { width: 100%; display: block; aspect-ratio: 4/5; object-fit: cover; cursor: zoom-in; background: #eee; }
@@ -201,7 +205,8 @@
 
 <!-- overlays -->
 <div class="lib hidden" id="lib"><div class="lib-inner">
-  <div class="lib-top"><h2 style="margin:0">📚 Thư viện video</h2><button class="btn-ghost" onclick="closeLibrary()">✕ Đóng</button></div>
+  <div class="lib-top"><h2 style="margin:0">📹 Video</h2><button class="btn-ghost" onclick="closeLibrary()">✕ Đóng</button></div>
+  <div id="libFilter" style="margin-bottom:14px"></div>
   <div class="lib-grid" id="libGrid"></div>
   <div id="libEmpty" class="muted" style="color:#eee;margin-top:16px">Chưa có video nào.</div>
 </div></div>
@@ -253,12 +258,10 @@ function startApp(){
   document.getElementById("hd-sub").textContent = SESSION.name + (SESSION.role==="staff"?" · Hook: "+(HOOK_NAMES[SESSION.hook_style]||SESSION.hook_style):"");
   const right=document.getElementById("hd-right");
   let html = `<span class="chip chip-role">${SESSION.role==="admin"?"Quản lý":SESSION.role==="news"?"Tin tức":"Nhân viên"}</span>`;
-  if(SESSION.role==="staff"||SESSION.role==="news") html += `<button class="btn-ghost chip" onclick="openLibrary()">📚 Thư viện</button>`;
+  html += `<button class="btn-ghost chip" onclick="openLibrary()">📹 Video</button>`;
   if(SESSION.role==="staff"||SESSION.role==="news") html += `<button class="btn-ghost chip" onclick="renderPromptEditor()">📝 Prompt</button>`;
-  if(SESSION.role==="admin") html += `<button class="btn-ghost chip" onclick="openLibrary()">📚 Tất cả video</button>`;
-  html += `<button class="btn-ghost chip" onclick="renderVenues()">🗂 Địa điểm</button>`;
-  html += `<button class="btn-ghost chip" onclick="renderImages()">🖼 Ảnh chung</button>`;
-  html += `<button class="btn-ghost chip" onclick="${SESSION.role==='admin'?'renderImageGen':'renderImageSoon'}()">🎨 Tạo ảnh</button>`;
+  html += `<button class="btn-ghost chip" onclick="renderLibraryHub('venues')">📚 Thư viện</button>`;
+  html += `<button class="btn-ghost chip" onclick="renderImageGen()">🎨 Tạo ảnh</button>`;
   if(SESSION.role==="admin") html += `<button class="btn-ghost chip" onclick="renderSettings()">⚙️ Cài đặt</button>`;
   html += `<button class="btn-ghost chip" onclick="logout()">Đăng xuất</button>`;
   right.innerHTML=html;
@@ -333,9 +336,34 @@ let VENUE_CACHE=[], VFORM=null;
 function editVenueById(id){const v=VENUE_CACHE.find(x=>x.id===id);if(v)venueForm(v);else toast("Không thấy địa điểm");}
 function deleteVenueById(id){const v=VENUE_CACHE.find(x=>x.id===id);if(v)deleteVenue(id,v.name||"");}
 function esc(s){return (s||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");}
-async function renderVenues(){
+// ---------- THƯ VIỆN (gộp Địa điểm + Ảnh chung) ----------
+function renderLibraryHub(tab){
   if(typeof resetEditor==="function") resetEditor();
-  document.getElementById("appbody").innerHTML=`<div class="card"><div style="display:flex;justify-content:space-between;align-items:center"><h2 class="sec">🗂 Thư viện địa điểm</h2><button class="btn" onclick="venueForm({})">➕ Thêm địa điểm</button></div><div class="muted" style="margin:6px 0 12px">Quán <b>seeding</b> (nền vàng) luôn ở đầu — đây là nhóm dùng để tạo content. Sửa loại "cần/không seeding" để bật/tắt.</div><div id="vlist" class="muted">Đang tải…</div></div>`;
+  tab=tab||"venues";
+  const tb=(id,lbl,t)=>`<button class="${tab===t?'btn':'btn-ghost'} chip" onclick="renderLibraryHub('${t}')">${lbl}</button>`;
+  document.getElementById("appbody").innerHTML=`
+    <div class="card" style="margin-bottom:14px;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+      <h2 class="sec" style="margin:0">📚 Thư viện</h2>
+      <div style="display:flex;gap:8px">${tb('','Thư viện địa điểm','venues')}${tb('','Thư viện ảnh chung','images')}</div>
+    </div>
+    <div id="hubbody"></div>`;
+  if(tab==="images") renderImages("hubbody"); else renderVenues("hubbody");
+}
+async function scrapeAllVenues(){
+  if(!confirm("Cào ảnh APIFY cho các quán còn thiếu (<8 ảnh)? Có thể mất vài phút và tốn credit APIFY."))return;
+  toast("⏳ Đang cào ảnh… giữ trang, có thể lâu.");
+  try{
+    const r=await fetch(API+"/venues-scrape-all",{method:"POST",headers:{"Content-Type":"application/json"},body:"{}"});
+    const j=await r.json(); if(!j.success) throw new Error(j.error||"lỗi");
+    toast(`✓ Cào xong ${j.done} quán, thêm ${j.total_added} ảnh.`);
+    renderLibraryHub("venues");
+  }catch(e){ toast("Lỗi cào: "+e.message); }
+}
+
+async function renderVenues(target){
+  target=target||"appbody";
+  if(target==="appbody"&&typeof resetEditor==="function") resetEditor();
+  document.getElementById(target).innerHTML=`<div class="card"><div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap"><h2 class="sec">🗂 Thư viện địa điểm</h2><div style="display:flex;gap:8px"><button class="btn-ghost" onclick="scrapeAllVenues()">⬇ Cào ảnh APIFY (quán thiếu)</button><button class="btn" onclick="venueForm({})">➕ Thêm địa điểm</button></div></div><div class="muted" style="margin:6px 0 12px">Quán <b>seeding</b> (nền vàng) luôn ở đầu — đây là nhóm dùng để tạo content. Sửa loại "cần/không seeding" để bật/tắt.</div><div id="vlist" class="muted">Đang tải…</div></div>`;
   try{
     const r=await fetch(API+"/venues",{cache:"no-store"}); const j=await r.json();
     if(j.options) VOPTS=j.options;
@@ -409,9 +437,10 @@ async function scrapeVenueImages(id){
 }
 
 // ---------- ẢNH CHUNG (album Đà Lạt, admin) ----------
-async function renderImages(){
-  if(typeof resetEditor==="function") resetEditor();
-  document.getElementById("appbody").innerHTML=`<div class="card"><div style="display:flex;justify-content:space-between;align-items:center"><h2 class="sec">🖼 Ảnh chung</h2><label class="btn" style="cursor:pointer">➕ Thêm ảnh<input type="file" accept="image/*" multiple style="display:none" onchange="uploadAlbumImages(this.files)"></label></div><div class="muted" style="margin:6px 0 12px">Ảnh Đà Lạt không thuộc quán nào (phong cảnh, có người…). Dùng làm b-roll chung.</div><div id="imgrid" class="muted">Đang tải…</div></div>`;
+async function renderImages(target){
+  target=target||"appbody";
+  if(target==="appbody"&&typeof resetEditor==="function") resetEditor();
+  document.getElementById(target).innerHTML=`<div class="card"><div style="display:flex;justify-content:space-between;align-items:center"><h2 class="sec">🖼 Ảnh chung</h2><label class="btn" style="cursor:pointer">➕ Thêm ảnh<input type="file" accept="image/*" multiple style="display:none" onchange="uploadAlbumImages(this.files)"></label></div><div class="muted" style="margin:6px 0 12px">Ảnh Đà Lạt không thuộc quán nào (phong cảnh, có người…). Dùng làm b-roll chung.</div><div id="imgrid" class="muted">Đang tải…</div></div>`;
   try{
     const r=await fetch(API+"/images",{cache:"no-store"}); const j=await r.json();
     const cells=(j.images||[]).map(im=>`<div style="position:relative"><img src="${im.url}?w=380" loading="lazy" decoding="async" style="width:100%;aspect-ratio:1;object-fit:cover;border-radius:12px;background:var(--surface2)"><button onclick="deleteAlbumImage(${im.id})" style="position:absolute;top:4px;right:4px;border:none;background:rgba(228,74,96,.92);color:#fff;border-radius:50%;width:24px;height:24px;cursor:pointer">×</button></div>`).join("");
@@ -752,12 +781,24 @@ async function openLibrary(){await fetchLibrary();document.getElementById("lib")
 function closeLibrary(){document.getElementById("lib").classList.add("hidden");}
 function openViewer(url){const v=document.getElementById("viewerVid");v.src=API+url;document.getElementById("viewer").classList.remove("hidden");v.play().catch(()=>{});}
 function closeViewer(){const v=document.getElementById("viewerVid");v.pause();v.removeAttribute("src");document.getElementById("viewer").classList.add("hidden");}
+let LIB_FILTER="";
+function setLibFilter(m){ LIB_FILTER=m; renderLibrary(); }
 function renderLibrary(){
   const grid=document.getElementById("libGrid"); if(!grid)return; const cards=[];
-  jobs.filter(j=>j.status!=="done").forEach(j=>{cards.push(`<div class="lib-card"><div class="lib-render" style="${j.hookPrev?`background-image:url(${j.hookPrev})`:""}"><div class="blur" style="${j.hookPrev?`background-image:url(${j.hookPrev})`:""}"></div><div class="mid">${j.status==="error"?`<div style="color:#ffb4b4">Lỗi</div><div class="muted" style="color:#ddd;max-width:90%;text-align:center">${j.error||""}</div>`:`<div class="spin"></div><div>${j.status==="rendering"?"Đang render "+j.progress+"%":"Chờ…"}</div>`}</div><div class="lib-bar" style="width:${j.progress}%"></div></div><div class="cap"><span>${j.topic}</span></div></div>`);});
+  // chip lọc theo maker (chỉ admin)
+  const fbox=document.getElementById("libFilter");
+  if(fbox){
+    if(SESSION.role==="admin"){
+      const makers=["",...Array.from(new Set(libVideos.map(v=>v.user).filter(Boolean)))];
+      fbox.innerHTML=`<div style="display:flex;gap:6px;flex-wrap:wrap">`+makers.map(m=>`<button class="${LIB_FILTER===m?'btn':'btn-ghost'} chip" onclick="setLibFilter('${m}')">${m?makerName(m):'Tất cả'}</button>`).join("")+`</div>`;
+    } else fbox.innerHTML="";
+  }
+  if(!LIB_FILTER){
+    jobs.filter(j=>j.status!=="done").forEach(j=>{cards.push(`<div class="lib-card"><div class="lib-render" style="${j.hookPrev?`background-image:url(${j.hookPrev})`:""}"><div class="blur" style="${j.hookPrev?`background-image:url(${j.hookPrev})`:""}"></div><div class="mid">${j.status==="error"?`<div style="color:#ffb4b4">Lỗi</div><div class="muted" style="color:#ddd;max-width:90%;text-align:center">${j.error||""}</div>`:`<div class="spin"></div><div>${j.status==="rendering"?"Đang render "+j.progress+"%":"Chờ…"}</div>`}</div><div class="lib-bar" style="width:${j.progress}%"></div></div><div class="cap"><span>${j.topic}</span></div></div>`);});
+  }
   const shown=new Set();
-  jobs.filter(j=>j.status==="done"&&j.videoUrl).forEach(j=>{shown.add(j.videoUrl);cards.push(libCard(j.videoUrl,j.topic));});
-  libVideos.forEach(v=>{if(shown.has(v.video_url))return;cards.push(libCard(v.video_url,v.topic||"video",v.user));});
+  if(!LIB_FILTER) jobs.filter(j=>j.status==="done"&&j.videoUrl).forEach(j=>{shown.add(j.videoUrl);cards.push(libCard(j.videoUrl,j.topic));});
+  libVideos.forEach(v=>{if(shown.has(v.video_url))return;if(LIB_FILTER&&v.user!==LIB_FILTER)return;cards.push(libCard(v.video_url,v.topic||"video",v.user));});
   grid.innerHTML=cards.join(""); const e=document.getElementById("libEmpty"); if(e)e.style.display=cards.length?"none":"block";
 }
 function libCard(url,topic,user){return `<div class="lib-card"><video src="${API+url}" preload="metadata"></video><div class="cap"><span>${topic||""}${user?" · "+user:""}</span><button class="expand" onclick="openViewer('${url}')">⤢ Phóng to</button></div></div>`;}
@@ -771,50 +812,88 @@ async function renderAdmin(){
   }catch(e){document.getElementById("statbox").textContent="Lỗi tải thống kê";}
 }
 
-// ---------- ADMIN: tạo ảnh (8 album) ----------
-const ALBUMS = [
-  {id:"hien1", label:"Hiền · Lưới quán"},
-  {id:"hien2", label:"Hiền · Bộ sưu tập"},
-  {id:"le1",   label:"Lê · Mẫu Đà Lạt"},
-  {id:"le2",   label:"Lê · Cover + slide"},
-  {id:"muoi1", label:"Mười · Album 1"},
-  {id:"muoi2", label:"Mười · Album 2"},
-  {id:"vy1",   label:"Vy · Album 1"},
-  {id:"vy2",   label:"Vy · Album 2"},
-];
+// ---------- TẠO ẢNH (per-nv: mẫu album theo tài khoản + album đã lưu) ----------
+let SAVED_ALBUMS=[], ALB_FILTER="";
+function makerName(u){ return ({nv1:"Lê",nv2:"Uyên",nv3:"Hiền",nv4:"Vy",nv5:"Mười",tintuc:"Tin tức",admin:"Quản lý"})[u]||u||""; }
 function renderImageGen(){
-  resetEditor && resetEditor();
+  if(typeof resetEditor==="function") resetEditor();
   document.getElementById("appbody").innerHTML=`
-    <div class="card" style="margin-bottom:18px;display:flex;justify-content:space-between;align-items:center;gap:12px">
-      <div><h2 class="sec" style="margin:0">🎨 Tạo ảnh — chọn mẫu album</h2>
-        <div class="muted">Bấm "Tạo album", hệ thống dựng bộ ảnh slide từ thư viện địa điểm. ~10-60s/album.</div></div>
+    <div class="card" style="margin-bottom:16px;display:flex;justify-content:space-between;align-items:center;gap:12px">
+      <div><h2 class="sec" style="margin:0">🎨 Tạo ảnh</h2>
+        <div class="muted">Chọn mẫu album → tạo. Ảnh tạo ra tự lưu ở "Album đã lưu" bên dưới (mở lại / tải / xoá / tạo lại).</div></div>
       <button class="btn-ghost" onclick="renderHome()">← Trang chủ</button>
     </div>
-    <div class="alb-grid">
-      ${ALBUMS.map(a=>`
-        <div class="alb-card" id="alb-${a.id}">
-          <div><div class="nm">${a.label}</div><div class="id">${a.id}</div></div>
-          <button class="btn" onclick="genAlbum('${a.id}')">Tạo album</button>
-          <div class="gal-grid hidden" id="gal-${a.id}"></div>
-        </div>`).join("")}
-    </div>`;
+    <div class="card" style="margin-bottom:16px"><h2 class="sec">Mẫu album</h2><div id="albTpls" class="muted">Đang tải…</div></div>
+    <div class="card"><h2 class="sec">📁 Album đã lưu</h2><div id="albSaved" class="muted">Đang tải…</div></div>`;
+  loadAlbumTemplates(); loadSavedAlbums();
 }
-async function genAlbum(id){
-  const card=document.getElementById("alb-"+id); if(!card)return;
-  const btn=card.querySelector("button.btn"); const gal=document.getElementById("gal-"+id);
-  btn.disabled=true; btn.textContent="⏳ Đang dựng…"; gal.classList.add("hidden"); gal.innerHTML="";
+async function loadAlbumTemplates(){
+  const box=document.getElementById("albTpls"); if(!box)return;
   try{
-    const r=await fetch(API+"/assemble-image",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({album:id})});
+    const r=await fetch(API+`/albums?user=${SESSION.username}`,{cache:"no-store"});
+    const items=(await r.json()).albums||[];
+    if(!items.length){ box.innerHTML="<div class='muted'>Tài khoản này chưa có mẫu album (sẽ cập nhật sau).</div>"; return; }
+    box.classList.remove("muted");
+    box.innerHTML=`<div class="alb-grid">${items.map(a=>`
+      <div class="alb-card"><div><div class="nm">${a.label}</div><div class="id">${a.id}</div></div>
+        <button class="btn" id="gen-${a.id}" onclick="genAlbum('${a.id}')">Tạo album</button></div>`).join("")}</div>`;
+  }catch(e){ box.textContent="Lỗi: "+e.message; }
+}
+async function loadSavedAlbums(){
+  const box=document.getElementById("albSaved"); if(!box)return;
+  try{
+    const r=await fetch(API+`/album-library?user=${SESSION.username}&role=${SESSION.role}`,{cache:"no-store"});
+    SAVED_ALBUMS=(await r.json()).albums||[]; renderSavedAlbums();
+  }catch(e){ box.textContent="Lỗi: "+e.message; }
+}
+function setAlbFilter(m){ ALB_FILTER=m; renderSavedAlbums(); }
+function renderSavedAlbums(){
+  const box=document.getElementById("albSaved"); if(!box)return; box.classList.remove("muted");
+  let chips="", list=SAVED_ALBUMS;
+  if(SESSION.role==="admin"){
+    const makers=["",...Array.from(new Set(SAVED_ALBUMS.map(a=>a.user).filter(Boolean)))];
+    chips=`<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px">`+makers.map(m=>`<button class="${ALB_FILTER===m?'btn':'btn-ghost'} chip" onclick="setAlbFilter('${m}')">${m?makerName(m):'Tất cả'}</button>`).join("")+`</div>`;
+    if(ALB_FILTER) list=list.filter(a=>a.user===ALB_FILTER);
+  }
+  if(!list.length){ box.innerHTML=chips+"<div class='muted'>Chưa có album nào.</div>"; return; }
+  box.innerHTML=chips+`<div class="alb-grid">${list.map(a=>{
+    const gi=SAVED_ALBUMS.indexOf(a);
+    const cover=(a.images&&a.images[0])?`<img src="${API+a.images[0].url}?w=220" loading="lazy" style="width:100%;aspect-ratio:4/5;object-fit:cover;border-radius:10px;background:var(--surface2)">`:"";
+    return `<div class="alb-card" style="cursor:pointer" onclick="openSavedAlbum(${gi})">${cover}
+      <div><div class="nm">${a.label||a.album}</div><div class="id">${(a.images||[]).length} ảnh${(SESSION.role==="admin"&&a.user)?" · "+makerName(a.user):""}</div></div></div>`;
+  }).join("")}</div>`;
+}
+function openSavedAlbum(i){ const a=SAVED_ALBUMS[i]; if(a) renderAlbumView(a); }
+async function genAlbum(id){
+  const btn=document.getElementById("gen-"+id); if(btn){btn.disabled=true;btn.textContent="⏳ Đang dựng…";}
+  toast("⏳ Đang dựng album…");
+  try{
+    const r=await fetch(API+"/assemble-image",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({album:id,user:SESSION.username})});
     const j=await r.json(); if(!j.success) throw new Error(j.error||"lỗi");
-    gal.innerHTML=(j.images||[]).map(im=>`
-      <div class="gal-card">
-        <img src="${API+im.url}" loading="lazy" onclick="openImg('${im.url}')">
-        <div class="row"><a href="${API+im.url}" download="${im.name}">⤓ Tải</a></div>
-      </div>`).join("") || "<div class='muted'>Không có ảnh.</div>";
-    gal.classList.remove("hidden");
-    toast(`Đã tạo ${(j.images||[]).length} ảnh — ${j.label||id}`);
-  }catch(e){ toast("Lỗi: "+e.message); }
-  finally{ btn.disabled=false; btn.textContent="Tạo lại"; }
+    renderAlbumView(j); toast(`Đã tạo ${(j.images||[]).length} ảnh`);
+  }catch(e){ toast("Lỗi: "+e.message); if(btn){btn.disabled=false;btn.textContent="Tạo album";} }
+}
+function renderAlbumView(a){
+  const imgs=a.images||[]; window._albImgs=imgs;
+  document.getElementById("appbody").innerHTML=`
+    <div class="card" style="margin-bottom:14px;display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap">
+      <div><h2 class="sec" style="margin:0">${a.label||a.album}</h2>
+        <div class="muted">${imgs.length} ảnh${a.user?" · "+makerName(a.user):""}</div></div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button class="btn" onclick="genAlbum('${a.album}')">↻ Tạo lại</button>
+        <button class="btn-ghost" onclick="downloadAlbum()">⤓ Tải cả bộ</button>
+        ${a.dir?`<button class="btn-ghost" onclick="deleteAlbum('${a.dir}')">🗑 Xoá</button>`:""}
+        <button class="btn-ghost" onclick="renderImageGen()">← Tạo ảnh</button>
+      </div>
+    </div>
+    <div class="card"><div class="alb-strip">${imgs.map(im=>`
+      <div class="alb-slide"><img src="${API+im.url}" loading="lazy" onclick="openImg('${im.url}')">
+        <a href="${API+im.url}" download="${im.name}">⤓ ${im.name}</a></div>`).join("")||"<div class='muted'>Không có ảnh.</div>"}</div></div>`;
+}
+function downloadAlbum(){ (window._albImgs||[]).forEach((im,k)=>{ const el=document.createElement("a"); el.href=API+im.url; el.download=im.name; document.body.appendChild(el); setTimeout(()=>{el.click();el.remove();}, k*250); }); }
+async function deleteAlbum(dir){
+  if(!confirm("Xoá album này (cả ảnh)?"))return;
+  try{ const r=await fetch(API+"/album-delete",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({dir})}); const j=await r.json(); if(!j.success)throw new Error(j.error||"lỗi"); toast("Đã xoá"); renderImageGen(); }catch(e){ toast("Lỗi: "+e.message); }
 }
 function openImg(url){document.getElementById("imgviewImg").src=API+url;document.getElementById("imgview").classList.remove("hidden");}
 function closeImg(){document.getElementById("imgview").classList.add("hidden");document.getElementById("imgviewImg").removeAttribute("src");}

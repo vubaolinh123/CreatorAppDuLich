@@ -19,13 +19,13 @@ OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
 #  full = tên+điểm+địa chỉ (nv1); name = chỉ tên quán (nv2/3/5); none = không badge (nv4 montage).
 #  transition: none = ghép cứng; swoosh = chuyển cảnh slide (chỉ hiệu ứng hình).
 _TEMPLATES = {
-    "nv1": {"badge_mode": "full", "transition": "none"},
-    "nv2": {"badge_mode": "name", "transition": "none"},
-    "nv3": {"badge_mode": "name", "transition": "none"},
-    "nv4": {"badge_mode": "none", "transition": "swoosh"},
-    "nv5": {"badge_mode": "name", "transition": "none"},
+    "nv1": {"badge_mode": "full", "transition": "fade"},
+    "nv2": {"badge_mode": "name", "transition": "fade"},
+    "nv3": {"badge_mode": "name", "transition": "fade"},
+    "nv4": {"badge_mode": "none", "transition": "fade"},
+    "nv5": {"badge_mode": "name", "transition": "fade"},
 }
-_DEFAULT_TEMPLATE = {"badge_mode": "name", "transition": "none"}
+_DEFAULT_TEMPLATE = {"badge_mode": "name", "transition": "fade"}
 
 
 def _hook_style(employee: str) -> str:

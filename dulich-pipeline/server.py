@@ -62,7 +62,18 @@ IMAGE_ALBUMS = {
     "muoi2": {"script": "generate_muoi1311.py",   "seed": True,  "label": "Mười · Album 2"},
     "vy1":   {"script": "generate_vy1.py",        "seed": True,  "label": "Vy · Album 1"},
     "vy2":   {"script": "generate_hien19111.py",  "seed": True,  "label": "Vy · Album 2"},
+    # uyen1/uyen2: user đang sửa script, cập nhật sau.
 }
+
+
+def _albums_for(user: str) -> list:
+    """Album hiển thị theo tài khoản: admin → tất cả; nhân viên → theo handle (users.json 'album')."""
+    items = [{"id": k, "label": v["label"]} for k, v in IMAGE_ALBUMS.items()]
+    u = (_load_users().get(user) or {})
+    if u.get("role") == "admin":
+        return items
+    handle = (u.get("album") or "").lower()
+    return [it for it in items if handle and it["id"].startswith(handle)]
 # Danh sách key cho trang Cài đặt. Tất cả TÙY CHỌN — thiếu vẫn chạy free.
 SETTINGS_KEYS = [
     {"key": "OPENROUTER_KEY",    "label": "OpenRouter",      "group": "AI viết kịch bản",
@@ -203,6 +214,42 @@ def _append_product(rec: dict) -> None:
         items.append(rec)
         PRODUCTS_FILE.parent.mkdir(parents=True, exist_ok=True)
         PRODUCTS_FILE.write_text(json.dumps(items, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+# Album ảnh đã tạo — lưu lại như "Tất cả video" (mở lại / xoá / tạo lại).
+ALBUM_PRODUCTS_FILE = Path(__file__).parent / "output" / "album_products.json"
+_ALBUM_PROD_LOCK = threading.Lock()
+
+
+def _load_albums() -> list:
+    try:
+        return json.loads(ALBUM_PRODUCTS_FILE.read_text(encoding="utf-8"))
+    except Exception:
+        return []
+
+
+def _append_album(rec: dict) -> None:
+    with _ALBUM_PROD_LOCK:
+        items = _load_albums()
+        items.append(rec)
+        ALBUM_PRODUCTS_FILE.parent.mkdir(parents=True, exist_ok=True)
+        ALBUM_PRODUCTS_FILE.write_text(json.dumps(items, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+def _delete_album(dir_rel: str) -> bool:
+    """Xoá 1 album đã lưu (record + folder ảnh)."""
+    dir_rel = (dir_rel or "").strip().replace("\\", "/")
+    if not dir_rel.startswith("output/albums/"):
+        return False
+    with _ALBUM_PROD_LOCK:
+        items = _load_albums()
+        kept = [a for a in items if a.get("dir") != dir_rel]
+        ALBUM_PRODUCTS_FILE.write_text(json.dumps(kept, ensure_ascii=False, indent=2), encoding="utf-8")
+    try:
+        shutil.rmtree(str(Path(__file__).parent / dir_rel), ignore_errors=True)
+    except Exception:
+        pass
+    return True
 
 
 def _build_framework_script(topic: str) -> dict:
@@ -410,6 +457,10 @@ class AssembleHandler(BaseHTTPRequestHandler):
             self.handle_generate_script()
         elif self.path == "/script-prompt":
             self.handle_script_prompt_save()
+        elif self.path == "/album-delete":
+            self.handle_album_delete()
+        elif self.path == "/venues-scrape-all":
+            self.handle_venues_scrape_all()
         elif self.path == "/login":
             self.handle_login()
         elif self.path == "/news-research":
@@ -456,9 +507,14 @@ class AssembleHandler(BaseHTTPRequestHandler):
             self.handle_listreview_prefill()
         elif self.path.startswith("/script-prompt"):
             self.handle_script_prompt_get()
+        elif self.path.startswith("/albums"):
+            self.handle_albums_get()
+        elif self.path.startswith("/album-library"):
+            self.handle_album_library()
         elif self.path.startswith("/output/"):
-            # Serve output files statically for preview/playback
-            file_path = Path(__file__).parent / self.path.lstrip("/")
+            # Serve output files statically for preview/playback (bỏ query ?w=… nếu có)
+            rel = self.path.split("?", 1)[0].lstrip("/")
+            file_path = Path(__file__).parent / rel
             if file_path.exists() and file_path.is_file():
                 ext = file_path.suffix.lower()
                 mime_map = {".mp4": "video/mp4", ".mov": "video/quicktime",
@@ -1147,10 +1203,11 @@ class AssembleHandler(BaseHTTPRequestHandler):
             threading.Thread(target=cleanup, daemon=True).start()
 
     def handle_assemble_image(self):
-        """POST /assemble-image {album} → chạy script CLI dựng album ảnh, trả list ảnh PNG."""
+        """POST /assemble-image {album, user} → chạy script CLI dựng album ảnh, lưu lại, trả list ảnh PNG."""
         try:
             body = self._read_json_body()
             album = (body.get("album") or "").strip()
+            user = (body.get("user") or "").strip()
             cfg = IMAGE_ALBUMS.get(album)
             if not cfg:
                 self._json_response({"success": False, "error": f"Album không hợp lệ: {album}"}, 400)
@@ -1192,14 +1249,81 @@ class AssembleHandler(BaseHTTPRequestHandler):
                 return
 
             images = [{"name": f.name, "url": _to_output_url(str(f))} for f in files]
-            self._json_response({"success": True, "album": album,
-                                 "label": cfg.get("label", album), "images": images})
+            dir_rel = str(out_dir.relative_to(base)).replace("\\", "/")
+            rec = {"user": user, "album": album, "label": cfg.get("label", album),
+                   "dir": dir_rel, "images": images}
+            try:
+                import time as _t
+                _append_album({**rec, "time": _t.time()})
+            except Exception as _e:
+                print(f"[Server] album log lỗi: {_e}", file=sys.stderr)
+            self._json_response({"success": True, **rec})
         except subprocess.TimeoutExpired:
             self._json_response({"success": False, "error": "Quá thời gian (300s)."}, 500)
         except Exception as e:
             import traceback
             tb = traceback.format_exc()
             print(f"[Server] ❌ assemble-image lỗi: {e}\n{tb}", file=sys.stderr)
+            self._json_response({"success": False, "error": str(e)}, 500)
+
+    def handle_albums_get(self):
+        """GET /albums?user= → danh sách mẫu album theo tài khoản (admin: tất cả)."""
+        try:
+            from urllib.parse import urlparse, parse_qs
+            q = parse_qs(urlparse(self.path).query)
+            user = (q.get("user", [""])[0] or "").strip()
+            self._json_response({"success": True, "albums": _albums_for(user)})
+        except Exception as e:
+            self._json_response({"success": False, "error": str(e)}, 500)
+
+    def handle_album_library(self):
+        """GET /album-library?user=&role= → album đã tạo (lọc theo user nếu không phải admin)."""
+        try:
+            from urllib.parse import urlparse, parse_qs
+            q = parse_qs(urlparse(self.path).query)
+            user = (q.get("user", [""])[0] or "").strip()
+            role = (q.get("role", [""])[0] or "").strip()
+            items = sorted(_load_albums(), key=lambda a: a.get("time", 0), reverse=True)
+            if role != "admin" and user:
+                items = [a for a in items if a.get("user") == user]
+            self._json_response({"success": True, "albums": items})
+        except Exception as e:
+            self._json_response({"success": False, "error": str(e)}, 500)
+
+    def handle_album_delete(self):
+        """POST /album-delete {dir} → xoá album đã lưu."""
+        try:
+            body = self._read_json_body()
+            ok = _delete_album(body.get("dir", ""))
+            self._json_response({"success": ok})
+        except Exception as e:
+            self._json_response({"success": False, "error": str(e)}, 500)
+
+    def handle_venues_scrape_all(self):
+        """POST /venues-scrape-all → cào APIFY cho các quán có < 8 ảnh (chạy tuần tự)."""
+        if not (os.getenv("APIFY_API_KEY") or os.getenv("APIFY_TOKEN")):
+            self._json_response({"success": False, "error": "Thiếu APIFY_API_KEY (vào Cài đặt nhập key)."}, 400)
+            return
+        try:
+            from tools import venues_db
+            from tools.venue_images_scrape import scrape_venue_images
+            need = [v for v in venues_db.get_all() if len(v.get("images") or []) < 8]
+            done, total, per = 0, 0, []
+            with _HEAVY_LOCK:
+                for v in need:
+                    try:
+                        n = scrape_venue_images(v, 8)
+                    except Exception as ex:
+                        n = 0
+                        print(f"[Server] scrape-all lỗi {v.get('name')}: {ex}", file=sys.stderr)
+                    total += n
+                    done += 1
+                    per.append({"id": v["id"], "name": v.get("name"), "added": n})
+            self._json_response({"success": True, "scanned": len(need),
+                                 "done": done, "total_added": total, "per_venue": per})
+        except Exception as e:
+            import traceback
+            print(f"[Server] scrape-all lỗi: {e}\n{traceback.format_exc()}", file=sys.stderr)
             self._json_response({"success": False, "error": str(e)}, 500)
 
     def handle_script_prompt_get(self):
