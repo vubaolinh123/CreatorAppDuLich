@@ -1,0 +1,74 @@
+"""
+generate_le2.py — Tạo album le2 từ spec.json trong output folder.
+Usage: python -X utf8 generate_le2.py [--spec path/to/spec.json] [--out path]
+
+Mặc định đọc spec từ output/albums/le2-demo/2026-06-21_spec.json
+và xuất PNG vào cùng folder đó.
+"""
+from __future__ import annotations
+import sys, json, argparse
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).parent))
+from tools.mle23_renderer import render_cover, render_venue_list
+
+
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--spec",
+        default=str(
+            Path(__file__).parent / "output" / "albums" / "le2-demo" / "2026-06-21_spec.json"
+        ),
+    )
+    parser.add_argument("--out", default="")
+    args = parser.parse_args()
+
+    spec_path = Path(args.spec)
+    if not spec_path.exists():
+        print(f"[ERROR] Spec không tồn tại: {spec_path}")
+        return
+
+    with open(spec_path, encoding="utf-8") as f:
+        spec = json.load(f)
+
+    out_dir = Path(args.out) if args.out else spec_path.parent
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    slides_spec = spec.get("slides", {})
+    cover_spec = slides_spec.get("cover", {})
+    cover_meta = {
+        "month_tag":  spec.get("month_tag",  "Tháng 6"),
+        "handle_tag": spec.get("handle_tag", "@thamhiemdalat"),
+    }
+
+    paths = []
+    idx = 0
+
+    # Slide 0: Cover
+    bg = cover_spec.get("bg_image", "")
+    out0 = str(out_dir / "le2_00_cover.png")
+    print(f"[{idx}] Cover → {out0}")
+    paths.append(render_cover(bg, out0, spec=cover_meta))
+    idx += 1
+
+    # Slides 1-N: venue list slides from spec order
+    SLIDE_ORDER = ["quan_an", "khach_san", "checkin"]
+    for key in SLIDE_ORDER:
+        s = slides_spec.get(key)
+        if not s:
+            continue
+        bg_i = s.get("bg_image", "")
+        pill = s.get("pill_text", key.upper())
+        venues = s.get("venues", [])
+        out_n = str(out_dir / f"le2_{idx:02d}_{key}.png")
+        print(f"[{idx}] {pill} ({len(venues)} venues) → {out_n}")
+        paths.append(render_venue_list(bg_i, pill, venues, out_n))
+        idx += 1
+
+    print(f"\n✓ {len(paths)} slides:")
+    for s in paths:
+        print(f"  file:///{Path(s).as_posix()}")
+
+
+if __name__ == "__main__":
+    main()
