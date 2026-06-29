@@ -1,0 +1,53 @@
+{
+  "_note": "Chỉnh file này rồi chạy: python -X utf8 generate_vy1.py --spec <path>",
+  "hook": "Đi hết những điểm này\nở Đà Lạt",
+  "cover_bg": "D:\\thanh\\CONTENTTA AGENCY\\8. Personal projects\\he thong edit video du lịch\\CreatorAppDuLich\\anh video du lich\\3. Nổi bật_ Banla botique hotel.jpg",
+  "list_bg": "D:\\thanh\\CONTENTTA AGENCY\\8. Personal projects\\he thong edit video du lịch\\CreatorAppDuLich\\anh video du lich\\2. Danh mục lưu trú_ homestay.jpg",
+  "grid_slides": [
+    {
+      "label": "cà phê chillchill",
+      "venues": [
+        "Tiệm cà phê Chạng Vạng",
+        "Sườn cay khổng lồ",
+        "Bánh Căn Cô Hoa",
+        "Hủ Tiếu Nam Vang Gia Cát"
+      ]
+    },
+    {
+      "label": "Check-in free",
+      "venues": [
+        "Đồi chè Cầu Đất",
+        "Chợ Đà Lạt",
+        "Thác Datanla",
+        "Langbiang Land"
+      ]
+    },
+    {
+      "label": "Lưu trú xịn",
+      "venues": [
+        "Ladalat Hotel",
+        "Cozy Garden Boutique Hotel",
+        "Anmai Boutique Hotel",
+        "Dalat Memories Homestay"
+      ]
+    },
+    {
+      "label": "Quán ăn ngon",
+      "venues": [
+        "Chè Hé Đà Lạt",
+        "Cơm Gà Như Ý",
+        "Gà Nướng Cơm Lam Tư Béo",
+        "Kem Bơ Thanh Thảo"
+      ]
+    },
+    {
+      "label": "Đặc sản Đà Lạt",
+      "venues": [
+        "Bánh mì Đà Lạt",
+        "Cà phê Ollin",
+        "Bánh Ướt Lòng Gà Thảo",
+        "Cơm Tấm Mei"
+      ]
+    }
+  ]
+}

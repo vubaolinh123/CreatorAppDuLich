@@ -1,0 +1,53 @@
+{
+  "_note": "Chỉnh file này rồi chạy: python -X utf8 generate_vy1.py --spec <path>",
+  "hook": "Đi hết những điểm này\nở Đà Lạt",
+  "cover_bg": "D:\\thanh\\CONTENTTA AGENCY\\8. Personal projects\\he thong edit video du lịch\\CreatorAppDuLich\\anh video du lich\\4. Phong cách_  Sang trọng.jpg",
+  "list_bg": "D:\\thanh\\CONTENTTA AGENCY\\8. Personal projects\\he thong edit video du lịch\\CreatorAppDuLich\\anh video du lich\\2. Danh mục lưu trú_ farmstay.jpg",
+  "grid_slides": [
+    {
+      "label": "cà phê chillchill",
+      "venues": [
+        "Tiệm cà phê Chạng Vạng",
+        "Bánh Ướt Lòng Gà Long",
+        "Oh-mi Vegan",
+        "Bánh Tráng Nướng Cô Hạnh"
+      ]
+    },
+    {
+      "label": "Check-in free",
+      "venues": [
+        "Đồi chè Cầu Đất",
+        "Thác Datanla",
+        "Chợ Đà Lạt",
+        "Langbiang Land"
+      ]
+    },
+    {
+      "label": "Lưu trú xịn",
+      "venues": [
+        "Dalat Edensee Lake Resort & Spa",
+        "The December Dalat",
+        "Dalat Palace Heritage Hotel",
+        "Golden Imperial Hotel Da Lat"
+      ]
+    },
+    {
+      "label": "Quán ăn ngon",
+      "venues": [
+        "Bánh mì Đà Lạt",
+        "Cơm Gà Hải Phan Rang",
+        "Bánh Tráng Nướng Dì Đinh",
+        "Nem nướng Tân Long"
+      ]
+    },
+    {
+      "label": "Đặc sản Đà Lạt",
+      "venues": [
+        "Sườn cay khổng lồ",
+        "Cơm Gà Như Ý",
+        "Bún Bò Vy Vy",
+        "Kem Bơ Thanh Thảo"
+      ]
+    }
+  ]
+}

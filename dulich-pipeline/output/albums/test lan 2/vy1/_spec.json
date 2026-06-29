@@ -1,0 +1,53 @@
+{
+  "_note": "Chỉnh file này rồi chạy: python -X utf8 generate_vy1.py --spec <path>",
+  "hook": "Đà Lạt có gì hay?\nĐây rồi, lưu lại đi!",
+  "cover_bg": "D:\\thanh\\CONTENTTA AGENCY\\8. Personal projects\\he thong edit video du lịch\\CreatorAppDuLich\\anh video du lich\\4. Phong cách_  Sang trọng.jpg",
+  "list_bg": "D:\\thanh\\CONTENTTA AGENCY\\8. Personal projects\\he thong edit video du lịch\\CreatorAppDuLich\\anh video du lich\\IMG_1589.JPG",
+  "grid_slides": [
+    {
+      "label": "cà phê chillchill",
+      "venues": [
+        "Tiệm cà phê Chạng Vạng",
+        "Cà phê Ollin",
+        "Gà Nướng Cơm Lam Tư Béo",
+        "Oh-mi Vegan"
+      ]
+    },
+    {
+      "label": "Check-in free",
+      "venues": [
+        "Langbiang Land",
+        "Chợ Đà Lạt",
+        "Thác Datanla",
+        "Đồi chè Cầu Đất"
+      ]
+    },
+    {
+      "label": "Lưu trú xịn",
+      "venues": [
+        "Dalat Backpackers Alley Hostel",
+        "Nhà của Khôi Homestay",
+        "Golden Imperial Hotel Da Lat",
+        "Villa Pink House"
+      ]
+    },
+    {
+      "label": "Quán ăn ngon",
+      "venues": [
+        "Bún Bò Vy Vy",
+        "Bánh Căn Cô Hoa",
+        "Lẩu Cá Tầm Ngư Sơn",
+        "Bánh Tráng Nướng Dì Đinh"
+      ]
+    },
+    {
+      "label": "Đặc sản Đà Lạt",
+      "venues": [
+        "Bánh Ướt Lòng Gà Thảo",
+        "Cơm Gà Như Ý",
+        "Bánh Tráng Nướng Cô Hạnh",
+        "Bánh mì Đà Lạt"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,137 @@
+{
+  "date": "2026-06-21",
+  "month_tag": "Tháng 6",
+  "handle_tag": "@thamhiemdalat",
+  "slides": {
+    "cover": {
+      "bg_venue": "Bánh Ướt Lòng Gà Thảo",
+      "bg_image": "D:\\thanh\\CONTENTTA AGENCY\\8. Personal projects\\he thong edit video du lich\\CreatorAppDuLich\\thumbs\\Bánh Ướt Lòng Gà Thảo.jpg"
+    },
+    "quan_an": {
+      "bg_venue": "Trạm Nắng BBQ",
+      "bg_image": "D:\\thanh\\CONTENTTA AGENCY\\8. Personal projects\\he thong edit video du lich\\CreatorAppDuLich\\thumbs\\Trạm Nắng BBQ.jpg",
+      "pill_text": "ĂN GÌ Ở ĐÀ LẠT?",
+      "venues": [
+        {
+          "name": "Lẩu bò Gia Lâm",
+          "signature": "Lẩu bò",
+          "address": "30 Ngô Quyền, phường Cam Ly - Đà Lạt"
+        },
+        {
+          "name": "Oh-mi Vegan",
+          "signature": "Mì tiềm chay",
+          "address": "35/6 Yersin, Xuân Hương - Đà Lạt"
+        },
+        {
+          "name": "Bánh mì Đà Lạt",
+          "signature": "",
+          "address": "65 Phan Đình Phùng, Đà Lạt"
+        },
+        {
+          "name": "Nem nướng Tân Long",
+          "signature": "",
+          "address": "290 Bùi Thị Xuân, Đà Lạt"
+        },
+        {
+          "name": "Cà phê Ollin",
+          "signature": "",
+          "address": "9 Nguyễn Chí Thanh, Đà Lạt"
+        },
+        {
+          "name": "Trạm Nắng BBQ",
+          "signature": "Gà đốt Kampot",
+          "address": "18 Đống Đa, phường Xuân Hương - Đà Lạt"
+        },
+        {
+          "name": "Sườn cay khổng lồ",
+          "signature": "Sườn cay",
+          "address": "42 Phan Chu Trinh, phường Lâm Viên - Đà Lạt"
+        },
+        {
+          "name": "Yod Thong",
+          "signature": "Somtum",
+          "address": "04 Đoàn Thị Điểm, phường Xuân Hương - Đà Lạt"
+        }
+      ]
+    },
+    "khach_san": {
+      "bg_venue": "Terracotta Hotel & Resort Dalat",
+      "bg_image": "D:\\thanh\\CONTENTTA AGENCY\\8. Personal projects\\he thong edit video du lich\\CreatorAppDuLich\\thumbs\\Terracotta Hotel & Resort Dalat.jpg",
+      "pill_text": "LƯU TRÚ Ở ĐÂU?",
+      "venues": [
+        {
+          "name": "Anmai Boutique Hotel",
+          "signature": "500k-1tr/đêm",
+          "address": "1A Đ. Lữ Gia, Lâm Viên - Đà Lạt"
+        },
+        {
+          "name": "Cozy Garden Boutique Hotel",
+          "signature": "500k-1tr/đêm",
+          "address": "94 Đ. Lữ Gia, Lâm Viên - Đà Lạt"
+        },
+        {
+          "name": "Dalat Palace Heritage Hotel",
+          "signature": "2.5-30tr/đêm",
+          "address": "02 Trần Phú, Phường 3, Đà Lạt"
+        },
+        {
+          "name": "Ana Mandara Villas Dalat Resort",
+          "signature": "2.3-5tr/đêm",
+          "address": "Đường Lê Lai, Phường 5, Đà Lạt"
+        },
+        {
+          "name": "Dalat Edensee Lake Resort & Spa",
+          "signature": "2.8-8tr/đêm",
+          "address": "Hồ Tuyền Lâm, Khu VII.2, Phường 4, Đà Lạt"
+        },
+        {
+          "name": "MerPerle Dalat Hotel",
+          "signature": "2-6tr/đêm",
+          "address": "01 Hùng Vương, Phường 10, Đà Lạt"
+        },
+        {
+          "name": "Golden Imperial Hotel Da Lat",
+          "signature": "3-8tr/đêm",
+          "address": "Lô A1, Khu Trung tâm Thương mại Quốc tế, Phường 10, Đà Lạt"
+        },
+        {
+          "name": "Grand Mercure Dalat Resort",
+          "signature": "2-5tr/đêm",
+          "address": "03 Nguyễn Du, Đà Lạt"
+        }
+      ]
+    },
+    "checkin": {
+      "bg_venue": "Chè Hé Đà Lạt",
+      "bg_image": "D:\\thanh\\CONTENTTA AGENCY\\8. Personal projects\\he thong edit video du lich\\CreatorAppDuLich\\thumbs\\Chè Hé Đà Lạt.jpg",
+      "pill_text": "ĐIỂM CHECK-IN & CÀ PHÊ",
+      "venues": [
+        {
+          "name": "Tiệm cà phê Chạng Vạng",
+          "signature": "View hoàng hôn",
+          "address": "119 Huỳnh Tấn Phát, Đà Lạt"
+        },
+        {
+          "name": "Langbiang Land",
+          "signature": "",
+          "address": "93A Đường Bidoup, Lạc Dương, Đà Lạt"
+        },
+        {
+          "name": "Đồi chè Cầu Đất",
+          "signature": "",
+          "address": "Xã Xuân Trường, Đà Lạt"
+        },
+        {
+          "name": "Chợ Đà Lạt",
+          "signature": "",
+          "address": "Đường Nguyễn Thị Minh Khai, Đà Lạt"
+        },
+        {
+          "name": "Thác Datanla",
+          "signature": "",
+          "address": "Đèo Prenn, Đà Lạt"
+        }
+      ]
+    }
+  }
+}
