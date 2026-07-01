@@ -481,7 +481,7 @@ class AssembleHandler(BaseHTTPRequestHandler):
             self._json_response({"error": f"Unknown path: {self.path}"}, 404)
 
     def do_GET(self):
-        if self.path in ("/", "/app", "/index.html"):
+        if self.path.split("?", 1)[0] in ("/", "/app", "/index.html"):
             self._serve_index()
         elif self.path == "/settings":
             self.handle_settings_get()
@@ -559,6 +559,7 @@ class AssembleHandler(BaseHTTPRequestHandler):
         self._cors_headers()
         self.send_header("Content-Type", "text/html; charset=utf-8")
         self.send_header("Content-Length", str(len(body)))
+        self.send_header("Cache-Control", "no-cache, no-store, must-revalidate")
         self.send_header("Connection", "close")
         self.end_headers()
         self.wfile.write(body)

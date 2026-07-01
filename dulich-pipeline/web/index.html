@@ -602,8 +602,9 @@ function renderPager(){
   const a=scenePage*PAGE+1,b=Math.min(total,(scenePage+1)*PAGE);
   if(box) box.innerHTML = pages<=1?"":`<span class="idx">Scene ${a}-${b}/${total}</span>`;
   const nl=document.getElementById("navLeft"),nr=document.getElementById("navRight"),show=pages>1;
-  if(nl){nl.style.display=show?"flex":"none";nl.style.opacity=scenePage===0?.35:1;nl.style.pointerEvents=scenePage===0?"none":"auto";}
-  if(nr){nr.style.display=show?"flex":"none";nr.style.opacity=scenePage>=pages-1?.35:1;nr.style.pointerEvents=scenePage>=pages-1?"none":"auto";}
+  // Ẩn hẳn mũi tên khi hết trang (không để nút mờ vẫn hiện gây bấm hụt)
+  if(nl){nl.style.display=(show&&scenePage>0)?"flex":"none";nl.style.opacity=1;nl.style.pointerEvents="auto";}
+  if(nr){nr.style.display=(show&&scenePage<pages-1)?"flex":"none";nr.style.opacity=1;nr.style.pointerEvents="auto";}
 }
 function pageScene(d){const pages=Math.ceil(currentScenes.length/PAGE);const np=Math.max(0,Math.min(pages-1,scenePage+d));if(np===scenePage)return;scenePage=np;renderSceneInputs();renderPreview();const ed=document.getElementById("editor");if(ed)ed.scrollIntoView({behavior:"smooth",block:"start"});}
 
