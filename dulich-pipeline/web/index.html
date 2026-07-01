@@ -605,7 +605,7 @@ function renderPager(){
   if(nl){nl.style.display=show?"flex":"none";nl.style.opacity=scenePage===0?.35:1;nl.style.pointerEvents=scenePage===0?"none":"auto";}
   if(nr){nr.style.display=show?"flex":"none";nr.style.opacity=scenePage>=pages-1?.35:1;nr.style.pointerEvents=scenePage>=pages-1?"none":"auto";}
 }
-function pageScene(d){const pages=Math.ceil(currentScenes.length/PAGE);scenePage=Math.max(0,Math.min(pages-1,scenePage+d));renderSceneInputs();renderPreview();}
+function pageScene(d){const pages=Math.ceil(currentScenes.length/PAGE);const np=Math.max(0,Math.min(pages-1,scenePage+d));if(np===scenePage)return;scenePage=np;renderSceneInputs();renderPreview();const ed=document.getElementById("editor");if(ed)ed.scrollIntoView({behavior:"smooth",block:"start"});}
 
 function renderSceneInputs(){
   renderPager(); const box=document.getElementById("scenes"); if(!box)return; box.innerHTML="";
