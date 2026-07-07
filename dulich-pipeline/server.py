@@ -676,6 +676,8 @@ class AssembleHandler(BaseHTTPRequestHandler):
             self.handle_product_status()
         elif self.path == "/script-drafts-use":
             self.handle_script_draft_use()
+        elif self.path == "/script-drafts-delete":
+            self.handle_script_draft_delete()
         elif self.path == "/news-scrape":
             self.handle_news_scrape()
         elif self.path == "/venues-scrape-all":
@@ -1556,6 +1558,16 @@ class AssembleHandler(BaseHTTPRequestHandler):
                 self._json_response({"success": False, "error": "Không tìm thấy kịch bản."}, 404)
                 return
             self._json_response({"success": True, "draft": d})
+        except Exception as e:
+            self._json_response({"success": False, "error": str(e)}, 500)
+
+    def handle_script_draft_delete(self):
+        """POST /script-drafts-delete {id} → xoá 1 kịch bản đã lưu."""
+        try:
+            b = self._read_json_body()
+            from tools.script_drafts import delete_draft
+            ok = delete_draft((b.get("id") or "").strip())
+            self._json_response({"success": ok})
         except Exception as e:
             self._json_response({"success": False, "error": str(e)}, 500)
 

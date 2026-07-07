@@ -70,6 +70,16 @@ def mark_used(draft_id: str) -> dict | None:
         return hit
 
 
+def delete_draft(draft_id: str) -> bool:
+    with _LOCK:
+        items = _load()
+        kept = [d for d in items if d.get("id") != draft_id]
+        if len(kept) != len(items):
+            _save(kept)
+            return True
+        return False
+
+
 def get_draft(draft_id: str) -> dict | None:
     for d in _load():
         if d.get("id") == draft_id:
