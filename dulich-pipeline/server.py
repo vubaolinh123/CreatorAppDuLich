@@ -1526,10 +1526,10 @@ class AssembleHandler(BaseHTTPRequestHandler):
     def handle_news_pool(self):
         """GET /news-pool → tin đã cào gần nhất + từ khóa/hashtag mặc định."""
         try:
-            from tools.news_youtube import load_pool, DEFAULT_KEYWORD, DEFAULT_HASHTAGS
+            from tools.news_youtube import load_pool, DEFAULT_KEYWORDS, DEFAULT_HASHTAGS
             p = load_pool()
             self._json_response({"success": True, "time": p.get("time", 0), "items": p.get("items", []),
-                                 "default_keyword": DEFAULT_KEYWORD, "default_hashtags": DEFAULT_HASHTAGS})
+                                 "keywords": DEFAULT_KEYWORDS, "hashtags": DEFAULT_HASHTAGS})
         except Exception as e:
             self._json_response({"success": False, "error": str(e), "items": []}, 500)
 

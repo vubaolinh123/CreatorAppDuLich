@@ -69,6 +69,8 @@ def _ai_script(venues: list[dict], employee: str = "nv1") -> dict | None:
     system = (persona + _FORMAT_NV
               + " QUAN TRỌNG: mỗi lần viết phải SÁNG TẠO, đổi cách mở đầu/góc nhìn/câu chữ, "
                 "KHÔNG lặp lại mẫu câu của các lần trước."
+              + " KHÔNG dùng từ tiếng Anh trong lời thoại (vd 'recommend', 'size', 'view', 'chill', 'menu') "
+                "— thay bằng tiếng Việt (gợi ý, cỡ, cảnh, thư giãn, thực đơn); chỉ giữ nguyên TÊN RIÊNG của quán."
               + avoid_block
               + (f"\n\nVÍ DỤ THAM KHẢO (học giọng, đừng chép):\n{ex}" if ex else ""))
     import random as _rnd

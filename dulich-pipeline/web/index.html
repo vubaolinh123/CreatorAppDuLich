@@ -527,7 +527,8 @@ function renderNews(){
         <h2 class="sec" style="margin:0">📺 Tin Đà Lạt mới (YouTube)</h2>
         <button class="btn-ghost chip" id="newsScrapeBtn" onclick="scrapeNews()">🔄 Cào tin mới</button>
       </div>
-      <div class="muted" style="margin:4px 0 8px">Cào theo từ khóa + hashtag (video + shorts). Tự cào 5h/11h/18h. Bấm "Dùng" để viết kịch bản từ tin đó.</div>
+      <div class="muted" style="margin:4px 0 8px">Chỉ tin trong <b>24h</b> (video + shorts). Tự cào 5h/11h/18h. Bấm "Dùng" để viết kịch bản.</div>
+      <div id="newsKeywords" style="margin-bottom:8px"></div>
       <div id="newsPool" class="muted">Đang tải…</div>
     </div>
     <div id="editor" class="hidden"></div>`;
@@ -537,6 +538,9 @@ async function loadNewsPool(){
   const box=document.getElementById("newsPool"); if(!box)return;
   try{
     const j=await (await fetch(API+"/news-pool",{cache:"no-store"})).json();
+    const kb=document.getElementById("newsKeywords");
+    if(kb){ const kw=(j.keywords||[]).concat(j.hashtags||[]);
+      kb.innerHTML=kw.length?`<div class="muted" style="font-size:11px">🔎 Từ khóa cào: ${kw.map(k=>`<span class="chip" style="background:var(--surface2);padding:2px 8px;margin:2px;display:inline-block">${k}</span>`).join("")}</div>`:""; }
     renderNewsPool(j.items||[], j.time||0);
   }catch(e){ box.textContent="Lỗi: "+e.message; }
 }

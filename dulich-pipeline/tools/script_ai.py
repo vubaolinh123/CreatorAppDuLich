@@ -70,7 +70,7 @@ def generate_script_ai(topic: str, employee: str = "tintuc") -> dict | None:
             json={
                 "model": MODEL,
                 "messages": [
-                    {"role": "system", "content": system + " Mỗi lần viết phải SÁNG TẠO, đổi mở đầu/góc nhìn, KHÔNG lặp lại lần trước."},
+                    {"role": "system", "content": system + " Mỗi lần viết phải SÁNG TẠO, đổi mở đầu/góc nhìn, KHÔNG lặp lại lần trước. KHÔNG dùng từ tiếng Anh (recommend/size/view/chill...) trừ tên riêng — thay bằng tiếng Việt."},
                     {"role": "user", "content": f"Chủ đề: {topic}\n[biến thể #{_var} — viết mới, khác các lần trước]"},
                 ],
                 "response_format": {"type": "json_object"},
