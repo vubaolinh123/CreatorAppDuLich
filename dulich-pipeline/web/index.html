@@ -206,6 +206,7 @@
 <!-- overlays -->
 <div class="lib hidden" id="lib"><div class="lib-inner">
   <div class="lib-top"><h2 style="margin:0">📹 Video</h2><button class="btn-ghost" onclick="closeLibrary()">✕ Đóng</button></div>
+  <div id="draftBox" style="margin-bottom:18px"></div>
   <div id="libFilter" style="margin-bottom:14px"></div>
   <div class="lib-grid" id="libGrid"></div>
   <div id="libEmpty" class="muted" style="color:#eee;margin-top:16px">Chưa có video nào.</div>
@@ -262,7 +263,7 @@ function startApp(){
   html += `<button class="btn-ghost chip" onclick="openLibrary()">📹 Video</button>`;
   if(SESSION.role==="staff"||SESSION.role==="news") html += `<button class="btn-ghost chip" onclick="renderPromptEditor()">📝 Prompt</button>`;
   html += `<button class="btn-ghost chip" onclick="renderLibraryHub('venues')">📚 Thư viện</button>`;
-  html += `<button class="btn-ghost chip" onclick="renderImageGen()">🎨 Tạo ảnh</button>`;
+  html += `<button class="btn-ghost chip" onclick="renderImageGen()">🎨 Ảnh</button>`;
   if(SESSION.role==="admin") html += `<button class="btn-ghost chip" onclick="renderSettings()">⚙️ Cài đặt</button>`;
   html += `<button class="btn-ghost chip" onclick="logout()">Đăng xuất</button>`;
   right.innerHTML=html;
@@ -829,8 +830,35 @@ async function renderAll(){
 // ---------- LIBRARY / VIEWER ----------
 let libVideos=[];
 async function fetchLibrary(){try{const r=await fetch(API+`/library?user=${SESSION.username}&role=${SESSION.role}`,{cache:"no-store"});libVideos=(await r.json()).videos||[];}catch{}}
-async function openLibrary(){await fetchLibrary();document.getElementById("lib").classList.remove("hidden");renderLibrary();}
+async function openLibrary(){await fetchLibrary();document.getElementById("lib").classList.remove("hidden");renderLibrary();loadDrafts();}
 function closeLibrary(){document.getElementById("lib").classList.add("hidden");}
+let VIDEO_DRAFTS=[];
+async function loadDrafts(){
+  const box=document.getElementById("draftBox"); if(!box)return;
+  try{
+    const j=await (await fetch(API+`/script-drafts?user=${SESSION.username}&role=${SESSION.role}&only_unused=1`,{cache:"no-store"})).json();
+    VIDEO_DRAFTS=j.drafts||[]; renderDrafts();
+  }catch(e){ box.innerHTML="<div class='muted' style='color:#eee'>Lỗi tải kịch bản: "+e.message+"</div>"; }
+}
+function renderDrafts(){
+  const box=document.getElementById("draftBox"); if(!box)return;
+  if(!VIDEO_DRAFTS.length){ box.innerHTML=""; return; }
+  box.innerHTML=`<h3 style="color:#fff;margin:0 0 8px;font-size:14px">📝 Kịch bản chờ dùng (${VIDEO_DRAFTS.length})</h3>
+    <div style="display:flex;gap:10px;overflow-x:auto;padding-bottom:6px">${VIDEO_DRAFTS.map((d,i)=>`
+      <div style="flex:0 0 220px;background:#fff;border-radius:12px;padding:12px">
+        <div style="font-weight:700;font-size:13px;margin-bottom:4px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${(d.topic||"Kịch bản").replace(/</g,"&lt;")}</div>
+        <div class="muted" style="font-size:11px;margin-bottom:8px">${makerName(d.user)} · ${d.time?new Date(d.time*1000).toLocaleString("vi"):""}</div>
+        ${(SESSION.role!=="admin"&&d.user===SESSION.username)?`<button class="btn chip" style="width:100%" onclick="useDraft(${i})">✍️ Dùng</button>`:""}
+      </div>`).join("")}</div>`;
+}
+function useDraft(i){
+  const d=VIDEO_DRAFTS[i]; if(!d)return;
+  currentScenes=(d.scenes||[]).map(s=>({...s,caption:(s.caption!=null?s.caption:(s.vo||"")),files:[]})); scenePage=0;
+  LR_ENGINE=d.overlay_engine||"pil"; LR_STYLE=d.style||""; LR_BADGE=d.badge_mode||"none"; LR_TRANSITION=d.transition||"fade";
+  closeLibrary(); openEditor();
+  fetch(API+"/script-drafts-use",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({id:d.id})}).catch(()=>{});
+  toast("Đã nạp kịch bản: "+(d.topic||""));
+}
 function openViewer(url){const v=document.getElementById("viewerVid");v.src=API+url;document.getElementById("viewer").classList.remove("hidden");v.play().catch(()=>{});}
 function closeViewer(){const v=document.getElementById("viewerVid");v.pause();v.removeAttribute("src");document.getElementById("viewer").classList.add("hidden");}
 let LIB_FILTER="";
@@ -930,7 +958,7 @@ function renderImageGen(){
   if(typeof resetEditor==="function") resetEditor();
   document.getElementById("appbody").innerHTML=`
     <div class="card" style="margin-bottom:16px;display:flex;justify-content:space-between;align-items:center;gap:12px">
-      <div><h2 class="sec" style="margin:0">🎨 Tạo ảnh</h2>
+      <div><h2 class="sec" style="margin:0">🎨 Ảnh</h2>
         <div class="muted">Chọn mẫu album → tạo. Ảnh tạo ra tự lưu ở "Album đã lưu" bên dưới (mở lại / tải / xoá / tạo lại).</div></div>
       <button class="btn-ghost" onclick="renderHome()">← Trang chủ</button>
     </div>
@@ -994,7 +1022,7 @@ function renderAlbumView(a){
         <button class="btn" onclick="genAlbum('${a.album}')">↻ Tạo lại</button>
         <button class="btn-ghost" onclick="downloadAlbum()">⤓ Tải cả bộ</button>
         ${a.dir?`<button class="btn-ghost" onclick="deleteAlbum('${a.dir}')">🗑 Xoá</button>`:""}
-        <button class="btn-ghost" onclick="renderImageGen()">← Tạo ảnh</button>
+        <button class="btn-ghost" onclick="renderImageGen()">← Ảnh</button>
       </div>
     </div>
     <div class="card"><div class="alb-strip">${imgs.map(im=>`

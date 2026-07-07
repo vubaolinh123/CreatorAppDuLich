@@ -217,10 +217,15 @@ def build_caption_png(text: str, out_path: str, max_w: int = 980):
 # FFmpeg helpers
 # ─────────────────────────────────────────────────────────────────────────────
 
-def _run(cmd, cwd=None):
-    r = subprocess.run(cmd, capture_output=True, text=True, cwd=cwd)
+def _run(cmd, cwd=None, timeout=240):
+    try:
+        r = subprocess.run(cmd, capture_output=True, text=True, cwd=cwd, timeout=timeout)
+    except subprocess.TimeoutExpired as e:
+        print(f"[list_review] ffmpeg TIMEOUT ({timeout}s): {' '.join(str(c) for c in cmd)}", file=sys.stderr)
+        raise RuntimeError(f"ffmpeg quá thời gian ({timeout}s) — có thể do source lỗi/quá nặng.") from e
     if r.returncode != 0:
-        raise RuntimeError(f"ffmpeg lỗi: {' '.join(str(c) for c in cmd[:6])}...\n{r.stderr[-800:]}")
+        print(f"[list_review] ffmpeg lỗi (rc={r.returncode}): {' '.join(str(c) for c in cmd)}\n{r.stderr}", file=sys.stderr)
+        raise RuntimeError(f"ffmpeg lỗi: {' '.join(str(c) for c in cmd[:6])}...\n{r.stderr[-1500:]}")
     return r
 
 
@@ -338,19 +343,21 @@ def _render_segment(kind: str, seg: dict, idx: int, work: Path,
 
     # 5) Gộp base + overlay (HTML: fade-in) + caption động + audio → segment hoàn chỉnh
     out = work / f"seg_{idx:03d}.mp4"
+    # PNG tĩnh PHẢI '-loop 1 -framerate FPS' để thành stream liên tục suốt thời lượng segment —
+    # thiếu cờ này, ffmpeg chỉ decode 1 frame rồi EOF; một số bản ffmpeg/điều kiện máy sẽ lỗi
+    # filter graph (đặc biệt khi overlay có enable='between(...)' ở t>0) thay vì "giữ khung hình cuối".
     if html_png:
-        # PNG cần -loop 1 để thành stream liên tục, fade alpha mới có frame qua thời gian
         inputs = ["-i", base.name, "-loop", "1", "-framerate", str(FPS), "-i", overlay.name]
         fc = "[1:v]format=rgba,fade=t=in:st=0:d=0.30:alpha=1[ov];[0:v][ov]overlay=0:0:shortest=1[v0]"
     else:
-        inputs = ["-i", base.name, "-i", overlay.name]
-        fc = "[0:v][1:v]overlay=0:0[v0]"
+        inputs = ["-i", base.name, "-loop", "1", "-framerate", str(FPS), "-i", overlay.name]
+        fc = "[0:v][1:v]overlay=0:0:shortest=1[v0]"
     for nm, _, _ in cap_pngs:
-        inputs += ["-i", nm]
+        inputs += ["-loop", "1", "-framerate", str(FPS), "-i", nm]
     last = "v0"
     for k, (_, st, en) in enumerate(cap_pngs):
         nxt = f"v{k+1}"
-        fc += f";[{last}][{k+2}:v]overlay=0:0:enable='between(t,{st:.2f},{en:.2f})'[{nxt}]"
+        fc += f";[{last}][{k+2}:v]overlay=0:0:shortest=1:enable='between(t,{st:.2f},{en:.2f})'[{nxt}]"
         last = nxt
     audio_idx = 2 + len(cap_pngs)
     _run(["ffmpeg", "-y", *inputs, "-i", vo_path,

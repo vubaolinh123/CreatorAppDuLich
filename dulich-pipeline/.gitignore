@@ -25,6 +25,8 @@ data/news_source/
 data/transcripts/
 data/check/
 data/mock_db.json
+data/script_drafts.json
+data/album_seed_history.json
 # Thư viện ảnh dùng chung (quán + ảnh chung) — COMMIT để team xài chung.
 # data/thumbs + data/album giờ được track. (output/albums sinh ra vẫn ignore qua output/)
 

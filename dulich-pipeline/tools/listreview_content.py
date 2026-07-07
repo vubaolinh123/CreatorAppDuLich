@@ -59,9 +59,17 @@ def _ai_script(venues: list[dict], employee: str = "nv1") -> dict | None:
     from tools.script_prompts import effective_persona, get_script_prompt
     persona = effective_persona(employee)
     ex = get_script_prompt(employee)["examples"]
+    try:
+        from tools.script_drafts import recent_texts
+        avoid = recent_texts(employee, 10)
+    except Exception:
+        avoid = []
+    avoid_block = ("\n\n10 KỊCH BẢN GẦN NHẤT — TUYỆT ĐỐI KHÔNG viết giống câu chữ/ý những bài này:\n"
+                   + "\n".join(f"- {a}" for a in avoid)) if avoid else ""
     system = (persona + _FORMAT_NV
               + " QUAN TRỌNG: mỗi lần viết phải SÁNG TẠO, đổi cách mở đầu/góc nhìn/câu chữ, "
                 "KHÔNG lặp lại mẫu câu của các lần trước."
+              + avoid_block
               + (f"\n\nVÍ DỤ THAM KHẢO (học giọng, đừng chép):\n{ex}" if ex else ""))
     import random as _rnd
     variation = _rnd.randint(1000, 9999)
@@ -181,6 +189,13 @@ def build_prefill(employee: str, regen: bool = False) -> dict:
         cache.write_text(json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8")
     except Exception as e:
         print(f"[listreview] cache lỗi: {e}")
+    # Lưu lại thành draft trong tab Video (không xóa) — dùng lại + làm lịch sử chống lặp.
+    try:
+        from tools.script_drafts import add_draft
+        add_draft(employee, result["scenes"], result["hook_style"], badge_mode,
+                  transition, "pil", "", by)
+    except Exception as e:
+        print(f"[listreview] lưu draft lỗi: {e}")
     return result
 
 

@@ -74,6 +74,94 @@ def _albums_for(user: str) -> list:
         return items
     handle = (u.get("album") or "").lower()
     return [it for it in items if handle and it["id"].startswith(handle)]
+
+
+_ALBUM_SEED_FILE = Path(__file__).parent / "data" / "album_seed_history.json"
+_ALBUM_SEED_LOCK = threading.Lock()
+
+
+def _recent_seeds(album: str, n: int = 10) -> list:
+    try:
+        d = json.loads(_ALBUM_SEED_FILE.read_text(encoding="utf-8"))
+    except Exception:
+        d = {}
+    return (d.get(album) or [])[-n:]
+
+
+def _remember_seed(album: str, seed: int) -> None:
+    with _ALBUM_SEED_LOCK:
+        try:
+            d = json.loads(_ALBUM_SEED_FILE.read_text(encoding="utf-8"))
+        except Exception:
+            d = {}
+        lst = d.get(album) or []
+        lst.append(seed)
+        d[album] = lst[-20:]
+        _ALBUM_SEED_FILE.parent.mkdir(parents=True, exist_ok=True)
+        _ALBUM_SEED_FILE.write_text(json.dumps(d, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+def _generate_album(album: str, user: str = "", auto: bool = False) -> dict:
+    """Chạy script CLI dựng 1 album ảnh (tránh lặp seed 10 lần gần nhất), lưu record. Dùng chung
+    cho endpoint /assemble-image và bộ tự tạo ảnh hàng ngày."""
+    cfg = IMAGE_ALBUMS.get(album)
+    if not cfg:
+        return {"success": False, "error": f"Album không hợp lệ: {album}"}
+    base = Path(__file__).parent
+    script_abs = base / cfg["script"]
+    if not script_abs.exists():
+        return {"success": False, "error": f"Thiếu script: {cfg['script']}"}
+
+    out_dir = base / "output" / "albums" / f"app_{album}_{uuid.uuid4().hex[:8]}"
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    cmd = [sys.executable, str(script_abs), "--out", str(out_dir)]
+    seed = None
+    if cfg.get("seed"):
+        import random
+        recent = set(_recent_seeds(album))
+        for _ in range(20):
+            seed = random.randint(1, 999999)
+            if seed not in recent:
+                break
+        cmd += ["--seed", str(seed)]
+
+    env = os.environ.copy()
+    env["PYTHONUTF8"] = "1"
+    env["PYTHONIOENCODING"] = "utf-8"
+
+    try:
+        with _HEAVY_LOCK:
+            proc = subprocess.run(cmd, cwd=str(base), env=env,
+                                  capture_output=True, text=True,
+                                  encoding="utf-8", errors="replace", timeout=300)
+    except subprocess.TimeoutExpired:
+        return {"success": False, "error": "Quá thời gian (300s)."}
+
+    if proc.returncode != 0:
+        tail = (proc.stderr or proc.stdout or "").strip()[-1200:]
+        print(f"[Server] ❌ tạo ảnh {album} lỗi (rc={proc.returncode}):\n{tail}", file=sys.stderr)
+        return {"success": False, "error": tail or "Script lỗi"}
+
+    files = sorted(out_dir.glob("*.png"))
+    if not files:
+        return {"success": False, "error": "Script chạy xong nhưng không có ảnh PNG."}
+
+    if seed is not None:
+        _remember_seed(album, seed)
+
+    images = [{"name": f.name, "url": _to_output_url(str(f))} for f in files]
+    dir_rel = str(out_dir.relative_to(base)).replace("\\", "/")
+    rec = {"user": user, "album": album, "label": cfg.get("label", album),
+           "dir": dir_rel, "images": images, "auto": auto}
+    try:
+        import time as _t
+        _append_album({**rec, "time": _t.time()})
+    except Exception as _e:
+        print(f"[Server] album log lỗi: {_e}", file=sys.stderr)
+    return {"success": True, **rec}
+
+
 # Danh sách key cho trang Cài đặt. Tất cả TÙY CHỌN — thiếu vẫn chạy free.
 SETTINGS_KEYS = [
     {"key": "OPENROUTER_KEY",    "label": "OpenRouter",      "group": "AI viết kịch bản",
@@ -586,6 +674,8 @@ class AssembleHandler(BaseHTTPRequestHandler):
             self.handle_album_delete()
         elif self.path == "/product-status":
             self.handle_product_status()
+        elif self.path == "/script-drafts-use":
+            self.handle_script_draft_use()
         elif self.path == "/news-scrape":
             self.handle_news_scrape()
         elif self.path == "/venues-scrape-all":
@@ -642,6 +732,8 @@ class AssembleHandler(BaseHTTPRequestHandler):
             self.handle_album_library()
         elif self.path.startswith("/kpi"):
             self.handle_kpi()
+        elif self.path.startswith("/script-drafts"):
+            self.handle_script_drafts_get()
         elif self.path.startswith("/news-pool"):
             self.handle_news_pool()
         elif self.path.startswith("/output/"):
@@ -804,6 +896,17 @@ class AssembleHandler(BaseHTTPRequestHandler):
                     })
             except Exception as ex:
                 print(f"[news] yt search lỗi: {ex}", file=sys.stderr)
+            try:
+                from tools.script_drafts import add_draft
+                scenes = [
+                    {"scene_id": "scene_1", "kind": "intro", "label": "HOOK",
+                     "title": script.get("title", ""), "caption": script.get("hook", "")},
+                    {"scene_id": "scene_2", "kind": "spot", "label": "NỘI DUNG", "caption": script.get("body", "")},
+                    {"scene_id": "scene_3", "kind": "outro", "label": "CTA", "caption": script.get("cta", "")},
+                ]
+                add_draft("tintuc", scenes, "hook_news", "none", "fade", "pil", "", "ai")
+            except Exception as _e:
+                print(f"[news] lưu draft lỗi: {_e}", file=sys.stderr)
             self._json_response({"success": True, "keyword": keyword, "script": script, "sources": sources})
         except Exception as e:
             import traceback
@@ -1344,56 +1447,8 @@ class AssembleHandler(BaseHTTPRequestHandler):
             body = self._read_json_body()
             album = (body.get("album") or "").strip()
             user = (body.get("user") or "").strip()
-            cfg = IMAGE_ALBUMS.get(album)
-            if not cfg:
-                self._json_response({"success": False, "error": f"Album không hợp lệ: {album}"}, 400)
-                return
-
-            base = Path(__file__).parent
-            script_abs = base / cfg["script"]
-            if not script_abs.exists():
-                self._json_response({"success": False, "error": f"Thiếu script: {cfg['script']}"}, 500)
-                return
-
-            out_dir = base / "output" / "albums" / f"app_{album}_{uuid.uuid4().hex[:8]}"
-            out_dir.mkdir(parents=True, exist_ok=True)
-
-            cmd = [sys.executable, str(script_abs), "--out", str(out_dir)]
-            if cfg.get("seed"):
-                import random
-                cmd += ["--seed", str(random.randint(1, 999999))]
-
-            env = os.environ.copy()
-            env["PYTHONUTF8"] = "1"
-            env["PYTHONIOENCODING"] = "utf-8"
-
-            with _HEAVY_LOCK:
-                proc = subprocess.run(cmd, cwd=str(base), env=env,
-                                      capture_output=True, text=True,
-                                      encoding="utf-8", errors="replace", timeout=300)
-
-            if proc.returncode != 0:
-                tail = (proc.stderr or proc.stdout or "").strip()[-1200:]
-                print(f"[Server] ❌ tạo ảnh {album} lỗi (rc={proc.returncode}):\n{tail}", file=sys.stderr)
-                self._json_response({"success": False, "error": tail or "Script lỗi"}, 500)
-                return
-
-            files = sorted(out_dir.glob("*.png"))
-            if not files:
-                self._json_response({"success": False,
-                                     "error": "Script chạy xong nhưng không có ảnh PNG."}, 500)
-                return
-
-            images = [{"name": f.name, "url": _to_output_url(str(f))} for f in files]
-            dir_rel = str(out_dir.relative_to(base)).replace("\\", "/")
-            rec = {"user": user, "album": album, "label": cfg.get("label", album),
-                   "dir": dir_rel, "images": images}
-            try:
-                import time as _t
-                _append_album({**rec, "time": _t.time()})
-            except Exception as _e:
-                print(f"[Server] album log lỗi: {_e}", file=sys.stderr)
-            self._json_response({"success": True, **rec})
+            res = _generate_album(album, user)
+            self._json_response(res, 200 if res.get("success") else (400 if "hợp lệ" in res.get("error", "") else 500))
         except subprocess.TimeoutExpired:
             self._json_response({"success": False, "error": "Quá thời gian (300s)."}, 500)
         except Exception as e:
@@ -1475,6 +1530,34 @@ class AssembleHandler(BaseHTTPRequestHandler):
                                  "default_keyword": DEFAULT_KEYWORD, "default_hashtags": DEFAULT_HASHTAGS})
         except Exception as e:
             self._json_response({"success": False, "error": str(e), "items": []}, 500)
+
+    def handle_script_drafts_get(self):
+        """GET /script-drafts?user=&role=&only_unused=1 → kịch bản đã tạo, lưu lại (không xoá)."""
+        try:
+            from urllib.parse import urlparse, parse_qs
+            q = parse_qs(urlparse(self.path).query)
+            user = (q.get("user", [""])[0] or "").strip()
+            role = (q.get("role", [""])[0] or "").strip()
+            only_unused = (q.get("only_unused", ["0"])[0] == "1")
+            from tools.script_drafts import list_drafts
+            items = list_drafts(None if role == "admin" else user, only_unused=only_unused)
+            self._json_response({"success": True, "drafts": items})
+        except Exception as e:
+            self._json_response({"success": False, "error": str(e), "drafts": []}, 500)
+
+    def handle_script_draft_use(self):
+        """POST /script-drafts-use {id} → đánh dấu đã dùng, trả về scenes để nạp vào editor."""
+        try:
+            b = self._read_json_body()
+            did = (b.get("id") or "").strip()
+            from tools.script_drafts import mark_used
+            d = mark_used(did)
+            if not d:
+                self._json_response({"success": False, "error": "Không tìm thấy kịch bản."}, 404)
+                return
+            self._json_response({"success": True, "draft": d})
+        except Exception as e:
+            self._json_response({"success": False, "error": str(e)}, 500)
 
     def handle_kpi(self):
         """GET /kpi → KPI hôm nay mỗi nhân viên (video + ảnh). Staff mục tiêu 5+5; tin tức 10 video."""
@@ -1965,6 +2048,7 @@ Vui lòng chạy server bằng Python của môi trường ảo (.venv):
 
     _start_news_scheduler()
     _start_telegram_poller()
+    _start_daily_scheduler()
     server = ReusableHTTPServer(("127.0.0.1", PORT), AssembleHandler)
     print(f"[Server] Listening at http://localhost:{PORT}", file=sys.stderr)
     print(f"[Server] Press Ctrl+C to stop.", file=sys.stderr)
@@ -2008,6 +2092,89 @@ def _news_scheduler():
 def _start_news_scheduler():
     threading.Thread(target=_news_scheduler, daemon=True).start()
     print(f"[Server] News scheduler bật (khung {NEWS_SLOTS} giờ).", file=sys.stderr)
+
+
+# ── Tự động mỗi ngày: 5 album ảnh (1/nv) + kịch bản chờ mỗi nv+tin tức ─────────
+DAILY_SLOT_HOUR = 6
+
+
+def _daily_auto_job():
+    """Tạo trước 1 album ảnh/nv (không lặp seed gần đây) + 1 kịch bản chờ/nv+tin tức,
+    lưu vào 'Ảnh'/'Video' để người dùng vào chỉ việc thả clip. Báo admin qua Telegram."""
+    from tools.script_drafts import add_draft
+    users = _load_users()
+    made_albums, made_scripts = [], []
+
+    for uid, u in users.items():
+        if u.get("role") not in ("staff", "news"):
+            continue
+        # 1) album ảnh (staff có handle album)
+        albs = _albums_for(uid)
+        if albs:
+            import random
+            pick = random.choice(albs)
+            res = _generate_album(pick["id"], uid, auto=True)
+            if res.get("success"):
+                made_albums.append(f"{u.get('name', uid)} · {pick['label']}")
+            else:
+                print(f"[daily] album lỗi {uid}: {res.get('error')}", file=sys.stderr)
+        # 2) kịch bản chờ
+        try:
+            if u.get("role") == "staff":
+                from tools.listreview_content import build_prefill
+                pf = build_prefill(uid, regen=True)
+                if pf.get("scenes"):
+                    add_draft(uid, pf["scenes"], pf.get("hook_style", "hook_red"),
+                              pf.get("badge_mode", "none"), pf.get("transition", "fade"),
+                              pf.get("overlay_engine", "pil"), pf.get("style", ""),
+                              pf.get("generated_by", "auto"))
+                    made_scripts.append(u.get("name", uid))
+            else:  # news
+                from tools.script_ai import generate_script_ai
+                sc = generate_script_ai("tin tức / review Đà Lạt", employee=uid)
+                if sc:
+                    scenes = [
+                        {"scene_id": "scene_1", "kind": "intro", "label": "HOOK",
+                         "title": sc.get("title", ""), "caption": sc.get("hook", "")},
+                        {"scene_id": "scene_2", "kind": "spot", "label": "NỘI DUNG",
+                         "caption": sc.get("body", "")},
+                        {"scene_id": "scene_3", "kind": "outro", "label": "CTA",
+                         "caption": sc.get("cta", "")},
+                    ]
+                    add_draft(uid, scenes, "hook_news", "none", "fade", "pil", "", "auto")
+                    made_scripts.append(u.get("name", uid))
+        except Exception as e:
+            print(f"[daily] kịch bản lỗi {uid}: {e}", file=sys.stderr)
+
+    try:
+        from tools import publisher
+        lines = ["🗓 <b>Tự động hôm nay đã tạo:</b>"]
+        lines.append("🖼 Album: " + (", ".join(made_albums) if made_albums else "không có"))
+        lines.append("📝 Kịch bản chờ: " + (", ".join(made_scripts) if made_scripts else "không có"))
+        publisher.send_telegram("\n".join(lines))
+    except Exception as e:
+        print(f"[daily] telegram báo lỗi: {e}", file=sys.stderr)
+
+
+def _daily_scheduler():
+    import time as _t
+    last = ""
+    while True:
+        try:
+            lt = _t.localtime()
+            slot = f"{lt.tm_year}-{lt.tm_mon}-{lt.tm_mday}"
+            if lt.tm_hour == DAILY_SLOT_HOUR and lt.tm_min < 3 and slot != last:
+                last = slot
+                print("[daily] chạy tự động tạo album + kịch bản...", file=sys.stderr)
+                _daily_auto_job()
+        except Exception as e:
+            print(f"[daily] scheduler lỗi: {e}", file=sys.stderr)
+        _t.sleep(60)
+
+
+def _start_daily_scheduler():
+    threading.Thread(target=_daily_scheduler, daemon=True).start()
+    print(f"[Server] Daily auto scheduler bật ({DAILY_SLOT_HOUR}h).", file=sys.stderr)
 
 
 if __name__ == "__main__":

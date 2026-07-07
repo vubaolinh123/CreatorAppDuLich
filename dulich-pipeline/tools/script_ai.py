@@ -44,9 +44,17 @@ def generate_script_ai(topic: str, employee: str = "tintuc") -> dict | None:
     from tools.script_prompts import effective_persona, get_script_prompt
     persona = effective_persona(employee)
     examples = get_script_prompt(employee)["examples"] or _load_examples()
+    try:
+        from tools.script_drafts import recent_texts
+        avoid = recent_texts(employee, 10)
+    except Exception:
+        avoid = []
+    avoid_block = ("\n\n10 KỊCH BẢN GẦN NHẤT — TUYỆT ĐỐI KHÔNG viết giống câu chữ/ý những bài này:\n"
+                   + "\n".join(f"- {a}" for a in avoid)) if avoid else ""
     system = (
         persona +
         "\n\nMẫu tham khảo (học giọng, đừng chép):\n" + (examples or "(không có mẫu)") +
+        avoid_block +
         "\n\nViết kịch bản MỚI dài ~18 giây cho chủ đề người dùng đưa. Tổng lời đọc khoảng 60-70 từ (đủ ~18s khi đọc). "
         "Trả về DUY NHẤT một JSON: {\"title\":\"...\",\"hook\":\"...\",\"body\":\"...\",\"cta\":\"...\"}. "
         "title = cụm RẤT NGẮN (2-4 từ, thường là địa danh) để in trong khung hook. "
