@@ -159,6 +159,14 @@ def _generate_album(album: str, user: str = "", auto: bool = False) -> dict:
         _append_album({**rec, "time": _t.time()})
     except Exception as _e:
         print(f"[Server] album log lỗi: {_e}", file=sys.stderr)
+    # Gửi bộ ảnh vào Telegram group để duyệt (chạy nền, không chặn request)
+    try:
+        _paths = [str(f) for f in files]
+        threading.Thread(target=_notify_album,
+                         args=(user, cfg.get("label", album), dir_rel, _paths),
+                         daemon=True).start()
+    except Exception as _e:
+        print(f"[Server] album notify lỗi: {_e}", file=sys.stderr)
     return {"success": True, **rec}
 
 
@@ -375,17 +383,19 @@ def _do_publish(video_url: str, caption: str, user: str) -> dict:
 
 
 def _notify_publish(user: str, topic: str, video_url: str) -> None:
-    """Gửi Telegram group nút Duyệt/Hủy cho video của nhân viên publish."""
-    if not _is_publish_user(user):
-        return
+    """Gửi FILE video vào Telegram group + nút Duyệt/Hủy (mọi nhân viên; đăng TikTok nếu là nv publish)."""
     try:
         from tools import publisher
         import uuid as _u
         pid = _u.uuid4().hex[:10]
         with _TG_LOCK:
-            _TG_PENDING[pid] = {"video_url": video_url, "caption": _caption_for(topic), "user": user}
-        txt = f"🆕 <b>{(topic or 'Video mới')}</b>\nNhân viên: {user}\nDuyệt để đăng TikTok."
-        r = publisher.send_telegram(txt, buttons=[[
+            _TG_PENDING[pid] = {"kind": "video", "video_url": video_url,
+                                "caption": _caption_for(topic), "user": user}
+        name = (_load_users().get(user) or {}).get("name", user)
+        txt = (f"🆕 <b>{(topic or 'Video mới')}</b>\nNhân viên: {name}"
+               + ("\nDuyệt để đăng TikTok." if _is_publish_user(user) else "\nDuyệt để đánh dấu đã đăng."))
+        vpath = str(Path(__file__).parent / video_url.lstrip("/")) if video_url else ""
+        r = publisher.send_telegram_video(vpath, txt, buttons=[[
             {"text": "✅ Duyệt & đăng", "callback_data": f"post:{pid}"},
             {"text": "✕ Hủy", "callback_data": f"cancel:{pid}"}]])
         with _TG_LOCK:
@@ -393,6 +403,26 @@ def _notify_publish(user: str, topic: str, video_url: str) -> None:
                 _TG_PENDING[pid]["message_id"] = r.get("message_id")
     except Exception as e:
         print(f"[pub] notify lỗi: {e}", file=sys.stderr)
+
+
+def _notify_album(user: str, label: str, dir_rel: str, image_paths: list) -> None:
+    """Gửi bộ ảnh album vào Telegram group + nút Duyệt/Hủy."""
+    try:
+        from tools import publisher
+        import uuid as _u
+        pid = _u.uuid4().hex[:10]
+        with _TG_LOCK:
+            _TG_PENDING[pid] = {"kind": "album", "dir": dir_rel, "user": user, "caption": label}
+        name = (_load_users().get(user) or {}).get("name", user)
+        txt = f"🖼 <b>{label}</b>\nNhân viên: {name}\nDuyệt bộ ảnh này?"
+        r = publisher.send_telegram_album(image_paths, txt, buttons=[[
+            {"text": "✅ Duyệt", "callback_data": f"post:{pid}"},
+            {"text": "✕ Hủy", "callback_data": f"cancel:{pid}"}]])
+        with _TG_LOCK:
+            if pid in _TG_PENDING:
+                _TG_PENDING[pid]["message_id"] = r.get("message_id")
+    except Exception as e:
+        print(f"[pub] notify album lỗi: {e}", file=sys.stderr)
 
 
 def _telegram_poller():
@@ -418,17 +448,30 @@ def _telegram_poller():
                 if not pend:
                     publisher.answer_callback(cbid, "Đã xử lý / hết hạn")
                     continue
+                kind = pend.get("kind", "video")
                 if act == "post":
-                    res = _do_publish(pend["video_url"], pend["caption"], pend["user"])
-                    ok = res.get("success")
-                    publisher.answer_callback(cbid, "Đã đăng TikTok" if ok else "Đăng lỗi")
-                    publisher.edit_telegram(pend.get("message_id"),
-                        (f"✅ Đã đăng TikTok — NV {pend['user']}" if ok
-                         else f"⚠ Đăng lỗi: {res.get('error','')} — NV {pend['user']}"))
+                    if kind == "album":
+                        _set_album_status(pend["dir"], "posted")
+                        publisher.answer_callback(cbid, "Đã duyệt album")
+                        publisher.send_telegram(f"✅ Đã duyệt album <b>{pend.get('caption','')}</b> — NV {pend['user']}")
+                    elif _is_publish_user(pend["user"]):
+                        res = _do_publish(pend["video_url"], pend["caption"], pend["user"])
+                        ok = res.get("success")
+                        publisher.answer_callback(cbid, "Đã đăng TikTok" if ok else "Đăng lỗi")
+                        publisher.send_telegram(
+                            (f"✅ Đã đăng TikTok — NV {pend['user']}" if ok
+                             else f"⚠ Đăng lỗi: {res.get('error','')} — NV {pend['user']}"))
+                    else:
+                        _set_product_status(pend["video_url"], "posted")
+                        publisher.answer_callback(cbid, "Đã duyệt")
+                        publisher.send_telegram(f"✅ Đã duyệt video — NV {pend['user']}")
                 elif act == "cancel":
-                    _set_product_status(pend["video_url"], "cancelled")
+                    if kind == "album":
+                        _set_album_status(pend["dir"], "cancelled")
+                    else:
+                        _set_product_status(pend["video_url"], "cancelled")
                     publisher.answer_callback(cbid, "Đã hủy")
-                    publisher.edit_telegram(pend.get("message_id"), f"✕ Đã hủy — NV {pend['user']}")
+                    publisher.send_telegram(f"✕ Đã hủy — NV {pend['user']}")
                 with _TG_LOCK:
                     _TG_PENDING.pop(pid, None)
         except Exception as e:

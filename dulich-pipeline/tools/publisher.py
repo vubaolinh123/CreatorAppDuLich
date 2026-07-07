@@ -94,6 +94,56 @@ def send_telegram(text: str, buttons: list | None = None) -> dict:
         return {"success": False, "error": str(e)}
 
 
+def send_telegram_video(path: str, caption: str, buttons: list | None = None) -> dict:
+    """Gửi FILE video vào group (Bot API giới hạn ~50MB; quá cỡ → fallback gửi text)."""
+    tok, gid = _tg_token(), _group_id()
+    if not (tok and gid):
+        return {"success": False, "error": "Thiếu telegram_token/GROUP_ID"}
+    try:
+        import os as _os, json as _json, requests
+        if not path or not _os.path.exists(path) or _os.path.getsize(path) > 48 * 1024 * 1024:
+            return send_telegram(caption + "\n(video quá 50MB — xem trong app)", buttons)
+        data = {"chat_id": gid, "caption": caption[:1000], "parse_mode": "HTML"}
+        if buttons:
+            data["reply_markup"] = _json.dumps({"inline_keyboard": buttons})
+        with open(path, "rb") as f:
+            r = requests.post(f"https://api.telegram.org/bot{tok}/sendVideo",
+                              data=data, files={"video": (_os.path.basename(path), f, "video/mp4")},
+                              timeout=180)
+        j = r.json()
+        return {"success": bool(j.get("ok")), "message_id": (j.get("result") or {}).get("message_id"),
+                "error": "" if j.get("ok") else str(j)[:200]}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+def send_telegram_album(paths: list, caption: str, buttons: list | None = None) -> dict:
+    """Gửi nhóm ảnh (tối đa 10) + 1 tin nhắn duyệt kèm nút (media group không gắn nút được)."""
+    tok, gid = _tg_token(), _group_id()
+    if not (tok and gid):
+        return {"success": False, "error": "Thiếu telegram_token/GROUP_ID"}
+    try:
+        import os as _os, json as _json, requests
+        paths = [p for p in (paths or []) if p and _os.path.exists(p)][:10]
+        if paths:
+            media, files = [], {}
+            for i, p in enumerate(paths):
+                key = f"ph{i}"
+                media.append({"type": "photo", "media": f"attach://{key}",
+                              **({"caption": caption[:1000], "parse_mode": "HTML"} if i == 0 else {})})
+                files[key] = (_os.path.basename(p), open(p, "rb"), "image/png")
+            try:
+                requests.post(f"https://api.telegram.org/bot{tok}/sendMediaGroup",
+                              data={"chat_id": gid, "media": _json.dumps(media)},
+                              files=files, timeout=180)
+            finally:
+                for _, f, _m in files.values():
+                    f.close()
+        return send_telegram("👆 " + caption, buttons)   # tin nhắn mang nút Duyệt/Hủy
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
 def edit_telegram(message_id, text: str) -> None:
     tok, gid = _tg_token(), _group_id()
     if not (tok and gid and message_id):
