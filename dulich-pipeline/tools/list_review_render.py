@@ -235,23 +235,90 @@ def _word_timings(vo_path: str, vo_text: str) -> list[dict] | None:
     return None
 
 
+_END_PUNCT = (".", "!", "?", "…", ":", ";")
+_MID_PUNCT = (",",)
+
+
+def _group_words(words: list[dict], dur: float,
+                 min_words: int = 3, max_words: int = 5,
+                 pause: float = 0.30, glue: float = 0.08) -> list[tuple[str, float, float]]:
+    """Nhóm từ thành cue 3-6 chữ, cắt HỢP LÝ: ưu tiên sau dấu chấm/phẩy (từ đã được
+    gắn dấu câu từ kịch bản gốc), rồi tới khoảng nghỉ của giọng; không xé cụm dính
+    liền (vd 'Đà Lạt'). Cue hiện đúng lúc đọc, không lấn câu sau."""
+    cues, cur = [], []
+    for i, w in enumerate(words):
+        cur.append(w)
+        nxt = words[i + 1] if i + 1 < len(words) else None
+        gap = (nxt["start"] - w["end"]) if nxt else 999.0
+        tok = (w.get("word") or "").strip()
+        end_p = tok.endswith(_END_PUNCT)
+        mid_p = tok.endswith(_MID_PUNCT)
+        cut = (
+            nxt is None
+            or end_p                                            # hết câu → cắt
+            or (mid_p and len(cur) >= min_words)                # sau dấu phẩy (đủ 3 chữ)
+            or (gap >= pause and len(cur) >= min_words)         # nghỉ giọng rõ
+            or (len(cur) >= max_words and gap >= glue)          # đủ dài + không dính cụm
+        )
+        over = len(cur) >= max_words + 2
+        if cut or over:
+            carry = []
+            if over and not cut and nxt is not None:
+                # buộc cắt nhưng tránh xé cụm: lùi về khoảng hở gần nhất trong cue
+                for k in range(len(cur) - 1, 0, -1):
+                    if (cur[k]["start"] - cur[k - 1]["end"]) >= glue:
+                        carry = cur[k:]; cur = cur[:k]
+                        break
+            text = " ".join(x["word"].strip() for x in cur if x["word"].strip())
+            st = float(cur[0]["start"])
+            en = min(float(cur[-1]["end"]) + 0.25, dur)   # đệm nhẹ
+            nxt_start = float(carry[0]["start"]) if carry else (float(nxt["start"]) if nxt else None)
+            if nxt_start is not None:
+                en = min(en, nxt_start)
+            if text:
+                cues.append((text, st, max(en, st + 0.35)))
+            cur = carry
+    return cues
+
+
+def _valid_timings(words: list[dict], vo_text: str, dur: float) -> bool:
+    """Chặn Whisper 'bịa' (hallucination): timing phải phủ phần lớn audio và
+    số từ phải gần với kịch bản."""
+    if not words:
+        return False
+    cover = (float(words[-1]["end"]) - float(words[0]["start"])) / max(dur, 0.1)
+    if cover < 0.5:
+        return False
+    if vo_text:
+        expect = max(1, len(vo_text.split()))
+        if len(words) < 0.5 * expect:
+            return False
+    return True
+
+
 def _timed_cues(vo_path: str, vo_text: str, dur: float) -> list[tuple[str, float, float]]:
-    """Cue phụ đề (text, start, end). Ưu tiên timing thật (words.json/Whisper) qua
-    group_words_into_cues của subtitle_agent; fallback chia đều như cũ."""
+    """Cue phụ đề (text, start, end). Ưu tiên timing thật (words.json/Whisper);
+    fallback chia đều như cũ."""
     words = _word_timings(vo_path, vo_text)
+    if words and not _valid_timings(words, vo_text, dur):
+        # Whisper bịa/thiếu (vd đoạn nhạc) → bỏ cache hỏng, dùng fallback
+        print(f"[list_review] words không khớp audio ({Path(vo_path).name}) → chia đều", file=sys.stderr)
+        try:
+            Path(vo_path).with_suffix(".words.json").unlink(missing_ok=True)
+        except Exception:
+            pass
+        words = None
     if words:
         try:
-            from agents.subtitle_agent import group_words_into_cues
-            cues = group_words_into_cues(words, min_words=3, max_words=8)
-            out = []
-            for c in cues:
-                t = (c.get("text") or "").strip()
-                st = float(c.get("start", 0)); en = min(float(c.get("end", st + 1.0)), dur)
-                if t and en > st:
-                    out.append((t, st, en))
+            if vo_text:
+                # gắn lại dấu câu từ kịch bản gốc để cắt sau dấu phẩy/chấm
+                try:
+                    from agents.subtitle_agent import align_words_with_punctuation
+                    words = align_words_with_punctuation(words, vo_text) or words
+                except Exception:
+                    pass
+            out = _group_words(words, dur)
             if out:
-                # kéo cue cuối phủ tới hết audio (tránh hở đuôi)
-                t, st, _ = out[-1]; out[-1] = (t, st, dur)
                 return out
         except Exception as e:
             print(f"[list_review] cue lỗi ({e}) → chia đều", file=sys.stderr)
