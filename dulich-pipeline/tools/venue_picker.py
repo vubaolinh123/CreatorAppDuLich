@@ -69,4 +69,21 @@ class VenuePicker:
 
     @staticmethod
     def image(venue: dict) -> str:
+        """Ảnh của venue — chọn NGẪU NHIÊN trong bộ ảnh (theo seed của script) để
+        mỗi lần tạo album ảnh nền khác nhau, thay vì luôn lấy ảnh đầu."""
+        import random
+        from pathlib import Path
+        root = Path(__file__).resolve().parent.parent
+        cands = []
+        for i in (venue.get("images") or []):
+            s = str(i).strip()
+            if not s or s.startswith("http"):
+                continue
+            p = Path(s)
+            if not p.is_absolute():
+                p = root / s
+            if p.exists():
+                cands.append(str(p))
+        if cands:
+            return random.choice(cands)
         return resolve_image(venue)

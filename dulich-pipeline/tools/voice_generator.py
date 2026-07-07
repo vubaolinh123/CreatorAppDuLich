@@ -205,41 +205,48 @@ class VoiceGenerator:
             voice_code = VBEE_STANDARD_VOICES.get(vid, VBEE_STANDARD_VOICES["default"])
 
         output_path = OUTPUT_DIR / f"{output_name}.mp3"
-        sp = max(0.25, min(1.9, float(speed)))
-        headers = {
-            "Authorization": f"Bearer {self._vbee_key}",
-            "App-Id": self._vbee_app_id,
-            "Content-Type": "application/json",
-        }
+        sp = max(0.5, min(1.5, float(speed)))
+        api = "https://vbee.vn/api/v1/tts"   # endpoint chính thức (api.vbee.vn cũ trả HTML)
+        headers = {"Authorization": f"Bearer {self._vbee_key}", "Content-Type": "application/json"}
         import time as _time
         try:
-            # 1) Submit async job (this account's package supports async, not sync).
-            r = _requests.post(VBEE_API_URL, headers=headers, timeout=60, json={
-                "text": text, "mode": "async", "webhookUrl": "https://example.com/vbee-cb",
-                "voiceCode": voice_code, "outputFormat": "mp3", "speed": sp,
+            # 1) Submit job (indirect + poll; callback chỉ để đủ tham số)
+            r = _requests.post(api, headers=headers, timeout=60, json={
+                "app_id": self._vbee_app_id,
+                "input_text": text,
+                "voice_code": voice_code,
+                "speed_rate": str(sp),
+                "audio_type": "mp3",
+                "response_type": "indirect",
+                "callback_url": "https://example.com/vbee-cb",
             })
             if r.status_code not in (200, 201):
                 print(f"[Voice] ⚠ Vbee submit {r.status_code}: {r.text[:200]}", file=sys.stderr)
                 return None
-            rid = r.json().get("requestId")
-            if not rid:
-                print(f"[Voice] ⚠ Vbee không trả requestId: {r.text[:200]}", file=sys.stderr)
+            j = r.json()
+            res = j.get("result") or {}
+            rid = res.get("request_id") or j.get("request_id")
+            # gói direct có thể trả audio_link luôn
+            link = res.get("audio_link") or j.get("audio_link")
+            if not rid and not link:
+                print(f"[Voice] ⚠ Vbee không trả request_id: {str(j)[:200]}", file=sys.stderr)
                 return None
 
-            # 2) Poll until COMPLETED (~ up to 90s)
-            link = None
-            for _ in range(45):
-                _time.sleep(2)
-                g = _requests.get(f"{VBEE_API_URL}/requests/{rid}", headers=headers, timeout=30).json()
-                st = g.get("status")
-                if st == "COMPLETED":
-                    link = g.get("audioLink"); break
-                if st == "FAILED":
-                    print(f"[Voice] ⚠ Vbee FAILED: {str(g)[:200]}", file=sys.stderr); return None
+            # 2) Poll tới khi SUCCESS (~90s)
+            if not link:
+                for _ in range(45):
+                    _time.sleep(2)
+                    g = _requests.get(f"{api}/{rid}", headers=headers, timeout=30).json()
+                    gr = g.get("result") or {}
+                    st = (gr.get("status") or "").upper()
+                    if st == "SUCCESS":
+                        link = gr.get("audio_link"); break
+                    if st in ("FAILED", "ERROR"):
+                        print(f"[Voice] ⚠ Vbee FAILED: {str(g)[:200]}", file=sys.stderr); return None
             if not link:
                 print("[Voice] ⚠ Vbee timeout chờ audio.", file=sys.stderr); return None
 
-            # 3) Download the audio
+            # 3) Tải audio
             a = _requests.get(link, timeout=60); a.raise_for_status()
             if len(a.content) < 500:
                 return None
