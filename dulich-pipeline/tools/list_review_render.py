@@ -193,6 +193,75 @@ def _chunk_caption(text: str, words_per_line: int = 7) -> list[str]:
     return [l for l in lines if l]
 
 
+def _word_timings(vo_path: str, vo_text: str) -> list[dict] | None:
+    """Timing từng từ của file VO để phụ đề khớp giọng.
+    1) Edge TTS đã ghi sẵn <vo>.words.json. 2) gtts/vbee → Whisper OpenAI (word timestamps).
+    Không có → None (fallback chia đều)."""
+    import json as _json
+    wp = Path(vo_path).with_suffix(".words.json")
+    if wp.exists():
+        try:
+            words = _json.loads(wp.read_text(encoding="utf-8"))
+            if words:
+                return words
+        except Exception:
+            pass
+    key = os.getenv("OPENAI_API_KEY")
+    if not key or key.startswith("your-"):
+        return None
+    try:
+        import requests
+        with open(vo_path, "rb") as f:
+            r = requests.post(
+                "https://api.openai.com/v1/audio/transcriptions",
+                headers={"Authorization": f"Bearer {key}"},
+                files={"file": (Path(vo_path).name, f, "audio/mpeg")},
+                data={"model": "whisper-1", "language": "vi",
+                      "response_format": "verbose_json",
+                      "timestamp_granularities[]": "word",
+                      # prompt = kịch bản gốc → Whisper bám đúng chữ
+                      "prompt": (vo_text or "")[:800]},
+                timeout=120)
+        if r.status_code != 200:
+            print(f"[list_review] whisper {r.status_code}: {r.text[:200]}", file=sys.stderr)
+            return None
+        words = [{"word": w.get("word", ""), "start": float(w.get("start", 0)), "end": float(w.get("end", 0))}
+                 for w in (r.json().get("words") or [])]
+        if words:
+            wp.write_text(_json.dumps(words, ensure_ascii=False), encoding="utf-8")  # cache
+            return words
+    except Exception as e:
+        print(f"[list_review] whisper lỗi: {e}", file=sys.stderr)
+    return None
+
+
+def _timed_cues(vo_path: str, vo_text: str, dur: float) -> list[tuple[str, float, float]]:
+    """Cue phụ đề (text, start, end). Ưu tiên timing thật (words.json/Whisper) qua
+    group_words_into_cues của subtitle_agent; fallback chia đều như cũ."""
+    words = _word_timings(vo_path, vo_text)
+    if words:
+        try:
+            from agents.subtitle_agent import group_words_into_cues
+            cues = group_words_into_cues(words, min_words=3, max_words=8)
+            out = []
+            for c in cues:
+                t = (c.get("text") or "").strip()
+                st = float(c.get("start", 0)); en = min(float(c.get("end", st + 1.0)), dur)
+                if t and en > st:
+                    out.append((t, st, en))
+            if out:
+                # kéo cue cuối phủ tới hết audio (tránh hở đuôi)
+                t, st, _ = out[-1]; out[-1] = (t, st, dur)
+                return out
+        except Exception as e:
+            print(f"[list_review] cue lỗi ({e}) → chia đều", file=sys.stderr)
+    lines = _chunk_caption(vo_text)
+    if not lines:
+        return []
+    per = dur / len(lines)
+    return [(ln, i * per, (i + 1) * per) for i, ln in enumerate(lines)]
+
+
 def build_caption_png(text: str, out_path: str, max_w: int = 980):
     """1 dòng phụ đề → PNG trong suốt, chữ trắng viền đen, canh giữa đáy (~82% H)."""
     text = unicodedata.normalize("NFC", (text or "").strip())
@@ -330,16 +399,14 @@ def _render_segment(kind: str, seg: dict, idx: int, work: Path,
         # badge_mode 'none' (nv4 montage) hoặc kind không xác định → overlay trong suốt
         Image.new("RGBA", (W, H), (0, 0, 0, 0)).save(str(overlay))
 
-    # 4) Caption đáy theo từng dòng (chỉ engine PIL). Engine HTML: chữ on-screen đã nằm trong overlay.
+    # 4) Caption đáy KHỚP GIỌNG: timing thật từ words.json (Edge) / Whisper OpenAI (gtts/vbee);
+    #    fallback chia đều. Engine HTML: chữ on-screen đã nằm trong overlay.
     cap_pngs = []
     if not html_png:
-        cap_lines = _chunk_caption(vo_text)
-        if cap_lines:
-            per = dur / len(cap_lines)
-            for li, ln in enumerate(cap_lines):
-                p = work / f"cap_{kind}{idx}_{li}.png"
-                build_caption_png(ln, str(p))
-                cap_pngs.append((p.name, li * per, (li + 1) * per))
+        for li, (ln, st, en) in enumerate(_timed_cues(vo_path, vo_text, dur)):
+            p = work / f"cap_{kind}{idx}_{li}.png"
+            build_caption_png(ln, str(p))
+            cap_pngs.append((p.name, st, en))
 
     # 5) Gộp base + overlay (HTML: fade-in) + caption động + audio → segment hoàn chỉnh
     out = work / f"seg_{idx:03d}.mp4"

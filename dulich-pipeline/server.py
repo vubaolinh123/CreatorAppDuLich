@@ -319,6 +319,34 @@ def _set_product_status(key: str, status: str) -> bool:
         return hit
 
 
+def _friendly_error(e) -> str:
+    """Đổi lỗi kỹ thuật thành thông báo ngắn dễ hiểu (kèm 1 dòng chi tiết cuối)."""
+    s = str(e or "")
+    low = s.lower()
+    if "quá thời gian" in low or "timeout" in low:
+        cause = "⏱ Render quá lâu — source có thể quá nặng/hỏng. Thử clip nhẹ hơn."
+    elif "ffmpeg" in low and ("not found" in low or "winerror 2" in low or "no such file" in low):
+        cause = "⚙ Chưa cài FFmpeg (hoặc chưa có trong PATH)."
+    elif "ffmpeg" in low or "moov atom" in low or "invalid data" in low:
+        cause = "🎞 Source không đọc được (file hỏng / định dạng không hỗ trợ). Thử file khác."
+    elif "thiếu vo" in low or "không render được segment" in low:
+        cause = "🔇 Thiếu lời thoại — kiểm tra các scene đã có nội dung chưa."
+    elif "openrouter" in low or "openai" in low and ("401" in low or "key" in low):
+        cause = "🔑 API key AI lỗi/thiếu — vào Cài đặt kiểm tra OpenRouter/OpenAI."
+    elif "vbee" in low:
+        cause = "🎙 Vbee lỗi — kiểm tra VBEE_API_KEY trong Cài đặt (đã tự chuyển giọng free)."
+    elif "apify" in low:
+        cause = "🔑 APIFY lỗi/hết credit — kiểm tra key trong Cài đặt."
+    elif "no space" in low or "disk" in low:
+        cause = "💾 Hết dung lượng ổ đĩa."
+    elif "connection" in low or "getaddrinfo" in low or "ssl" in low:
+        cause = "🌐 Lỗi mạng — kiểm tra Internet rồi thử lại."
+    else:
+        cause = "❌ Server gặp lỗi khi xử lý."
+    detail = s.strip().splitlines()[-1][:160] if s.strip() else ""
+    return f"{cause}" + (f"\nChi tiết: {detail}" if detail else "")
+
+
 # ── Đăng bài (Zernio TikTok) + Telegram duyệt ───────────────────────────────
 _TG_PENDING: dict = {}
 _TG_LOCK = threading.Lock()
@@ -1321,8 +1349,7 @@ class AssembleHandler(BaseHTTPRequestHandler):
             print(f"[Server] ❌ Lỗi assembly: {e}\n{tb}", file=sys.stderr)
             self._json_response({
                 "success": False,
-                "error": str(e),
-                "traceback": tb,
+                "error": _friendly_error(e),
             }, 500)
         finally:
             # Cleanup temp upload dir after delay
@@ -1417,7 +1444,8 @@ class AssembleHandler(BaseHTTPRequestHandler):
                 from tools.list_review_render import render_list_review
                 result = render_list_review(spec)
             if not result.get("success"):
-                self._json_response({"success": False, "error": result.get("error", "render fail")}, 500)
+                self._json_response({"success": False,
+                                     "error": _friendly_error(result.get("error", "render fail"))}, 500)
                 return
             video_url = _to_output_url(result.get("video_path", ""))
             try:
@@ -1435,7 +1463,7 @@ class AssembleHandler(BaseHTTPRequestHandler):
             import traceback
             tb = traceback.format_exc()
             print(f"[Server] ❌ list-review lỗi: {e}\n{tb}", file=sys.stderr)
-            self._json_response({"success": False, "error": str(e), "traceback": tb}, 500)
+            self._json_response({"success": False, "error": _friendly_error(e)}, 500)
         finally:
             def cleanup():
                 import time
