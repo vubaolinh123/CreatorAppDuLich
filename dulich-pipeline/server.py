@@ -56,8 +56,8 @@ ALBUM_DIR = Path(__file__).parent / "data" / "album"
 IMAGE_ALBUMS = {
     "hien1": {"script": "generate_hien25111.py", "seed": True,  "label": "Hiền · Lưới quán"},
     "hien2": {"script": "generate_hien21113.py", "seed": True,  "label": "Hiền · Bộ sưu tập"},
-    "le1":   {"script": "demo_mye26.py",          "seed": False, "label": "Lê · Mẫu Đà Lạt"},
-    "le2":   {"script": "generate_le2.py",        "seed": False, "label": "Lê · Cover + slide"},
+    "le1":   {"script": "demo_mye26.py",          "seed": True,  "label": "Lê · Mẫu Đà Lạt"},
+    "le2":   {"script": "generate_le2.py",        "seed": True,  "label": "Lê · Cover + slide"},
     "muoi1": {"script": "generate_muoi1912.py",   "seed": True,  "label": "Mười · Album 1"},
     "muoi2": {"script": "generate_muoi1311.py",   "seed": True,  "label": "Mười · Album 2"},
     "vy1":   {"script": "generate_vy1.py",        "seed": True,  "label": "Vy · Album 1"},

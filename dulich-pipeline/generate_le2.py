@@ -21,7 +21,11 @@ def main():
         ),
     )
     parser.add_argument("--out", default="")
+    parser.add_argument("--seed", type=int, default=None)
     args = parser.parse_args()
+    import random
+    if args.seed is not None:
+        random.seed(args.seed)
 
     spec_path = Path(args.spec)
     if not spec_path.exists():
@@ -30,6 +34,22 @@ def main():
 
     with open(spec_path, encoding="utf-8") as f:
         spec = json.load(f)
+
+    # Ảnh nền: chọn NGẪU NHIÊN theo tên quán trong thư viện (spec cũ chứa path
+    # tuyệt đối D:\ đã chết + luôn cùng 1 ảnh → mỗi lần tạo y hệt).
+    from tools.venues_db import get_all
+    from tools.venue_picker import VenuePicker
+    _db = {v["name"]: v for v in get_all()}
+    import os as _os
+    for s in (spec.get("slides") or {}).values():
+        if not isinstance(s, dict):
+            continue
+        v = _db.get((s.get("bg_venue") or "").strip())
+        img = VenuePicker.image(v) if v else ""
+        if img:
+            s["bg_image"] = img
+        elif not _os.path.exists(s.get("bg_image", "")):
+            s["bg_image"] = ""
 
     out_dir = Path(args.out) if args.out else spec_path.parent
     out_dir.mkdir(parents=True, exist_ok=True)

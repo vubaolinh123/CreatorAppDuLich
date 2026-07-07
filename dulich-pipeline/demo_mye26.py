@@ -14,14 +14,24 @@ sys.path.insert(0, str(Path(__file__).parent))
 from tools.mye26_renderer import (
     CoverData, ActivityItem, ItinerarySlide, render_album,
 )
-from tools.venues_db import get_all, resolve_image
+from tools.venues_db import get_all
+from tools.venue_picker import VenuePicker
 
-# ── Lookup ảnh từ thư viện venue ─────────────────────────────────────────────
+# Seed NGẪU NHIÊN ảnh (đọc --seed sớm vì lịch trình build ngay khi import)
+import random as _rnd
+import argparse as _ap
+_pre = _ap.ArgumentParser(add_help=False)
+_pre.add_argument("--seed", type=int, default=None)
+_seed_args, _ = _pre.parse_known_args()
+if _seed_args.seed is not None:
+    _rnd.seed(_seed_args.seed)
+
+# ── Lookup ảnh từ thư viện venue (chọn ngẫu nhiên trong bộ ảnh của quán) ──────
 _VENUE_DB = {v["name"]: v for v in get_all()}
 
 def _venue_img(name: str) -> str:
     v = _VENUE_DB.get(name)
-    return resolve_image(v) if v else ""
+    return VenuePicker.image(v) if v else ""
 
 def _day_bg(activities: list) -> str:
     for act in activities:
@@ -71,6 +81,7 @@ def main():
     import argparse
     parser = argparse.ArgumentParser()
     parser.add_argument("--out", default="")
+    parser.add_argument("--seed", type=int, default=None)   # đã xử lý sớm ở đầu module
     args = parser.parse_args()
 
     cover = CoverData(
