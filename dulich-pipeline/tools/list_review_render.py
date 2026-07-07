@@ -260,7 +260,7 @@ def _group_words(words: list[dict], dur: float,
             or (gap >= pause and len(cur) >= min_words)         # nghỉ giọng rõ
             or (len(cur) >= max_words and gap >= glue)          # đủ dài + không dính cụm
         )
-        over = len(cur) >= max_words + 2
+        over = len(cur) >= max_words + 3
         if cut or over:
             carry = []
             if over and not cut and nxt is not None:
@@ -296,6 +296,69 @@ def _valid_timings(words: list[dict], vo_text: str, dur: float) -> bool:
     return True
 
 
+def _semantic_lines(vo_text: str, vo_path: str = "") -> list[str] | None:
+    """AI chia kịch bản thành các dòng phụ đề THEO CỤM NGHĨA (3-8 từ) — quan trọng nghĩa
+    hơn số từ. Giữ nguyên 100% từ ngữ. Cache cạnh file VO. Lỗi/thiếu key → None."""
+    key = os.getenv("OPENROUTER_KEY") or os.getenv("OPENROUTER_API_KEY")
+    if not key or not (vo_text or "").strip():
+        return None
+    import json as _json
+    cache = Path(vo_path).with_suffix(".lines.json") if vo_path else None
+    if cache and cache.exists():
+        try:
+            lines = _json.loads(cache.read_text(encoding="utf-8"))
+            if lines:
+                return lines
+        except Exception:
+            pass
+    try:
+        import requests
+        r = requests.post("https://openrouter.ai/api/v1/chat/completions", timeout=45,
+            headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"},
+            json={"model": "openai/gpt-4o-mini", "temperature": 0,
+                  "response_format": {"type": "json_object"},
+                  "messages": [
+                      {"role": "system", "content":
+                       "Chia câu tiếng Việt thành các dòng phụ đề ngắn. LUẬT: mỗi dòng là 1 CỤM CÓ NGHĨA "
+                       "trọn vẹn (ưu tiên nghĩa hơn số từ), thường 3-8 từ; cắt tại ranh giới cụm "
+                       "(sau dấu câu, giữa chủ ngữ/vị ngữ, trước liên từ); TUYỆT ĐỐI không thêm/bớt/"
+                       "sửa/đảo bất kỳ từ nào — ghép lại phải y hệt bản gốc. "
+                       'Trả DUY NHẤT JSON: {"lines": ["...", "..."]}'},
+                      {"role": "user", "content": vo_text.strip()}]})
+        if r.status_code != 200:
+            return None
+        lines = _json.loads(r.json()["choices"][0]["message"]["content"]).get("lines") or []
+        lines = [str(l).strip() for l in lines if str(l).strip()]
+        # bắt buộc giữ nguyên từ ngữ: ghép lại phải khớp bản gốc (so theo token)
+        if lines and " ".join(" ".join(lines).split()) == " ".join(vo_text.split()):
+            if cache:
+                try:
+                    cache.write_text(_json.dumps(lines, ensure_ascii=False), encoding="utf-8")
+                except Exception:
+                    pass
+            return lines
+    except Exception as e:
+        print(f"[list_review] semantic lines lỗi: {e}", file=sys.stderr)
+    return None
+
+
+def _cues_from_lines(lines: list[str], words: list[dict], dur: float) -> list[tuple[str, float, float]]:
+    """Map các dòng (đã chia theo nghĩa, tổng token khớp kịch bản) vào timing từng từ."""
+    cues, i = [], 0
+    for ln in lines:
+        n = len(ln.split())
+        seg = words[i:i + n]
+        i += n
+        if not seg:
+            break
+        st = float(seg[0]["start"])
+        en = min(float(seg[-1]["end"]) + 0.25, dur)
+        if i < len(words):
+            en = min(en, float(words[i]["start"]))
+        cues.append((ln, st, max(en, st + 0.35)))
+    return cues
+
+
 def _timed_cues(vo_path: str, vo_text: str, dur: float) -> list[tuple[str, float, float]]:
     """Cue phụ đề (text, start, end). Ưu tiên timing thật (words.json/Whisper);
     fallback chia đều như cũ."""
@@ -317,6 +380,14 @@ def _timed_cues(vo_path: str, vo_text: str, dur: float) -> list[tuple[str, float
                     words = align_words_with_punctuation(words, vo_text) or words
                 except Exception:
                     pass
+                # ưu tiên: AI chia dòng theo CỤM NGHĨA rồi map vào timing
+                # (chỉ khi số từ khớp 1-1 với kịch bản để map chính xác)
+                if len(words) == len(vo_text.split()):
+                    lines = _semantic_lines(vo_text, vo_path)
+                    if lines:
+                        out = _cues_from_lines(lines, words, dur)
+                        if out:
+                            return out
             out = _group_words(words, dur)
             if out:
                 return out
