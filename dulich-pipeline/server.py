@@ -209,11 +209,26 @@ def _load_products() -> list:
 
 
 def _append_product(rec: dict) -> None:
+    rec.setdefault("status", "pending")   # pending(chưa duyệt) | posted(đã đăng) | failed(đăng lỗi) | cancelled(hủy)
     with _PROD_LOCK:
         items = _load_products()
         items.append(rec)
         PRODUCTS_FILE.parent.mkdir(parents=True, exist_ok=True)
         PRODUCTS_FILE.write_text(json.dumps(items, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+def _set_product_status(key: str, status: str) -> bool:
+    """Đổi status 1 video theo video_url. Trả True nếu tìm thấy."""
+    with _PROD_LOCK:
+        items = _load_products()
+        hit = False
+        for p in items:
+            if p.get("video_url") == key:
+                p["status"] = status
+                hit = True
+        if hit:
+            PRODUCTS_FILE.write_text(json.dumps(items, ensure_ascii=False, indent=2), encoding="utf-8")
+        return hit
 
 
 # Album ảnh đã tạo — lưu lại như "Tất cả video" (mở lại / xoá / tạo lại).
@@ -229,11 +244,26 @@ def _load_albums() -> list:
 
 
 def _append_album(rec: dict) -> None:
+    rec.setdefault("status", "pending")
     with _ALBUM_PROD_LOCK:
         items = _load_albums()
         items.append(rec)
         ALBUM_PRODUCTS_FILE.parent.mkdir(parents=True, exist_ok=True)
         ALBUM_PRODUCTS_FILE.write_text(json.dumps(items, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+def _set_album_status(key: str, status: str) -> bool:
+    """Đổi status 1 album theo dir."""
+    with _ALBUM_PROD_LOCK:
+        items = _load_albums()
+        hit = False
+        for a in items:
+            if a.get("dir") == key:
+                a["status"] = status
+                hit = True
+        if hit:
+            ALBUM_PRODUCTS_FILE.write_text(json.dumps(items, ensure_ascii=False, indent=2), encoding="utf-8")
+        return hit
 
 
 def _delete_album(dir_rel: str) -> bool:
@@ -459,6 +489,8 @@ class AssembleHandler(BaseHTTPRequestHandler):
             self.handle_script_prompt_save()
         elif self.path == "/album-delete":
             self.handle_album_delete()
+        elif self.path == "/product-status":
+            self.handle_product_status()
         elif self.path == "/venues-scrape-all":
             self.handle_venues_scrape_all()
         elif self.path == "/login":
@@ -511,6 +543,8 @@ class AssembleHandler(BaseHTTPRequestHandler):
             self.handle_albums_get()
         elif self.path.startswith("/album-library"):
             self.handle_album_library()
+        elif self.path.startswith("/kpi"):
+            self.handle_kpi()
         elif self.path.startswith("/output/"):
             # Serve output files statically for preview/playback (bỏ query ?w=… nếu có)
             rel = self.path.split("?", 1)[0].lstrip("/")
@@ -1288,6 +1322,44 @@ class AssembleHandler(BaseHTTPRequestHandler):
             if role != "admin" and user:
                 items = [a for a in items if a.get("user") == user]
             self._json_response({"success": True, "albums": items})
+        except Exception as e:
+            self._json_response({"success": False, "error": str(e)}, 500)
+
+    def handle_product_status(self):
+        """POST /product-status {kind:'video'|'album', key, status} → đổi trạng thái duyệt/đăng."""
+        try:
+            b = self._read_json_body()
+            kind = (b.get("kind") or "video").strip()
+            key = (b.get("key") or "").strip()
+            status = (b.get("status") or "").strip()
+            if status not in ("pending", "posted", "failed", "cancelled"):
+                self._json_response({"success": False, "error": "status không hợp lệ"}, 400)
+                return
+            ok = _set_album_status(key, status) if kind == "album" else _set_product_status(key, status)
+            self._json_response({"success": ok})
+        except Exception as e:
+            self._json_response({"success": False, "error": str(e)}, 500)
+
+    def handle_kpi(self):
+        """GET /kpi → KPI hôm nay mỗi nhân viên (video + ảnh). Staff mục tiêu 5+5; tin tức 10 video."""
+        try:
+            import time as _t
+            lt = _t.localtime()
+            sod = _t.mktime((lt.tm_year, lt.tm_mon, lt.tm_mday, 0, 0, 0, 0, 0, -1))
+            users = _load_users()
+            prods = _load_products()
+            albums = _load_albums()
+            rows = []
+            for uid, u in users.items():
+                role = u.get("role")
+                if role not in ("staff", "news"):
+                    continue
+                v = sum(1 for p in prods if p.get("user") == uid and p.get("time", 0) >= sod)
+                a = sum(1 for al in albums if al.get("user") == uid and al.get("time", 0) >= sod)
+                rows.append({"user": uid, "name": u.get("name", uid), "role": role,
+                             "videos": v, "target_v": (10 if role == "news" else 5),
+                             "images": a, "target_a": (0 if role == "news" else 5)})
+            self._json_response({"success": True, "kpi": rows})
         except Exception as e:
             self._json_response({"success": False, "error": str(e)}, 500)
 

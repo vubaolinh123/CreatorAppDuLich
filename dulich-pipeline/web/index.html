@@ -814,13 +814,72 @@ function renderLibrary(){
 }
 function libCard(url,topic,user){return `<div class="lib-card"><video src="${API+url}" preload="metadata"></video><div class="cap"><span>${topic||""}${user?" · "+user:""}</span><button class="expand" onclick="openViewer('${url}')">⤢ Phóng to</button></div></div>`;}
 
-// ---------- ADMIN ----------
+// ---------- ADMIN: duyệt bài + KPI ----------
+let ADMIN_TAB="pending", REVIEW_ITEMS=[];
+function statusLabel(s){return {pending:"Chưa đăng",posted:"Đã đăng",failed:"Đăng lỗi",cancelled:"Hủy"}[s]||s;}
 async function renderAdmin(){
-  document.getElementById("appbody").innerHTML=`<div class="card"><h2 class="sec">📊 Thống kê sản phẩm theo nhân viên</h2><div id="statbox" class="muted">Đang tải…</div></div>`;
-  try{const r=await fetch(API+"/stats",{cache:"no-store"});const j=await r.json();
-    const rows=(j.stats||[]).map(s=>`<tr><td>${s.name}</td><td><span class="chip ${s.role==="news"?"chip-role":"chip-hook"}">${s.role==="news"?"Tin tức":"Nhân viên"}</span></td><td class="num">${s.count}</td></tr>`).join("");
-    document.getElementById("statbox").innerHTML=`<table class="stat-table"><tr><th>Nhân viên</th><th>Loại</th><th>Số sản phẩm</th></tr>${rows}</table><div class="muted" style="margin-top:10px">Tổng: ${j.total} video. Bấm "Tất cả video" trên header để xem.</div>`;
-  }catch(e){document.getElementById("statbox").textContent="Lỗi tải thống kê";}
+  document.getElementById("appbody").innerHTML=`
+    <div class="card" style="margin-bottom:16px"><h2 class="sec">📊 KPI hôm nay (mục tiêu: nv 5 video + 5 ảnh · tin tức 10 video)</h2><div id="kpiBox" class="muted">Đang tải…</div></div>
+    <div class="card">
+      <div style="display:flex;gap:8px;margin-bottom:12px">
+        <button class="btn chip" id="tab-pending" onclick="setAdminTab('pending')">🕓 Chưa duyệt</button>
+        <button class="btn-ghost chip" id="tab-posted" onclick="setAdminTab('posted')">✅ Đã đăng / Lưu trữ</button>
+      </div>
+      <div id="reviewBox" class="muted">Đang tải…</div>
+    </div>`;
+  loadKpi(); adminReviewLoad();
+}
+async function loadKpi(){
+  const box=document.getElementById("kpiBox"); if(!box)return;
+  try{
+    const j=await (await fetch(API+"/kpi",{cache:"no-store"})).json();
+    box.classList.remove("muted");
+    const cell=(n,t)=>{const ok=t>0&&n>=t;return `<b style="color:${ok?'#2f9d57':'#e2536b'}">${n}${t?"/"+t:""}</b>`;};
+    box.innerHTML=`<table class="stat-table"><tr><th>Nhân viên</th><th>Video</th><th>Ảnh</th></tr>`+
+      (j.kpi||[]).map(k=>`<tr><td>${k.name}</td><td>${cell(k.videos,k.target_v)}</td><td>${k.target_a?cell(k.images,k.target_a):"—"}</td></tr>`).join("")+`</table>`;
+  }catch(e){box.textContent="Lỗi KPI: "+e.message;}
+}
+function setAdminTab(t){ ADMIN_TAB=t;
+  const p=document.getElementById("tab-pending"),q=document.getElementById("tab-posted");
+  if(p)p.className="chip "+(t==="pending"?"btn":"btn-ghost"); if(q)q.className="chip "+(t==="posted"?"btn":"btn-ghost");
+  renderReview();
+}
+async function adminReviewLoad(){
+  try{
+    const [lv,la]=await Promise.all([
+      fetch(API+`/library?role=admin`,{cache:"no-store"}).then(r=>r.json()),
+      fetch(API+`/album-library?role=admin`,{cache:"no-store"}).then(r=>r.json())
+    ]);
+    const vids=(lv.videos||[]).map(v=>({kind:"video",key:v.video_url,url:v.video_url,user:v.user,title:v.topic||"video",status:v.status||"pending",time:v.time||0}));
+    const albs=(la.albums||[]).map(a=>({kind:"album",key:a.dir,cover:(a.images&&a.images[0])?a.images[0].url:"",user:a.user,title:a.label||a.album,status:a.status||"pending",time:a.time||0,count:(a.images||[]).length}));
+    REVIEW_ITEMS=[...vids,...albs].sort((x,y)=>y.time-x.time);
+    renderReview();
+  }catch(e){const b=document.getElementById("reviewBox");if(b)b.textContent="Lỗi tải: "+e.message;}
+}
+function renderReview(){
+  const box=document.getElementById("reviewBox"); if(!box)return; box.classList.remove("muted");
+  const list=REVIEW_ITEMS.filter(it=> ADMIN_TAB==="posted" ? it.status==="posted" : it.status!=="posted");
+  if(!list.length){ box.innerHTML="<div class='muted'>Không có mục nào.</div>"; return; }
+  box.innerHTML=`<div class="lib-grid">`+list.map(it=>{
+    const media = it.kind==="video"
+      ? `<video src="${API+it.url}" preload="metadata" style="width:100%;aspect-ratio:9/16;object-fit:cover;background:#000;border-radius:10px;cursor:pointer" onclick="openViewer('${it.url}')"></video>`
+      : (it.cover?`<img src="${API+it.cover}?w=220" style="width:100%;aspect-ratio:4/5;object-fit:cover;border-radius:10px;cursor:pointer" onclick="openImg('${it.cover}')">`:"<div class='muted'>—</div>");
+    const btns = it.status==="posted"
+      ? `<button class="btn-ghost chip" onclick="setStatus('${it.kind}','${it.key}','pending')">↩ Chưa đăng</button>`
+      : `<button class="btn chip" onclick="setStatus('${it.kind}','${it.key}','posted')">✅ Đã đăng</button><button class="btn-ghost chip" onclick="setStatus('${it.kind}','${it.key}','failed')">⚠ Lỗi</button><button class="btn-ghost chip" onclick="setStatus('${it.kind}','${it.key}','cancelled')">✕ Hủy</button>`;
+    return `<div class="lib-card" style="padding:8px">${media}
+      <div class="cap" style="flex-direction:column;align-items:stretch;gap:6px">
+        <span style="font-size:12px">${(it.title||"").replace(/</g,"&lt;")} · <b>${makerName(it.user)}</b> · ${statusLabel(it.status)}${it.kind==="album"?` · ${it.count} ảnh`:""}</span>
+        <div style="display:flex;gap:5px;flex-wrap:wrap">${btns}</div>
+      </div></div>`;
+  }).join("")+`</div>`;
+}
+async function setStatus(kind,key,status){
+  try{ const j=await (await fetch(API+"/product-status",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({kind,key,status})})).json();
+    if(!j.success)throw new Error(j.error||"không tìm thấy");
+    const it=REVIEW_ITEMS.find(x=>x.kind===kind&&x.key===key); if(it)it.status=status;
+    renderReview(); loadKpi(); toast("Đã cập nhật: "+statusLabel(status));
+  }catch(e){toast("Lỗi: "+e.message);}
 }
 
 // ---------- TẠO ẢNH (per-nv: mẫu album theo tài khoản + album đã lưu) ----------
