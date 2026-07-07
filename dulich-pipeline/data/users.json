@@ -1,6 +1,6 @@
 {
   "admin": { "password": "admin123", "role": "admin", "name": "Quản lý" },
-  "nv1": { "password": "123", "role": "staff", "name": "Lê",   "hook_style": "hook_red",   "voice": "gtts", "album": "le" },
+  "nv1": { "password": "123", "role": "staff", "name": "Lê",   "hook_style": "hook_red",   "voice": "gtts", "album": "le", "publish": "tiktok" },
   "nv2": { "password": "123", "role": "staff", "name": "Uyên", "hook_style": "hook_green", "voice": "gtts", "album": "uyen" },
   "nv3": { "password": "123", "role": "staff", "name": "Hiền", "hook_style": "hook_brown", "voice": "gtts", "album": "hien" },
   "nv4": { "password": "123", "role": "staff", "name": "Vy",   "hook_style": "hook_serif", "voice": "gtts", "album": "vy" },
