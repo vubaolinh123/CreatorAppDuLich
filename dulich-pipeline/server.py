@@ -491,6 +491,8 @@ class AssembleHandler(BaseHTTPRequestHandler):
             self.handle_album_delete()
         elif self.path == "/product-status":
             self.handle_product_status()
+        elif self.path == "/news-scrape":
+            self.handle_news_scrape()
         elif self.path == "/venues-scrape-all":
             self.handle_venues_scrape_all()
         elif self.path == "/login":
@@ -545,6 +547,8 @@ class AssembleHandler(BaseHTTPRequestHandler):
             self.handle_album_library()
         elif self.path.startswith("/kpi"):
             self.handle_kpi()
+        elif self.path.startswith("/news-pool"):
+            self.handle_news_pool()
         elif self.path.startswith("/output/"):
             # Serve output files statically for preview/playback (bỏ query ?w=… nếu có)
             rel = self.path.split("?", 1)[0].lstrip("/")
@@ -1340,6 +1344,31 @@ class AssembleHandler(BaseHTTPRequestHandler):
         except Exception as e:
             self._json_response({"success": False, "error": str(e)}, 500)
 
+    def handle_news_scrape(self):
+        """POST /news-scrape {keyword, hashtags[]} → cào YouTube tin Đà Lạt (video+shorts), lưu pool."""
+        try:
+            b = self._read_json_body()
+            kw = (b.get("keyword") or "").strip()
+            hts = b.get("hashtags")
+            from tools.news_youtube import scrape_news, save_pool, DEFAULT_KEYWORD
+            with _HEAVY_LOCK:
+                res = scrape_news(kw or DEFAULT_KEYWORD, hts if isinstance(hts, list) else None)
+            if res.get("success"):
+                save_pool(res)
+            self._json_response(res)
+        except Exception as e:
+            self._json_response({"success": False, "error": str(e), "items": []}, 500)
+
+    def handle_news_pool(self):
+        """GET /news-pool → tin đã cào gần nhất + từ khóa/hashtag mặc định."""
+        try:
+            from tools.news_youtube import load_pool, DEFAULT_KEYWORD, DEFAULT_HASHTAGS
+            p = load_pool()
+            self._json_response({"success": True, "time": p.get("time", 0), "items": p.get("items", []),
+                                 "default_keyword": DEFAULT_KEYWORD, "default_hashtags": DEFAULT_HASHTAGS})
+        except Exception as e:
+            self._json_response({"success": False, "error": str(e), "items": []}, 500)
+
     def handle_kpi(self):
         """GET /kpi → KPI hôm nay mỗi nhân viên (video + ảnh). Staff mục tiêu 5+5; tin tức 10 video."""
         try:
@@ -1827,6 +1856,7 @@ Vui lòng chạy server bằng Python của môi trường ảo (.venv):
 +------------------------------------------------------+
 """, file=sys.stderr)
 
+    _start_news_scheduler()
     server = ReusableHTTPServer(("127.0.0.1", PORT), AssembleHandler)
     print(f"[Server] Listening at http://localhost:{PORT}", file=sys.stderr)
     print(f"[Server] Press Ctrl+C to stop.", file=sys.stderr)
@@ -1837,6 +1867,39 @@ Vui lòng chạy server bằng Python của môi trường ảo (.venv):
         server.shutdown()
         server.server_close()
         print("[Server] Stopped.", file=sys.stderr)
+
+
+# ── Bộ hẹn giờ cào tin (3 khung: 05h, 11h, 18h) — chạy khi server sống (VPS) ────
+NEWS_SLOTS = (5, 11, 18)
+
+
+def _news_scheduler():
+    import time as _t
+    last = ""
+    while True:
+        try:
+            lt = _t.localtime()
+            slot = f"{lt.tm_year}-{lt.tm_mon}-{lt.tm_mday}-{lt.tm_hour}"
+            if lt.tm_hour in NEWS_SLOTS and lt.tm_min < 3 and slot != last:
+                last = slot
+                try:
+                    from tools.news_youtube import scrape_news, save_pool
+                    print(f"[news] scheduler cào tin (khung {lt.tm_hour}h)...", file=sys.stderr)
+                    with _HEAVY_LOCK:
+                        res = scrape_news()
+                    if res.get("success"):
+                        save_pool(res)
+                        print(f"[news] cào xong: {res.get('count')} video", file=sys.stderr)
+                except Exception as e:
+                    print(f"[news] scheduler lỗi: {e}", file=sys.stderr)
+        except Exception:
+            pass
+        _t.sleep(60)
+
+
+def _start_news_scheduler():
+    threading.Thread(target=_news_scheduler, daemon=True).start()
+    print(f"[Server] News scheduler bật (khung {NEWS_SLOTS} giờ).", file=sys.stderr)
 
 
 if __name__ == "__main__":

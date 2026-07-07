@@ -528,8 +528,49 @@ function renderNews(){
       <div class="muted" style="margin-top:8px">AI viết kịch bản MỚI (hook 10s + lịch trình/list) từ video nguồn. Quét tin tức từ Facebook sẽ cài sau.</div>
       <div id="srcbox" class="hidden" style="margin-top:14px"></div>
     </div>
+    <div class="card" style="max-width:680px;margin:16px auto 0">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:10px">
+        <h2 class="sec" style="margin:0">📺 Tin Đà Lạt mới (YouTube)</h2>
+        <button class="btn-ghost chip" id="newsScrapeBtn" onclick="scrapeNews()">🔄 Cào tin mới</button>
+      </div>
+      <div class="muted" style="margin:4px 0 8px">Cào theo từ khóa + hashtag (video + shorts). Tự cào 5h/11h/18h. Bấm "Dùng" để viết kịch bản từ tin đó.</div>
+      <div id="newsPool" class="muted">Đang tải…</div>
+    </div>
     <div id="editor" class="hidden"></div>`;
+  loadNewsPool();
 }
+async function loadNewsPool(){
+  const box=document.getElementById("newsPool"); if(!box)return;
+  try{
+    const j=await (await fetch(API+"/news-pool",{cache:"no-store"})).json();
+    renderNewsPool(j.items||[], j.time||0);
+  }catch(e){ box.textContent="Lỗi: "+e.message; }
+}
+function renderNewsPool(items,t){
+  const box=document.getElementById("newsPool"); if(!box)return; box.classList.remove("muted");
+  if(!items.length){ box.innerHTML="<div class='muted'>Chưa có tin. Bấm \"Cào tin mới\".</div>"; return; }
+  const when=t?new Date(t*1000).toLocaleString("vi"):"";
+  box.innerHTML=(when?`<div class="muted" style="margin-bottom:8px">Cào lúc: ${when}</div>`:"")+
+    items.slice(0,30).map(it=>`<div style="display:flex;gap:10px;align-items:center;padding:8px 0;border-bottom:1px solid var(--line)">
+      ${it.thumbnail?`<img src="${it.thumbnail}" style="width:72px;height:48px;object-fit:cover;border-radius:6px;flex:0 0 auto">`:""}
+      <div style="flex:1;min-width:0">
+        <div style="font-size:13px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${(it.title||"").replace(/</g,"&lt;")}</div>
+        <div class="muted" style="font-size:11px">${it.is_short?"🎬 Short":"▶ Video"}${it.channel?" · "+(it.channel||"").replace(/</g,"&lt;"):""}${it.date?" · "+String(it.date).slice(0,10):""}</div>
+      </div>
+      <a href="${it.url}" target="_blank" class="btn-ghost chip" style="text-decoration:none">▶</a>
+      <button class="btn chip" onclick="useNews('${it.url}')">Dùng</button>
+    </div>`).join("");
+}
+async function scrapeNews(){
+  const btn=document.getElementById("newsScrapeBtn"); if(btn){btn.disabled=true;btn.textContent="⏳ Đang cào…";}
+  try{
+    const j=await (await fetch(API+"/news-scrape",{method:"POST",headers:{"Content-Type":"application/json"},body:"{}"})).json();
+    if(!j.success)throw new Error(j.error||"lỗi");
+    renderNewsPool(j.items||[], Date.now()/1000); toast(`Cào ${j.count||0} tin`);
+  }catch(e){ toast("Lỗi cào: "+e.message); }
+  finally{ if(btn){btn.disabled=false;btn.textContent="🔄 Cào tin mới";} }
+}
+function useNews(url){ const el=document.getElementById("manualLink"); if(el){el.value=url; el.scrollIntoView({behavior:"smooth"});} researchNews('manual'); }
 function pickColor(c,el){ newsColor=c; document.querySelectorAll(".colordot").forEach(d=>d.classList.toggle("active",d===el)); updateHookOverlay(); }
 
 async function researchNews(mode){
