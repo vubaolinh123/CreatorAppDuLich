@@ -18,14 +18,15 @@ OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
 # Cấu hình template từng nhân viên: badge_mode + transition (chuyển cảnh).
 #  full = tên+điểm+địa chỉ (nv1); name = chỉ tên quán (nv2/3/5); none = không badge (nv4 montage).
 #  transition: none = ghép cứng; swoosh = chuyển cảnh slide (chỉ hiệu ứng hình).
+# nv1-4: edit cơ bản (không chấm điểm/tên) = badge none; nv5 giữ tên quán.
 _TEMPLATES = {
-    "nv1": {"badge_mode": "full", "transition": "fade"},
-    "nv2": {"badge_mode": "name", "transition": "fade"},
-    "nv3": {"badge_mode": "name", "transition": "fade"},
+    "nv1": {"badge_mode": "none", "transition": "fade"},
+    "nv2": {"badge_mode": "none", "transition": "fade"},
+    "nv3": {"badge_mode": "none", "transition": "fade"},
     "nv4": {"badge_mode": "none", "transition": "fade"},
     "nv5": {"badge_mode": "name", "transition": "fade"},
 }
-_DEFAULT_TEMPLATE = {"badge_mode": "name", "transition": "fade"}
+_DEFAULT_TEMPLATE = {"badge_mode": "none", "transition": "fade"}
 
 
 def _hook_style(employee: str) -> str:
@@ -58,15 +59,20 @@ def _ai_script(venues: list[dict], employee: str = "nv1") -> dict | None:
     from tools.script_prompts import effective_persona, get_script_prompt
     persona = effective_persona(employee)
     ex = get_script_prompt(employee)["examples"]
-    system = persona + _FORMAT_NV + (f"\n\nVÍ DỤ THAM KHẢO (học giọng, đừng chép):\n{ex}" if ex else "")
+    system = (persona + _FORMAT_NV
+              + " QUAN TRỌNG: mỗi lần viết phải SÁNG TẠO, đổi cách mở đầu/góc nhìn/câu chữ, "
+                "KHÔNG lặp lại mẫu câu của các lần trước."
+              + (f"\n\nVÍ DỤ THAM KHẢO (học giọng, đừng chép):\n{ex}" if ex else ""))
+    import random as _rnd
+    variation = _rnd.randint(1000, 9999)
     try:
         import requests
         r = requests.post(OPENROUTER_URL, timeout=60,
             headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"},
             json={"model": "openai/gpt-4o-mini",
                   "messages": [{"role": "system", "content": system},
-                               {"role": "user", "content": f"DANH SÁCH QUÁN:\n{lines}"}],
-                  "response_format": {"type": "json_object"}, "temperature": 0.9})
+                               {"role": "user", "content": f"DANH SÁCH QUÁN:\n{lines}\n\n[biến thể #{variation} — viết mới, khác các lần trước]"}],
+                  "response_format": {"type": "json_object"}, "temperature": 1.0, "presence_penalty": 0.6})
         if r.status_code != 200:
             print(f"[listreview] OpenRouter {r.status_code}: {r.text[:160]}")
             return None

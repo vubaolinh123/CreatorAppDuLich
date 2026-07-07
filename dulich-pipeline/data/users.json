@@ -4,6 +4,6 @@
   "nv2": { "password": "123", "role": "staff", "name": "Uyên", "hook_style": "hook_green", "voice": "gtts", "album": "uyen" },
   "nv3": { "password": "123", "role": "staff", "name": "Hiền", "hook_style": "hook_brown", "voice": "gtts", "album": "hien" },
   "nv4": { "password": "123", "role": "staff", "name": "Vy",   "hook_style": "hook_serif", "voice": "gtts", "album": "vy" },
-  "nv5": { "password": "123", "role": "staff", "name": "Mười", "hook_style": "hook_meo",   "voice": "gtts", "album": "muoi" },
+  "nv5": { "password": "123", "role": "staff", "name": "Muối", "hook_style": "hook_meo",   "voice": "gtts", "album": "muoi" },
   "tintuc": { "password": "123", "role": "news", "name": "Kênh tin tức Đà Lạt", "hook_style": "hook_news", "voice": "gtts" }
 }

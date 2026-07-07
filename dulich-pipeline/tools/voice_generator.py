@@ -195,11 +195,14 @@ class VoiceGenerator:
         if not (self._vbee_key and self._vbee_app_id) or not REQUESTS_AVAILABLE:
             return None
 
-        # Resolve voice code: accept a ready full code (contains '-') or map a short id.
-        if voice_id and ("-" in voice_id or voice_id.endswith("fhg")):
-            voice_code = voice_id
+        # Resolve voice code: accept a ready full code (dấu '-', đuôi 'fhg', hoặc code clone '..._vc'
+        # / chứa 'zero_shot'/'advertise') — dùng nguyên; còn lại map short id.
+        vid = (voice_id or "")
+        if vid and ("-" in vid or vid.endswith("fhg") or vid.endswith("_vc")
+                    or "zero_shot" in vid or "advertise" in vid):
+            voice_code = vid
         else:
-            voice_code = VBEE_STANDARD_VOICES.get(voice_id, VBEE_STANDARD_VOICES["default"])
+            voice_code = VBEE_STANDARD_VOICES.get(vid, VBEE_STANDARD_VOICES["default"])
 
         output_path = OUTPUT_DIR / f"{output_name}.mp3"
         sp = max(0.25, min(1.9, float(speed)))

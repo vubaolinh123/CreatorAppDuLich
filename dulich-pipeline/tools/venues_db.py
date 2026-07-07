@@ -234,17 +234,30 @@ def delete_venue(name: str) -> bool:
 
 def resolve_image(venue: dict) -> str:
     """
-    Trả về local path ảnh của venue.
-    Thứ tự ưu tiên: image_path local → download từ URL → placeholder.
+    Trả về local path ảnh của venue (tuyệt đối, cross-platform).
+    Ưu tiên: ảnh tương đối trong repo (data/thumbs) → path tuyệt đối tồn tại → URL tải về → '' (placeholder).
     """
-    img = venue.get("image_path", "")
-    if img and os.path.exists(img):
-        return img
-
-    # Nếu image_path là URL → tải về
-    if img and (img.startswith("http://") or img.startswith("https://")):
-        return _download_image(img, venue["name"])
-
+    root = Path(__file__).parent.parent
+    cands = []
+    ip = str(venue.get("image_path") or "").strip()
+    if ip:
+        cands.append(ip)
+    for i in (venue.get("images") or []):
+        s = str(i).strip()
+        if s and s not in cands:
+            cands.append(s)
+    url_fallback = ""
+    for c in cands:
+        if c.startswith("http://") or c.startswith("https://"):
+            url_fallback = url_fallback or c
+            continue
+        p = Path(c)
+        if not p.is_absolute():
+            p = root / c              # ảnh tương đối → nối theo repo (chạy được trên Mac/Linux)
+        if p.exists():
+            return str(p)
+    if url_fallback:
+        return _download_image(url_fallback, venue.get("name", ""))
     return ""  # caller sẽ dùng placeholder
 
 

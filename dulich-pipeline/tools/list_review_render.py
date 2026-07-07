@@ -224,11 +224,16 @@ def _run(cmd, cwd=None):
     return r
 
 
-def _normalize(src: str, dst: str):
-    """Scale-cover về 1080x1920, 30fps, bỏ audio."""
-    _run(["ffmpeg", "-y", "-i", src,
-          "-vf", f"scale={W}:{H}:force_original_aspect_ratio=increase,crop={W}:{H},fps={FPS}",
-          "-an", "-c:v", "libx264", "-preset", "veryfast", "-pix_fmt", "yuv420p", dst])
+def _normalize(src: str, dst: str, max_dur: float | None = None):
+    """Scale-cover về 1080x1920, 30fps, bỏ audio. max_dur: chỉ encode tối đa n giây
+    (source nặng/dài không bị transcode toàn bộ khi chỉ dùng vài giây)."""
+    cmd = ["ffmpeg", "-y", "-i", src,
+           "-vf", f"scale={W}:{H}:force_original_aspect_ratio=increase,crop={W}:{H},fps={FPS}",
+           "-an", "-c:v", "libx264", "-preset", "veryfast", "-pix_fmt", "yuv420p"]
+    if max_dur and max_dur > 0:
+        cmd += ["-t", f"{max_dur:.2f}"]
+    cmd += [dst]
+    _run(cmd)
 
 
 def _concat_clips(norm_paths: list[str], dst: str, work: Path):
@@ -247,7 +252,7 @@ def _concat_with_xfade(segs: list[str], out_path: Path, work: Path,
     n = len(segs)
     if n == 1:
         _run(["ffmpeg", "-y", "-i", Path(segs[0]).name,
-              "-c:v", "libx264", "-preset", "medium", "-pix_fmt", "yuv420p",
+              "-c:v", "libx264", "-preset", "fast", "-pix_fmt", "yuv420p",
               "-c:a", "aac", "-b:a", "160k", str(out_path)], cwd=str(work))
         return
     durs = [max(0.3, _ffprobe_dur(p)) for p in segs]
@@ -270,7 +275,7 @@ def _concat_with_xfade(segs: list[str], out_path: Path, work: Path,
         aprev = out
     _run(["ffmpeg", "-y", *inputs, "-filter_complex", fc,
           "-map", f"[{prev}]", "-map", f"[{aprev}]",
-          "-c:v", "libx264", "-preset", "medium", "-pix_fmt", "yuv420p",
+          "-c:v", "libx264", "-preset", "fast", "-pix_fmt", "yuv420p",
           "-c:a", "aac", "-b:a", "160k", str(out_path)], cwd=str(work))
 
 
@@ -299,7 +304,7 @@ def _render_segment(kind: str, seg: dict, idx: int, work: Path,
         norm = []
         for j, c in enumerate(clips):
             n = work / f"n_{kind}{idx}_{j}.mp4"
-            _normalize(c, str(n)); norm.append(str(n))
+            _normalize(c, str(n), max_dur=dur + 0.5); norm.append(str(n))
         cat = work / f"cat_{kind}{idx}.mp4"
         _concat_clips(norm, str(cat), work)
         _run(["ffmpeg", "-y", "-stream_loop", "-1", "-i", str(cat), "-t", f"{dur:.2f}",
@@ -395,7 +400,7 @@ def render_list_review(spec: dict) -> dict:
             _concat_with_xfade(segs, out_path, work, transition="fade", d=0.3)
         else:
             _run(["ffmpeg", "-y", "-i", Path(segs[0]).name,
-                  "-c:v", "libx264", "-preset", "medium", "-pix_fmt", "yuv420p",
+                  "-c:v", "libx264", "-preset", "fast", "-pix_fmt", "yuv420p",
                   "-c:a", "aac", "-b:a", "160k", str(out_path)], cwd=str(work))
 
         return {"success": True, "video_path": str(out_path.resolve()),

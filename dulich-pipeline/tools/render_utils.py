@@ -30,14 +30,18 @@ def load_font(name: str, size: int) -> ImageFont.FreeTypeFont | ImageFont.ImageF
             return ImageFont.truetype(str(local), size)
         except Exception:
             pass
-    win = Path("C:/Windows/Fonts")
     stem = Path(name).stem.lower()
-    for f in win.glob("*.ttf"):
-        if stem in f.name.lower():
-            try:
-                return ImageFont.truetype(str(f), size)
-            except Exception:
-                pass
+    for sysdir in (Path("C:/Windows/Fonts"), Path("/System/Library/Fonts"),
+                   Path("/Library/Fonts"), Path("/usr/share/fonts"),
+                   Path.home() / "Library" / "Fonts"):
+        if not sysdir.exists():
+            continue
+        for f in sysdir.rglob("*.ttf"):
+            if stem in f.name.lower():
+                try:
+                    return ImageFont.truetype(str(f), size)
+                except Exception:
+                    pass
     return ImageFont.load_default()
 
 

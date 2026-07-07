@@ -258,6 +258,7 @@ function startApp(){
   document.getElementById("hd-sub").textContent = SESSION.name + (SESSION.role==="staff"?" · Hook: "+(HOOK_NAMES[SESSION.hook_style]||SESSION.hook_style):"");
   const right=document.getElementById("hd-right");
   let html = `<span class="chip chip-role">${SESSION.role==="admin"?"Quản lý":SESSION.role==="news"?"Tin tức":"Nhân viên"}</span>`;
+  html += `<button class="btn-ghost chip" onclick="renderHome()">🏠 Trang chủ</button>`;
   html += `<button class="btn-ghost chip" onclick="openLibrary()">📹 Video</button>`;
   if(SESSION.role==="staff"||SESSION.role==="news") html += `<button class="btn-ghost chip" onclick="renderPromptEditor()">📝 Prompt</button>`;
   html += `<button class="btn-ghost chip" onclick="renderLibraryHub('venues')">📚 Thư viện</button>`;
@@ -576,6 +577,13 @@ function openEditor(){
       <div class="card">
         <div style="display:flex;justify-content:space-between;align-items:center"><h2 class="sec" style="margin:0">② Scene & source</h2><div class="pager" id="pager"></div></div>
         <div class="muted">Mỗi scene 1 câu. Thả 1+ clip (số giây hiện sẵn). Dư tự cắt.</div>
+        <label style="margin-top:6px">🎙 Giọng đọc</label>
+        <select id="voicePick" style="margin-bottom:4px">
+          <option value="">Miễn phí (Google/Edge)</option>
+          <option value="c_lamdong_female_giongmenmendalatnow_zero_shot_review_vc">Vbee · Nữ Đà Lạt</option>
+          <option value="c_gialai_female_giongchauanh01_advertise_vc">Vbee · Nữ Châu Anh</option>
+          <option value="c_lamdong_male_giongnamtramamdala_zero_shot_education_vc">Vbee · Nam trầm ấm</option>
+        </select>
         <button class="btn-pink" style="width:100%;color:#fff;margin:10px 0 6px" onclick="createVideo()">🎬 Tạo video</button>
         <div id="scenes"></div>
         ${SESSION.role==="staff"?`<div style="display:flex;gap:8px;margin-top:10px"><button class="btn-ghost" style="flex:1" onclick="addSpot()">➕ Thêm quán</button><button class="btn-ghost" style="flex:1" onclick="genStaffContent()">🔄 Tạo lại nội dung</button></div>`:""}
@@ -703,6 +711,7 @@ async function createVideo(){
   const job={id:"job_"+Date.now().toString(36),topic:((currentScenes[0].title||"")||"Clip").slice(0,50),
     script:{hook:(currentScenes[0].title||"").trim(),body:(currentScenes[1].caption||"").trim(),cta:(currentScenes[2].caption||"").trim()},
     hookTitle:(currentScenes[0].title||"").trim(),hookSub:sub,hookStyle:curHookStyle(),hookPrev:hookOverlayUrl,
+    voiceMode:((document.getElementById("voicePick")||{}).value?"vbee":(SESSION.voice||"gtts")),voiceId:((document.getElementById("voicePick")||{}).value||""),
     scenes:currentScenes.map(s=>({scene_id:s.scene_id,description:s.description||s.label,min_duration_sec:s.min_duration_sec,type:s.type,files:s.files.map(c=>c.file)})),
     status:"pending",progress:0,videoUrl:"",error:""};
   hookOverlayUrl="";
@@ -726,8 +735,9 @@ function createVideoLR(){
       section_title:(s.section_title||"").trim(),emoji:(s.emoji||"").trim(),align:s.align||"left",no_pill:!!s.no_pill,body:s.body||null,vo:(s.caption||"").trim()})),
     outro:{scene_id:"outro",section_title:(outro&&outro.section_title||"").trim(),emoji:(outro&&outro.emoji||"").trim(),body:(outro&&outro.body)||null,vo:(outro?(outro.caption||""):"").trim()}
   };
+  const _vid=(document.getElementById("voicePick")||{}).value||"";
   const job={id:"lr_"+Date.now().toString(36),mode:"listreview",topic:((intro.title||"")||"List review").slice(0,50),
-    spec,hookStyle:curHookStyle(),
+    spec,hookStyle:curHookStyle(),voiceMode:_vid?"vbee":(SESSION.voice||"gtts"),voiceId:_vid,
     scenes:currentScenes.filter(s=>s.files.length).map(s=>({scene_id:s.scene_id,files:s.files.map(c=>c.file)})),
     status:"pending",progress:0,videoUrl:"",error:""};
   hookOverlayUrl="";
@@ -745,7 +755,7 @@ async function renderAll(){
       if(job.mode==="listreview"){
         const fd=new FormData();
         fd.append("job_id",job.id); fd.append("user",SESSION.username); fd.append("creator_id",SESSION.username);
-        fd.append("hook_style",job.hookStyle); fd.append("voice_mode",SESSION.voice||"gtts"); fd.append("voice_id","");
+        fd.append("hook_style",job.hookStyle); fd.append("voice_mode",job.voiceMode||SESSION.voice||"gtts"); fd.append("voice_id",job.voiceId||"");
         fd.append("spec",JSON.stringify(job.spec));
         job.scenes.forEach(s=>s.files.forEach((f,k)=>fd.append(s.scene_id+"__"+k,f,f.name)));
         job.progress=55; renderLibrary();
@@ -758,7 +768,7 @@ async function renderAll(){
       const fd=new FormData();
       fd.append("job_id",job.id); fd.append("video_type","personal"); fd.append("creator_id",SESSION.username);
       fd.append("user",SESSION.username); fd.append("topic",job.topic);
-      fd.append("voice_mode",SESSION.voice||"gtts"); fd.append("voice_id","");
+      fd.append("voice_mode",job.voiceMode||SESSION.voice||"gtts"); fd.append("voice_id",job.voiceId||"");
       fd.append("hook_style",job.hookStyle); fd.append("hook_title",job.hookTitle); fd.append("hook_subtitle",job.hookSub);
       fd.append("hook_text",job.hookTitle); fd.append("transition","fade"); fd.append("template_ratio","9:16");
       fd.append("script",JSON.stringify(job.script));
@@ -815,7 +825,7 @@ async function renderAdmin(){
 
 // ---------- TẠO ẢNH (per-nv: mẫu album theo tài khoản + album đã lưu) ----------
 let SAVED_ALBUMS=[], ALB_FILTER="";
-function makerName(u){ return ({nv1:"Lê",nv2:"Uyên",nv3:"Hiền",nv4:"Vy",nv5:"Mười",tintuc:"Tin tức",admin:"Quản lý"})[u]||u||""; }
+function makerName(u){ return ({nv1:"Lê",nv2:"Uyên",nv3:"Hiền",nv4:"Vy",nv5:"Muối",tintuc:"Tin tức",admin:"Quản lý"})[u]||u||""; }
 function renderImageGen(){
   if(typeof resetEditor==="function") resetEditor();
   document.getElementById("appbody").innerHTML=`

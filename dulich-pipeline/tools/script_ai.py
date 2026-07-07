@@ -53,6 +53,8 @@ def generate_script_ai(topic: str, employee: str = "tintuc") -> dict | None:
         "hook = 1 câu hook gây tò mò (dòng phụ dưới title). "
         "body = nội dung chính 2-3 câu. cta = 1 câu kêu gọi ngắn. Không thêm chữ nào ngoài JSON."
     )
+    import random as _rnd
+    _var = _rnd.randint(1000, 9999)
     try:
         r = requests.post(
             OPENROUTER_URL, timeout=60,
@@ -60,11 +62,11 @@ def generate_script_ai(topic: str, employee: str = "tintuc") -> dict | None:
             json={
                 "model": MODEL,
                 "messages": [
-                    {"role": "system", "content": system},
-                    {"role": "user", "content": f"Chủ đề: {topic}"},
+                    {"role": "system", "content": system + " Mỗi lần viết phải SÁNG TẠO, đổi mở đầu/góc nhìn, KHÔNG lặp lại lần trước."},
+                    {"role": "user", "content": f"Chủ đề: {topic}\n[biến thể #{_var} — viết mới, khác các lần trước]"},
                 ],
                 "response_format": {"type": "json_object"},
-                "temperature": 0.85,
+                "temperature": 1.0, "presence_penalty": 0.6,
             },
         )
         if r.status_code != 200:
