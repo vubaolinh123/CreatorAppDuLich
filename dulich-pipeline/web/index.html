@@ -1012,6 +1012,7 @@ async function loadAlbumTemplates(){
     box.classList.remove("muted");
     box.innerHTML=`<div class="alb-grid">${items.map(a=>`
       <div class="alb-card"><div><div class="nm">${a.label}</div><div class="id">${a.id}</div></div>
+        <input class="inp" id="tp-${a.id}" placeholder="✎ Gợi ý title cho AI (tuỳ chọn)" style="width:100%;margin:6px 0;font-size:12px">
         <button class="btn" id="gen-${a.id}" onclick="genAlbum('${a.id}')">Tạo album</button></div>`).join("")}</div>`;
   }catch(e){ box.textContent="Lỗi: "+e.message; }
 }
@@ -1040,11 +1041,15 @@ function renderSavedAlbums(){
   }).join("")}</div>`;
 }
 function openSavedAlbum(i){ const a=SAVED_ALBUMS[i]; if(a) renderAlbumView(a); }
+let ALB_TITLE_PROMPTS={};
 async function genAlbum(id){
   const btn=document.getElementById("gen-"+id); if(btn){btn.disabled=true;btn.textContent="⏳ Đang dựng…";}
+  const tpEl=document.getElementById("tp-"+id);
+  if(tpEl) ALB_TITLE_PROMPTS[id]=tpEl.value.trim();
+  const titlePrompt=ALB_TITLE_PROMPTS[id]||"";
   toast("⏳ Đang dựng album…");
   try{
-    const r=await fetch(API+"/assemble-image",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({album:id,user:SESSION.username})});
+    const r=await fetch(API+"/assemble-image",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({album:id,user:SESSION.username,title_prompt:titlePrompt})});
     const j=await r.json(); if(!j.success) throw new Error(j.error||"lỗi");
     renderAlbumView(j); toast(`Đã tạo ${(j.images||[]).length} ảnh`);
   }catch(e){ toast("Lỗi: "+e.message); if(btn){btn.disabled=false;btn.textContent="Tạo album";} }

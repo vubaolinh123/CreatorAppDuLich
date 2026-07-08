@@ -62,7 +62,8 @@ IMAGE_ALBUMS = {
     "muoi2": {"script": "generate_muoi1311.py",   "seed": True,  "label": "Mười · Album 2"},
     "vy1":   {"script": "generate_vy1.py",        "seed": True,  "label": "Vy · Album 1"},
     "vy2":   {"script": "generate_hien19111.py",  "seed": True,  "label": "Vy · Album 2"},
-    # uyen1/uyen2: user đang sửa script, cập nhật sau.
+    "uyen1": {"script": "generate_uyen1tip.py",   "seed": True,  "label": "Uyên · Travel tips"},
+    "uyen2": {"script": "generate_uyen2.py",      "seed": True,  "label": "Uyên · Review diary"},
 }
 
 
@@ -101,7 +102,8 @@ def _remember_seed(album: str, seed: int) -> None:
         _ALBUM_SEED_FILE.write_text(json.dumps(d, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
-def _generate_album(album: str, user: str = "", auto: bool = False) -> dict:
+def _generate_album(album: str, user: str = "", auto: bool = False,
+                    title_prompt: str = "") -> dict:
     """Chạy script CLI dựng 1 album ảnh (tránh lặp seed 10 lần gần nhất), lưu record. Dùng chung
     cho endpoint /assemble-image và bộ tự tạo ảnh hàng ngày."""
     cfg = IMAGE_ALBUMS.get(album)
@@ -129,6 +131,8 @@ def _generate_album(album: str, user: str = "", auto: bool = False) -> dict:
     env = os.environ.copy()
     env["PYTHONUTF8"] = "1"
     env["PYTHONIOENCODING"] = "utf-8"
+    if title_prompt.strip():
+        env["ALBUM_TITLE_PROMPT"] = title_prompt.strip()[:500]
 
     try:
         with _HEAVY_LOCK:
@@ -1520,7 +1524,8 @@ class AssembleHandler(BaseHTTPRequestHandler):
             body = self._read_json_body()
             album = (body.get("album") or "").strip()
             user = (body.get("user") or "").strip()
-            res = _generate_album(album, user)
+            title_prompt = (body.get("title_prompt") or "").strip()
+            res = _generate_album(album, user, title_prompt=title_prompt)
             self._json_response(res, 200 if res.get("success") else (400 if "hợp lệ" in res.get("error", "") else 500))
         except subprocess.TimeoutExpired:
             self._json_response({"success": False, "error": "Quá thời gian (300s)."}, 500)

@@ -84,6 +84,14 @@ def main():
     args = parser.parse_args()
 
     picker = VenuePicker(seed=args.seed)
+    from tools.album_titles import ai_cover_texts
+    from tools.uyen1tip_renderer import INTRO_TEXT_VN
+    _t = ai_cover_texts("uyen1", {
+        "intro": INTRO_TEXT_VN,
+        **{f"t{i+1}": s["title"] for i, s in enumerate(SLIDE_DEFS)},
+    })
+    for i, s in enumerate(SLIDE_DEFS):
+        s["title"] = _t[f"t{i+1}"]
     out_dir = args.out or str(
         Path(__file__).parent / "output" / "albums" / "uyen1tip_demo"
     )
@@ -105,6 +113,7 @@ def main():
     paths.append(render_intro(
         picker.image(intro_v),
         str(p / "uyen1tip_01_intro.png"),
+        text=_t["intro"],
     ))
     print(f"[1] Intro")
 

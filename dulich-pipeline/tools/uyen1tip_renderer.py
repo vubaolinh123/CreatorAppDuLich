@@ -108,7 +108,8 @@ INTRO_TEXT = "Di Da Lat nhieu r nhung gio ce tui moi nhan ra may dieu nay :))))"
 INTRO_TEXT_VN = "Đi Đà Lạt nhiều r nhưng giờ ce tụi mới nhận ra mấy điều này :))))"
 
 
-def render_intro(bg_path, out_path):
+def render_intro(bg_path, out_path, text=None):
+    intro = (text or INTRO_TEXT_VN).replace("\n", " ")
     img = load_bg(bg_path, W, H)
     canvas = img.convert("RGBA")
     layer = Image.new("RGBA", (W, H), (0, 0, 0, 0))
@@ -117,12 +118,12 @@ def render_intro(bg_path, out_path):
     font = _ufont(48)
     for size in range(58, 26, -2):
         font = _ufont(size)
-        if int(draw.textlength(INTRO_TEXT_VN, font=font)) <= W - 80:
+        if int(draw.textlength(intro, font=font)) <= W - 80:
             break
 
-    tw = int(draw.textlength(INTRO_TEXT_VN, font=font))
+    tw = int(draw.textlength(intro, font=font))
     x = (W - tw) // 2
-    draw.text((x, 160), INTRO_TEXT_VN, font=font,
+    draw.text((x, 160), intro, font=font,
               fill=(255, 255, 255, 255),
               stroke_width=3, stroke_fill=(20, 20, 20, 255))
 

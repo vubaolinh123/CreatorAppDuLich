@@ -1,5 +1,6 @@
 """
-album_titles.py — Random hoá title/subtitle cover album bằng AI (OpenRouter DeepSeek).
+album_titles.py — Random hoá title/hook/subtitle album bằng AI (OpenRouter DeepSeek).
+Dùng chung cho mọi album: ai_cover_texts(kind, fallback, user_prompt="").
 Fail ở bất kỳ bước nào → trả fallback, không chặn render.
 """
 from __future__ import annotations
@@ -14,34 +15,77 @@ except ImportError:
 OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
 MODEL = "deepseek/deepseek-chat"
 
-_PROMPTS = {
-    "le1": (
-        "Viết lại title + subtitle cho ảnh cover album lịch trình du lịch Đà Lạt "
-        "(phong cách hỏi xin ý kiến trong group mẹ bỉm / du lịch trên Facebook).\n"
-        'Mẫu gốc: title "Soạn Plan đi Đà Lạt tháng 6", subtitle "Các mom cho em xin ý kiến nhé".\n'
-        "Yêu cầu: giữ đúng tinh thần (plan đi Đà Lạt tháng 6, giọng gần gũi), "
-        "nhưng ĐỔI cách diễn đạt cho mới. Title tối đa 8 từ, subtitle tối đa 10 từ. "
-        "Tiếng Việt có dấu, không emoji, không hashtag.\n"
-        'Trả về JSON đúng dạng: {"title": "...", "subtitle": "..."}'
-    ),
-    "le2": (
-        "Viết lại bộ chữ hook cho ảnh cover album review địa điểm Đà Lạt.\n"
-        'Mẫu gốc: percent "99%", title "khách du lịch", '
-        'line1 "/chưa biết những điều này", line2 "hoặc chưa từng trải nghiệm /".\n'
-        "Yêu cầu: giữ format hook gây tò mò kiểu %s + đối tượng + 2 dòng phụ, "
-        "nhưng ĐỔI câu chữ cho mới (vd 95%, dân sành ăn, người mê Đà Lạt...). "
-        "percent là 2 chữ số kèm 1 dấu % duy nhất. title tối đa 3 từ. line1/line2 mỗi dòng tối đa 6 từ, "
-        "line1 bắt đầu bằng '/', line2 kết thúc bằng '/'. Tiếng Việt có dấu, không emoji.\n"
-        'Trả về JSON đúng dạng: {"percent": "99%", "title": "...", "line1": "...", "line2": "..."}'
-    ),
+# Góc sáng tạo để AI không lặp chủ đề (bốc random 2 góc mỗi lần)
+_ANGLES = [
+    "cặp đôi hẹn hò", "gia đình có con nhỏ", "solo chữa lành", "nhóm bạn thân",
+    "đi lần đầu", "đi mùa mưa", "đi mùa hoa", "săn mây sáng sớm", "đón Giáng sinh",
+    "đi Tết", "ngân sách tiết kiệm", "team ăn uống", "team sống ảo",
+    "đi xe máy phượt", "nghỉ dưỡng sang chảnh", "trốn nóng Sài Gòn", "đi cuối tuần",
+]
+
+# Mô tả riêng từng album: giọng văn + ràng buộc từng field
+_KIND_DESC = {
+    "le1": ("Cover album LỊCH TRÌNH Đà Lạt đăng group du lịch/mẹ bỉm trên Facebook, "
+            "giọng gần gũi kiểu xin ý kiến. "
+            "title: tối đa 8 từ, nêu chủ đề plan Đà Lạt (tự chọn tháng/dịp bất kỳ, không bó vào tháng 6). "
+            "subtitle: tối đa 10 từ, câu xin ý kiến/tương tác. "
+            "month_tag: dạng 'Tháng X' khớp với title (nếu title không nói tháng thì chọn 1 tháng bất kỳ)."),
+    "le2": ("Cover album REVIEW địa điểm Đà Lạt, hook gây tò mò kiểu %s. "
+            "percent: 2 chữ số + đúng 1 dấu %. "
+            "title: đối tượng, tối đa 3 từ, chữ thường (vd 'khách du lịch', 'dân sành ăn', 'phượt thủ'). "
+            "line1: tối đa 6 từ, bắt đầu bằng '/'. line2: tối đa 6 từ, kết thúc bằng '/'. "
+            "line1+line2 đọc liền thành 1 câu có nghĩa."),
+    "hien1": ("Album cập nhật tình hình đèo + quán ăn Đà Lạt. "
+              "line1: dòng 1 title cover, 3-4 từ (vd 'Cập nhật tình hình'). "
+              "line2: dòng 2 title cover, 4-6 từ, KHÔNG kèm ngày tháng (hệ thống tự thêm ngày). "
+              "grid1/grid2/grid3: 3 title cho 3 trang danh sách quán ăn, mỗi cái 6-9 từ, khác nhau rõ."),
+    "hien2": ("Cover album spotlight địa điểm Đà Lạt, hook kiểu POV tâm trạng giới trẻ. "
+              "pov: đúng 3 dòng ngăn bằng \\n, dòng 1 là 'POV:', 2 dòng sau kể 1 tình huống "
+              "đời thường dẫn tới việc đi Đà Lạt (thất tình, tăng lương, stress, hứng lên lúc nửa đêm...), "
+              "mỗi dòng tối đa 9 từ."),
+    "muoi1": ("Cover album lời khuyên du lịch Đà Lạt, chữ IN HOA dạng khẩu hiệu. "
+              "line1/line2/line3: 3 dòng hook IN HOA, mỗi dòng tối đa 5 từ, "
+              "line3 có thể để chuỗi rỗng nếu 2 dòng đủ nghĩa. Đọc liền phải có nghĩa."),
+    "muoi2": ("3 title cho 3 trang danh sách địa điểm Đà Lạt. "
+              "t1: title trang QUÁN ĂN (4-6 từ). t2: title trang THAM QUAN/CHECK-IN (4-6 từ). "
+              "t3: title trang CÀ PHÊ (4-6 từ). Giọng trẻ, bắt trend nhẹ."),
+    "vy1": ("Cover album tổng hợp địa điểm Đà Lạt. "
+            "hook: headline 2 dòng ngăn bằng \\n, tổng tối đa 12 từ, giọng rủ rê/khẳng định "
+            "(vd 'Đi hết những điểm này\\nở Đà Lạt')."),
+    "vy2": ("Cover album cẩm nang du lịch Đà Lạt theo số giờ/ngày. "
+            "hook: 2 dòng ngăn bằng \\n, dòng 1 nêu thời lượng chuyến đi (tự chọn: 48h, 72h, 3n2đ...), "
+            "dòng 2 là câu hỏi/thách thức ngắn, mỗi dòng tối đa 6 từ."),
+    "uyen1": ("Album travel tips Đà Lạt giọng teen viết tắt (r, ko, dc, mng, tui, oki...). "
+              "intro: 1 dòng duy nhất (KHÔNG xuống dòng), tối đa 16 từ, giọng tâm sự rút kinh nghiệm, "
+              "có thể kèm ':))))'. "
+              "t1..t5: 5 title tip IN HOA bắt đầu bằng 'KO' hoặc từ phủ định/nhấn mạnh, mỗi cái tối đa 8 từ, "
+              "giữ đúng chủ đề lần lượt: ảnh mạng ảo, săn mây, book phòng/dịch vụ, đồ dùng cần thiết, hỏi giá khi ăn."),
+    "uyen2": ("Cover album nhật ký review quán ăn Đà Lạt giọng teen. "
+              "intro: đúng 3 dòng ngăn bằng \\n, dòng 1 nêu chuyến đi (vd 'Đà Lạt 3n2d'), "
+              "dòng 2-3 kể việc ăn theo review + cái kết, mỗi dòng tối đa 6 từ, có thể kèm ':))))'."),
 }
 
 
-def ai_cover_texts(kind: str, fallback: dict) -> dict:
+def ai_cover_texts(kind: str, fallback: dict, user_prompt: str = "") -> dict:
     key = os.getenv("OPENROUTER_KEY") or os.getenv("OPENROUTER_API_KEY")
-    prompt = _PROMPTS.get(kind)
-    if not key or not prompt:
+    desc = _KIND_DESC.get(kind)
+    if not key or not desc:
         return fallback
+    user_prompt = (user_prompt or os.getenv("ALBUM_TITLE_PROMPT", "")).strip()
+    angles = ", ".join(random.sample(_ANGLES, 2))
+    prompt = (
+        "Viết lại bộ chữ cho ảnh cover album du lịch Đà Lạt.\n"
+        f"Mô tả template: {desc}\n"
+        f"Mẫu gốc (JSON): {json.dumps(fallback, ensure_ascii=False)}\n"
+        "Yêu cầu: giữ đúng tinh thần + format từng field (số dòng \\n, IN HOA/thường, "
+        "ký tự đặc biệt như 'POV:', '/', '%'), nhưng ĐỔI câu chữ hoàn toàn mới, sáng tạo, "
+        f"không sao chép mẫu gốc. Gợi ý góc khai thác (tùy chọn): {angles}.\n"
+        "Tiếng Việt có dấu, không emoji, không hashtag.\n"
+        f"Trả về JSON có đúng các key: {list(fallback.keys())}"
+        + f"\n(seed đa dạng: {random.randint(1000, 9999)})"
+    )
+    if user_prompt:
+        prompt = f"YÊU CẦU RIÊNG CỦA USER (ưu tiên cao nhất): {user_prompt}\n\n" + prompt
     try:
         r = requests.post(
             OPENROUTER_URL, timeout=30,
@@ -50,12 +94,11 @@ def ai_cover_texts(kind: str, fallback: dict) -> dict:
             json={
                 "model": MODEL,
                 "temperature": 1.1,
-                "max_tokens": 200,
+                "max_tokens": 400,
                 "response_format": {"type": "json_object"},
                 "messages": [
                     {"role": "system", "content": "Bạn là copywriter du lịch. Chỉ trả về JSON."},
-                    {"role": "user", "content": prompt +
-                     f"\n(seed đa dạng: {random.randint(1000, 9999)})"},
+                    {"role": "user", "content": prompt},
                 ],
             },
         )
@@ -68,11 +111,12 @@ def ai_cover_texts(kind: str, fallback: dict) -> dict:
         data = json.loads(txt)
         out = dict(fallback)
         for k, v in data.items():
-            if k in fallback and isinstance(v, str) and v.strip():
-                v = v.strip()
+            if k in fallback and isinstance(v, str):
+                v = v.strip().replace("\\n", "\n")
                 if k == "percent":
                     v = v.rstrip("%") + "%"
-                out[k] = v
+                if v or k == "line3":   # line3 muoi1 được phép rỗng
+                    out[k] = v
         print(f"[album_titles] {kind}: {out}")
         return out
     except Exception as e:

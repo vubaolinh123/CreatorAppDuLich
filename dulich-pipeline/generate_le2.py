@@ -81,7 +81,7 @@ def main():
         "line2": "hoặc chưa từng trải nghiệm /",
     })
     cover_meta = {
-        "month_tag":  spec.get("month_tag",  "Tháng 6"),
+        "month_tag":  spec.get("month_tag", "Tháng 6"),
         "handle_tag": spec.get("handle_tag", "@thamhiemdalat"),
         **hook,
     }

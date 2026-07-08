@@ -54,14 +54,14 @@ def render_cover(bg_path, out_path):
 
 # ---- Slide 1: Intro ----------------------------------------------------------
 
-def render_intro(bg_path, out_path):
+def render_intro(bg_path, out_path, text=None):
     img = load_bg(bg_path, W, H)
     canvas = img.convert("RGBA")
     layer = Image.new("RGBA", (W, H), (0, 0, 0, 0))
     draw = ImageDraw.Draw(layer)
 
     font = _ufont(52)
-    lines = INTRO_TEXT.split("\n")
+    lines = (text or INTRO_TEXT).split("\n")
     lh = font.size + 14
     y = 58
     for line in lines:

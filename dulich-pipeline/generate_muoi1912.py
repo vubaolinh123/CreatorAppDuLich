@@ -22,7 +22,10 @@ def main():
     args = parser.parse_args()
 
     picker = VenuePicker(seed=args.seed)
-    hook = random.choice(HOOK_LINES)
+    from tools.album_titles import ai_cover_texts
+    _fb = random.choice(HOOK_LINES)
+    _t = ai_cover_texts("muoi1", {"line1": _fb[0], "line2": _fb[1], "line3": _fb[2]})
+    hook = (_t["line1"], _t["line2"], _t["line3"])
 
     out_dir = args.out or str(Path(__file__).parent / "output" / "albums" / "muoi1912_demo")
     p = Path(out_dir)

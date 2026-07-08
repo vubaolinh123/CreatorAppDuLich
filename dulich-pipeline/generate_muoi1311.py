@@ -24,6 +24,13 @@ def main():
     args = parser.parse_args()
 
     picker = VenuePicker(seed=args.seed)
+    from tools.album_titles import ai_cover_texts
+    _t = ai_cover_texts("muoi2", {"t1": SLIDE_CATEGORIES[0][1],
+                                  "t2": SLIDE_CATEGORIES[1][1],
+                                  "t3": SLIDE_CATEGORIES[2][1]})
+    slide_cats = [(SLIDE_CATEGORIES[0][0], _t["t1"]),
+                  (SLIDE_CATEGORIES[1][0], _t["t2"]),
+                  (SLIDE_CATEGORIES[2][0], _t["t3"])]
     out_dir = args.out or str(Path(__file__).parent / "output" / "albums" / "muoi1311_demo")
     p = Path(out_dir)
     p.mkdir(parents=True, exist_ok=True)
@@ -33,7 +40,7 @@ def main():
     paths = [render_cover(cover_bg, str(p / "muoi1311_00_cover.png"))]
     print(f"[COVER] bg: {cover_v['name']}")
 
-    for i, (cat, title) in enumerate(SLIDE_CATEGORIES, 1):
+    for i, (cat, title) in enumerate(slide_cats, 1):
         raw = picker.pick_n(12, loai_quan=cat)
         seen = set()
         unique = [v for v in raw if v["name"] not in seen and not seen.add(v["name"])]

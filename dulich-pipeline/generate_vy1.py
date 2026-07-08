@@ -135,7 +135,8 @@ def main():
     picker = VenuePicker(seed=args.seed)
     paths = []
 
-    hook = random.choice(HOOK_HEADLINES)
+    from tools.album_titles import ai_cover_texts
+    hook = ai_cover_texts("vy1", {"hook": random.choice(HOOK_HEADLINES)})["hook"]
     cover_bg = _pick_bg()
     list_bg = _pick_bg()
 

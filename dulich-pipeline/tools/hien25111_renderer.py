@@ -93,11 +93,13 @@ def render_cover(bg_path: str, title_line1: str, title_line2: str,
     draw.text((BX + (BW - tw) // 2 - bbox[0], BY + (BH - th) // 2 - bbox[1]),
               location, font=font_badge, fill=YELLOW)
 
-    # Title — 2 lines at y=506 and y=624
-    font_title = _mtd(104)
+    # Title — 2 lines at y=506 and y=624, auto-shrink cho vừa khung
     for i, line in enumerate([title_line1, title_line2]):
+        fs = 104
+        while fs > 48 and draw.textlength(line, font=_mtd(fs)) > 888:
+            fs -= 4
         y = 506 + i * 118
-        _draw_centered(draw, line, y, font_title, YELLOW,
+        _draw_centered(draw, line, y, _mtd(fs), YELLOW,
                        x0=95, w=888, stroke_w=4, stroke_col=BLACK)
 
     return _composite(canvas, layer, out_path)

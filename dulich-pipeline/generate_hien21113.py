@@ -24,7 +24,8 @@ def main():
     p = Path(out_dir)
     p.mkdir(parents=True, exist_ok=True)
 
-    pov_text = random.choice(HOOK_TEXTS)
+    from tools.album_titles import ai_cover_texts
+    pov_text = ai_cover_texts("hien2", {"pov": random.choice(HOOK_TEXTS)})["pov"]
     cover_v = venues[0]
     cover_bg = picker.image(cover_v)
 

@@ -94,10 +94,11 @@ def main():
     texts = ai_cover_texts("le1", {
         "title": "Soạn Plan đi Đà Lạt tháng 6",
         "subtitle": "Các mom cho em xin ý kiến nhé",
+        "month_tag": "Tháng 6",
     })
     cover = CoverData(
         background_path=_day_bg(NGAY_1_ACTIVITIES),
-        month_tag="Tháng 6",
+        month_tag=texts["month_tag"],
         handle_tag="@thamhiemdalat",
         location_tag="Đà Lạt",
         title=texts["title"],

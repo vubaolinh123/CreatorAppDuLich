@@ -83,9 +83,11 @@ def main():
     p = Path(out_dir)
     paths = []
 
+    from tools.album_titles import ai_cover_texts
+    hook = ai_cover_texts("vy2", {"hook": HOOK})["hook"]
     out0 = str(p / "hien19111_00_cover.png")
     print("[1/8] Cover →", out0)
-    paths.append(render_cover(HOOK, out0))
+    paths.append(render_cover(hook, out0))
 
     out1 = str(p / "hien19111_01_music.png")
     print("[2/8] Music playlist →", out1)

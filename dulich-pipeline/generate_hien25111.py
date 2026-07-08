@@ -62,6 +62,13 @@ def main():
     now = datetime.now()
     date_str = f"{now.day}/{now.month}"
 
+    from tools.album_titles import ai_cover_texts
+    texts = ai_cover_texts("hien1", {
+        "line1": "Cập nhật tình hình",
+        "line2": "các đèo lên Đà Lạt",
+        "grid1": GRID_TITLES[0], "grid2": GRID_TITLES[1], "grid3": GRID_TITLES[2],
+    })
+
     out_dir = args.out or str(
         Path(__file__).parent / "output" / "albums" / "hien25111_demo"
     )
@@ -75,8 +82,8 @@ def main():
     out0 = str(p / "hien25111_00_cover.png")
     paths.append(render_cover(
         bg_path=bg_cover,
-        title_line1="Cập nhật tình hình",
-        title_line2=f"các đèo lên Đà Lạt ({date_str})",
+        title_line1=texts["line1"],
+        title_line2=f"{texts['line2']} ({date_str})",
         out_path=out0,
     ))
     print(f"[0] Cover → {out0}")
@@ -87,7 +94,7 @@ def main():
     out1 = str(p / "hien25111_01_road.png")
     paths.append(render_road_status(
         bg_path=bg_road_path,
-        title=f"CẬP NHẬT TÌNH HÌNH CÁC ĐÈO LÊN ĐÀ LẠT ({date_str.upper()})",
+        title=f"{texts['line1']} {texts['line2']} ({date_str})".upper(),
         sections=DEFAULT_ROAD_SECTIONS,
         footer_note="Mình sẽ tiếp tục cập nhật khi có thêm thông tin mới nhé",
         out_path=out1,
@@ -96,9 +103,9 @@ def main():
 
     # ── Slides 2-4: Venue grids ────────────────────────────────────────────────
     cats = [
-        ("quán ăn", GRID_TITLES[0]),
-        ("quán ăn", GRID_TITLES[1]),
-        ("quán ăn", GRID_TITLES[2]),
+        ("quán ăn", texts["grid1"]),
+        ("quán ăn", texts["grid2"]),
+        ("quán ăn", texts["grid3"]),
     ]
 
     for slide_idx, (cat, title) in enumerate(cats, 2):
