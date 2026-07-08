@@ -2255,6 +2255,11 @@ def _daily_scheduler():
                 last = slot
                 print("[daily] chạy tự động tạo album + kịch bản...", file=sys.stderr)
                 _daily_auto_job()
+                try:
+                    from tools.storage_cleanup import run as _cleanup_run
+                    _cleanup_run(days=5)
+                except Exception as ce:
+                    print(f"[daily] storage cleanup lỗi: {ce}", file=sys.stderr)
         except Exception as e:
             print(f"[daily] scheduler lỗi: {e}", file=sys.stderr)
         _t.sleep(60)
