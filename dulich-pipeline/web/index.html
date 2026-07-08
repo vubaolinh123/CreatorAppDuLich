@@ -803,7 +803,7 @@ async function createVideo(){
     voiceMode:((document.getElementById("voicePick")||{}).value?"vbee":(SESSION.voice||"gtts")),voiceId:((document.getElementById("voicePick")||{}).value||""),
     scenes:currentScenes.map(s=>({scene_id:s.scene_id,description:s.description||s.label,min_duration_sec:s.min_duration_sec,type:s.type,files:s.files.map(c=>c.file)})),
     status:"pending",progress:0,videoUrl:"",error:""};
-  hookOverlayUrl="";
+  hookOverlayUrl=""; CURRENT_DRAFT_ID="";
   jobs.unshift(job); renderAll();
   // success overlay 2s → reset
   const cr=document.getElementById("created"); cr.classList.remove("hidden");
@@ -826,10 +826,11 @@ function createVideoLR(){
   };
   const _vid=(document.getElementById("voicePick")||{}).value||"";
   const job={id:"lr_"+Date.now().toString(36),mode:"listreview",topic:((intro.title||"")||"List review").slice(0,50),
+    draftId:CURRENT_DRAFT_ID,
     spec,hookStyle:curHookStyle(),voiceMode:_vid?"vbee":(SESSION.voice||"gtts"),voiceId:_vid,
     scenes:currentScenes.filter(s=>s.files.length).map(s=>({scene_id:s.scene_id,files:s.files.map(c=>c.file)})),
     status:"pending",progress:0,videoUrl:"",error:""};
-  hookOverlayUrl="";
+  hookOverlayUrl=""; CURRENT_DRAFT_ID="";
   jobs.unshift(job); renderAll();
   const cr=document.getElementById("created"); cr.classList.remove("hidden");
   setTimeout(()=>{ cr.classList.add("hidden"); resetEditor(); }, 2000);
@@ -845,6 +846,7 @@ async function renderAll(){
         const fd=new FormData();
         fd.append("job_id",job.id); fd.append("user",SESSION.username); fd.append("creator_id",SESSION.username);
         fd.append("hook_style",job.hookStyle); fd.append("voice_mode",job.voiceMode||SESSION.voice||"gtts"); fd.append("voice_id",job.voiceId||"");
+        if(job.draftId) fd.append("draft_id",job.draftId);
         fd.append("spec",JSON.stringify(job.spec));
         job.scenes.forEach(s=>s.files.forEach((f,k)=>fd.append(s.scene_id+"__"+k,f,f.name)));
         job.progress=55; renderLibrary();
@@ -917,7 +919,19 @@ function renderVideoPage(){
       <div id="libFilter" style="margin-bottom:12px"></div>
       <div class="lib-grid" id="libGrid"></div>
       <div id="libEmpty" class="muted" style="margin-top:12px">Chưa có video nào.</div></div>`;
-  loadDrafts(); fetchLibrary().then(renderLibrary);
+  loadDrafts(); fetchServerJobs().then(()=>fetchLibrary().then(renderLibrary));
+  if(!window._vidPageTimer){ window._vidPageTimer=setInterval(async()=>{
+    if(!document.getElementById("libGrid")){ clearInterval(window._vidPageTimer); window._vidPageTimer=null; return; }
+    const before=JSON.stringify(SERVER_RJOBS);
+    await fetchServerJobs();
+    if(JSON.stringify(SERVER_RJOBS)!==before){ await fetchLibrary(); renderLibrary(); }
+  }, 6000); }
+}
+let SERVER_RJOBS=[];
+async function fetchServerJobs(){
+  try{ const j=await (await fetch(API+`/render-jobs?user=${SESSION.username}&role=${SESSION.role}`,{cache:"no-store"})).json();
+    SERVER_RJOBS=(j.jobs||[]).filter(x=>x.status==="queued"||x.status==="rendering");
+  }catch{ SERVER_RJOBS=[]; }
 }
 let VIDEO_DRAFTS=[];
 async function loadDrafts(){
@@ -930,22 +944,34 @@ async function loadDrafts(){
 function renderDrafts(){
   const box=document.getElementById("draftBox"); if(!box)return; box.classList.remove("muted");
   if(!VIDEO_DRAFTS.length){ box.innerHTML="<div class='muted'>Chưa có kịch bản. Bấm \"Tạo nội dung\" ở trang chủ hoặc chờ tạo tự động.</div>"; return; }
-  box.innerHTML=`<div style="display:flex;gap:12px;overflow-x:auto;padding-bottom:6px">${VIDEO_DRAFTS.map((d,i)=>{
+  const card=(d,i,archived)=>{
     const mine=(d.user===SESSION.username);
-    return `<div class="alb-card" style="flex:0 0 230px">
+    return `<div class="alb-card" style="flex:0 0 230px;${archived?"opacity:.75":""}">
       <div><div class="nm" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${(d.topic||"Kịch bản").replace(/</g,"&lt;")}</div>
-        <div class="id">${makerName(d.user)} · ${d.time?new Date(d.time*1000).toLocaleDateString("vi"):""}${d.used?" · đã dùng":""}</div></div>
+        <div class="id">${makerName(d.user)} · ${d.time?new Date(d.time*1000).toLocaleDateString("vi"):""}${archived?" · <b style='color:#2f9d57'>✓ đã render</b>":""}</div></div>
       <div style="display:flex;gap:6px">
-        ${mine?`<button class="btn chip" style="flex:1" onclick="useDraft(${i})">✍️ Dùng</button>`:""}
+        ${mine?`<button class="btn chip" style="flex:1" onclick="useDraft(${i})">✍️ Dùng${archived?" lại":""}</button>`:""}
         ${mine?`<button class="btn-ghost chip" onclick="deleteDraft(${i})">🗑</button>`:""}
       </div></div>`;
-  }).join("")}</div>`;
+  };
+  const active=[], archived=[];
+  VIDEO_DRAFTS.forEach((d,i)=>{ (d.used?archived:active).push([d,i]); });
+  let html = active.length
+    ? `<div style="display:flex;gap:12px;overflow-x:auto;padding-bottom:6px">${active.map(([d,i])=>card(d,i,false)).join("")}</div>`
+    : "<div class='muted'>Hết kịch bản chờ — kịch bản đã render nằm trong Lưu trữ bên dưới.</div>";
+  if(archived.length){
+    html+=`<details style="margin-top:10px"><summary class="muted" style="cursor:pointer">📦 Lưu trữ — đã render (${archived.length})</summary>
+      <div style="display:flex;gap:12px;overflow-x:auto;padding:8px 0 4px">${archived.map(([d,i])=>card(d,i,true)).join("")}</div></details>`;
+  }
+  box.innerHTML=html;
 }
+let CURRENT_DRAFT_ID="";
 function useDraft(i){
   const d=VIDEO_DRAFTS[i]; if(!d)return;
   currentScenes=(d.scenes||[]).map(s=>({...s,caption:(s.caption!=null?s.caption:(s.vo||"")),files:[]})); scenePage=0;
   LR_ENGINE=d.overlay_engine||"pil"; LR_STYLE=d.style||""; LR_BADGE=d.badge_mode||"none"; LR_TRANSITION=d.transition||"fade";
-  renderHome(); openEditor();   // về trang chủ (có #editor) rồi mở editor; KHÔNG đánh dấu used → kịch bản vẫn còn
+  CURRENT_DRAFT_ID=d.id||"";   // render xong server sẽ đánh dấu "đã render" → vào Lưu trữ
+  renderHome(); openEditor();
   toast("Đã nạp kịch bản: "+(d.topic||""));
 }
 async function deleteDraft(i){
@@ -969,14 +995,27 @@ function renderLibrary(){
     } else fbox.innerHTML="";
   }
   if(!LIB_FILTER){
+    // Job render nền trên server (kể cả sau khi logout/login lại)
+    const localIds=new Set(jobs.map(j=>j.serverJob).filter(Boolean));
+    SERVER_RJOBS.filter(sj=>!localIds.has(sj.job_id)).forEach(sj=>{
+      cards.push(`<div class="lib-card"><div class="lib-render"><div class="mid"><div class="spin"></div><div>${sj.status==="rendering"?"⏳ Đang render…":"🕓 Chờ render (hàng đợi)"}</div><div class="muted" style="color:#ddd;font-size:11px">${(sj.topic||"").replace(/</g,"&lt;")}</div></div><div class="lib-bar" style="width:${sj.status==="rendering"?70:30}%"></div></div><div class="cap"><span>${(sj.topic||"video").replace(/</g,"&lt;")}${SESSION.role==="admin"&&sj.user?" · "+makerName(sj.user):""}</span></div></div>`);
+    });
     jobs.filter(j=>j.status!=="done").forEach(j=>{cards.push(`<div class="lib-card"><div class="lib-render" style="${j.hookPrev?`background-image:url(${j.hookPrev})`:""}"><div class="blur" style="${j.hookPrev?`background-image:url(${j.hookPrev})`:""}"></div><div class="mid">${j.status==="error"?`<div style="color:#ffb4b4">Lỗi</div><div class="muted" style="color:#ddd;max-width:90%;text-align:center">${j.error||""}</div>`:`<div class="spin"></div><div>${j.status==="rendering"?"Đang render "+j.progress+"%":j.status==="queued"?"🎬 Render nền (logout được)":"Chờ…"}</div>`}</div><div class="lib-bar" style="width:${j.progress}%"></div></div><div class="cap"><span>${j.topic}</span></div></div>`);});
   }
   const shown=new Set();
   if(!LIB_FILTER) jobs.filter(j=>j.status==="done"&&j.videoUrl).forEach(j=>{shown.add(j.videoUrl);cards.push(libCard(j.videoUrl,j.topic));});
-  libVideos.forEach(v=>{if(shown.has(v.video_url))return;if(LIB_FILTER&&v.user!==LIB_FILTER)return;cards.push(libCard(v.video_url,v.topic||"video",v.user));});
+  libVideos.forEach(v=>{if(shown.has(v.video_url))return;if(LIB_FILTER&&v.user!==LIB_FILTER)return;cards.push(libCard(v.video_url,v.topic||"video",v.user,v.status,v.time));});
   grid.innerHTML=cards.join(""); const e=document.getElementById("libEmpty"); if(e)e.style.display=cards.length?"none":"block";
 }
-function libCard(url,topic,user){return `<div class="lib-card"><video src="${API+url}" preload="metadata"></video><div class="cap"><span>${topic||""}${user?" · "+user:""}</span><button class="expand" onclick="openViewer('${url}')">⤢ Phóng to</button></div></div>`;}
+function statusChip(s){
+  const m={posted:["✅ Đã đăng","#2f9d57"],failed:["⚠ Đăng lỗi","#e2536b"],cancelled:["✕ Hủy","#999"],pending:["🕓 Chưa đăng","#b98b00"]};
+  const [t,c]=m[s]||m.pending;
+  return `<span style="font-size:11px;font-weight:700;color:${c}">${t}</span>`;
+}
+function libCard(url,topic,user,status,time){
+  const d=time?new Date(time*1000).toLocaleDateString("vi"):"";
+  return `<div class="lib-card"><video src="${API+url}" preload="metadata"></video><div class="cap" style="flex-direction:column;align-items:stretch;gap:2px"><span>${topic||""}${user?" · "+makerName(user):""}</span><div style="display:flex;justify-content:space-between;align-items:center">${status?statusChip(status):""}<span class="muted" style="font-size:11px">${d}</span><button class="expand" onclick="openViewer('${url}')">⤢</button></div></div></div>`;
+}
 
 // ---------- ADMIN: duyệt bài + KPI ----------
 let ADMIN_TAB="pending", REVIEW_ITEMS=[];
@@ -985,10 +1024,11 @@ async function renderAdmin(){
   document.getElementById("appbody").innerHTML=`
     <div class="card" style="margin-bottom:16px"><h2 class="sec">📊 KPI hôm nay (mục tiêu: nv 5 video + 5 ảnh · tin tức 10 video)</h2><div id="kpiBox" class="muted">Đang tải…</div></div>
     <div class="card">
-      <div style="display:flex;gap:8px;margin-bottom:12px">
+      <div style="display:flex;gap:8px;margin-bottom:8px">
         <button class="btn chip" id="tab-pending" onclick="setAdminTab('pending')">🕓 Chưa duyệt</button>
         <button class="btn-ghost chip" id="tab-posted" onclick="setAdminTab('posted')">✅ Đã đăng / Lưu trữ</button>
       </div>
+      <div id="revFilters" style="margin-bottom:12px"></div>
       <div id="reviewBox" class="muted">Đang tải…</div>
     </div>`;
   loadKpi(); adminReviewLoad();
@@ -1020,9 +1060,24 @@ async function adminReviewLoad(){
     renderReview();
   }catch(e){const b=document.getElementById("reviewBox");if(b)b.textContent="Lỗi tải: "+e.message;}
 }
+let REV_USER="", REV_KIND="";
+function setRevUser(u){ REV_USER=u; renderReview(); }
+function setRevKind(k){ REV_KIND=k; renderReview(); }
 function renderReview(){
   const box=document.getElementById("reviewBox"); if(!box)return; box.classList.remove("muted");
-  const list=REVIEW_ITEMS.filter(it=> ADMIN_TAB==="posted" ? it.status==="posted" : it.status!=="posted");
+  // Bộ lọc: theo nhân viên/tin tức + theo loại video/ảnh — admin duyệt từng mục cho dễ
+  const fb=document.getElementById("revFilters");
+  if(fb){
+    const users=["",...Array.from(new Set(REVIEW_ITEMS.map(x=>x.user).filter(Boolean)))];
+    fb.innerHTML=
+      `<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:6px">`+
+      users.map(u=>`<button class="${REV_USER===u?'btn':'btn-ghost'} chip" onclick="setRevUser('${u}')">${u?makerName(u):'👥 Tất cả'}</button>`).join("")+`</div>`+
+      `<div style="display:flex;gap:6px;flex-wrap:wrap">`+
+      [["","Loại: tất cả"],["video","📹 Video"],["album","🖼 Ảnh"]].map(([k,l])=>`<button class="${REV_KIND===k?'btn':'btn-ghost'} chip" onclick="setRevKind('${k}')">${l}</button>`).join("")+`</div>`;
+  }
+  let list=REVIEW_ITEMS.filter(it=> ADMIN_TAB==="posted" ? it.status==="posted" : it.status!=="posted");
+  if(REV_USER) list=list.filter(it=>it.user===REV_USER);
+  if(REV_KIND) list=list.filter(it=>it.kind===REV_KIND);
   if(!list.length){ box.innerHTML="<div class='muted'>Không có mục nào.</div>"; return; }
   box.innerHTML=`<div class="lib-grid">`+list.map(it=>{
     const media = it.kind==="video"
@@ -1098,7 +1153,8 @@ function renderSavedAlbums(){
     const gi=SAVED_ALBUMS.indexOf(a);
     const cover=(a.images&&a.images[0])?`<img src="${API+a.images[0].url}?w=220" loading="lazy" style="width:100%;aspect-ratio:4/5;object-fit:cover;border-radius:10px;background:var(--surface2)">`:"";
     return `<div class="alb-card" style="cursor:pointer" onclick="openSavedAlbum(${gi})">${cover}
-      <div><div class="nm">${a.label||a.album}</div><div class="id">${(a.images||[]).length} ảnh${(SESSION.role==="admin"&&a.user)?" · "+makerName(a.user):""}</div></div></div>`;
+      <div><div class="nm">${a.label||a.album}</div><div class="id">${(a.images||[]).length} ảnh${(SESSION.role==="admin"&&a.user)?" · "+makerName(a.user):""}${a.time?" · "+new Date(a.time*1000).toLocaleDateString("vi"):""}</div>
+      ${a.status?statusChip(a.status):""}</div></div>`;
   }).join("")}</div>`;
 }
 function openSavedAlbum(i){ const a=SAVED_ALBUMS[i]; if(a) renderAlbumView(a); }

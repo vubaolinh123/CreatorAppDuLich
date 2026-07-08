@@ -263,6 +263,13 @@ def _render_worker():
                     _notify_publish(job["user"], job["topic"], video_url)
                 except Exception as _e:
                     print(f"[render-queue] product log lỗi: {_e}", file=sys.stderr)
+                # Kịch bản đã render xong → đánh dấu "đã render" (vào Lưu trữ, không xóa)
+                if job.get("draft_id"):
+                    try:
+                        from tools.script_drafts import mark_used
+                        mark_used(job["draft_id"])
+                    except Exception as _e:
+                        print(f"[render-queue] mark draft lỗi: {_e}", file=sys.stderr)
                 print(f"[render-queue] ✓ xong {jid}: {video_url}", file=sys.stderr)
             else:
                 _job_update(jid, status="failed", error=_friendly_error(result.get("error", "render fail")))
@@ -1640,6 +1647,7 @@ class AssembleHandler(BaseHTTPRequestHandler):
                         error="", video_url="", time=_t.time())
             _RENDER_QUEUE.put({"job_id": job_id, "spec": spec, "user": user,
                                "topic": _topic, "hook_style": hook_style,
+                               "draft_id": fields.get("draft_id", ""),
                                "temp_dir": job_temp})
             print(f"[Server] /assemble-listreview → queue {job_id} (vị trí {position})", file=sys.stderr)
             self._json_response({"success": True, "queued": True,

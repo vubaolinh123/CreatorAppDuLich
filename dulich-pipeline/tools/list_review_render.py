@@ -359,6 +359,18 @@ def _cues_from_lines(lines: list[str], words: list[dict], dur: float) -> list[tu
     return cues
 
 
+def _no_overlap(cues: list[tuple[str, float, float]],
+                gap: float = 0.06) -> list[tuple[str, float, float]]:
+    """ffmpeg enable='between(t,a,b)' tính CẢ 2 đầu mút → cue trước phải kết thúc
+    TRƯỚC cue sau 1 khe nhỏ, không thì 2 dòng chồng dính nhau tại điểm giao."""
+    out = []
+    for i, (txt, st, en) in enumerate(cues):
+        if i + 1 < len(cues):
+            en = min(en, cues[i + 1][1] - gap)
+        out.append((txt, st, max(en, st + 0.2)))
+    return out
+
+
 def _timed_cues(vo_path: str, vo_text: str, dur: float) -> list[tuple[str, float, float]]:
     """Cue phụ đề (text, start, end). Ưu tiên timing thật (words.json/Whisper);
     fallback chia đều như cũ."""
@@ -387,17 +399,17 @@ def _timed_cues(vo_path: str, vo_text: str, dur: float) -> list[tuple[str, float
                     if lines:
                         out = _cues_from_lines(lines, words, dur)
                         if out:
-                            return out
+                            return _no_overlap(out)
             out = _group_words(words, dur)
             if out:
-                return out
+                return _no_overlap(out)
         except Exception as e:
             print(f"[list_review] cue lỗi ({e}) → chia đều", file=sys.stderr)
     lines = _chunk_caption(vo_text)
     if not lines:
         return []
     per = dur / len(lines)
-    return [(ln, i * per, (i + 1) * per) for i, ln in enumerate(lines)]
+    return _no_overlap([(ln, i * per, (i + 1) * per) for i, ln in enumerate(lines)])
 
 
 def build_caption_png(text: str, out_path: str, max_w: int = 980):
