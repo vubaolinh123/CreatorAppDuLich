@@ -540,23 +540,18 @@ function removeSpot(i){
 function renderNews(){
   document.getElementById("appbody").innerHTML = `
     <div class="card" style="max-width:680px;margin:0 auto" id="genCard">
-      <h2 class="sec">📰 Kênh tin tức / review Đà Lạt</h2>
-      <button class="btn" style="width:100%;margin-top:4px" id="autoBtn" onclick="researchNews('auto')">🔄 Quét tin tức (tự động)</button>
-      <div class="muted" style="margin:10px 0 4px;text-align:center">— hoặc —</div>
-      <label>Dán link TikTok → tạo kịch bản</label>
-      <input id="manualLink" placeholder="https://www.tiktok.com/@.../video/...">
-      <button class="btn-ghost" style="width:100%;margin-top:8px;padding:10px" id="manualBtn" onclick="researchNews('manual')">✍️ Tạo từ link này</button>
-      <div class="muted" style="margin-top:8px">AI viết kịch bản MỚI (hook 10s + lịch trình/list) từ video nguồn. Quét tin tức từ Facebook sẽ cài sau.</div>
-      <div id="srcbox" class="hidden" style="margin-top:14px"></div>
-    </div>
-    <div class="card" style="max-width:680px;margin:16px auto 0">
       <div style="display:flex;justify-content:space-between;align-items:center;gap:10px">
-        <h2 class="sec" style="margin:0">📺 Tin Đà Lạt mới (YouTube)</h2>
+        <h2 class="sec" style="margin:0">📰 Tin tức Đà Lạt</h2>
         <button class="btn-ghost chip" id="newsScrapeBtn" onclick="scrapeNews()">🔄 Cào tin mới</button>
       </div>
-      <div class="muted" style="margin:4px 0 8px">Chỉ tin trong <b>24h</b> (video + shorts). Tự cào 5h/11h/18h. Bấm "Dùng" để viết kịch bản.</div>
+      <div class="muted" style="margin:4px 0 8px">Chỉ tin trong <b>24h</b> (YouTube video + shorts). Tự cào 5h/11h/18h. Chọn tin → bấm <b>📝 Tạo kịch bản</b>.</div>
       <div id="newsKeywords" style="margin-bottom:8px"></div>
       <div id="newsPool" class="muted">Đang tải…</div>
+      <details style="margin-top:14px"><summary class="muted" style="cursor:pointer">✍️ Hoặc tạo kịch bản từ link TikTok</summary>
+        <input id="manualLink" placeholder="https://www.tiktok.com/@.../video/..." style="margin-top:8px">
+        <button class="btn-ghost" style="width:100%;margin-top:8px;padding:10px" id="manualBtn" onclick="researchNews('manual')">✍️ Tạo từ link này</button>
+      </details>
+      <div id="srcbox" class="hidden" style="margin-top:14px"></div>
     </div>
     <div id="editor" class="hidden"></div>`;
   loadNewsPool();
@@ -573,7 +568,7 @@ async function loadNewsPool(){
 }
 function renderNewsPool(items,t){
   const box=document.getElementById("newsPool"); if(!box)return; box.classList.remove("muted");
-  if(!items.length){ box.innerHTML="<div class='muted'>Chưa có tin. Bấm \"Cào tin mới\".</div>"; return; }
+  if(!items.length){ box.innerHTML="<div class='muted'>⚠ Không có tin nào trong 24h qua. Bấm \"Cào tin mới\" hoặc chờ mốc cào tự động (5h/11h/18h).</div>"; return; }
   const when=t?new Date(t*1000).toLocaleString("vi"):"";
   box.innerHTML=(when?`<div class="muted" style="margin-bottom:8px">Cào lúc: ${when}</div>`:"")+
     items.slice(0,30).map(it=>`<div style="display:flex;gap:10px;align-items:center;padding:8px 0;border-bottom:1px solid var(--line)">
@@ -583,7 +578,7 @@ function renderNewsPool(items,t){
         <div class="muted" style="font-size:11px">${it.is_short?"🎬 Short":"▶ Video"}${it.channel?" · "+(it.channel||"").replace(/</g,"&lt;"):""}${it.date?" · "+String(it.date).slice(0,10):""}</div>
       </div>
       <a href="${it.url}" target="_blank" class="btn-ghost chip" style="text-decoration:none">▶</a>
-      <button class="btn chip" onclick="useNews('${it.url}')">Dùng</button>
+      <button class="btn chip" id="nu-${it.id||it.url.split('=').pop()}" onclick="newsMakeScript(this,'${encodeURIComponent(it.url)}','${encodeURIComponent(it.title||"")}')">📝 Tạo kịch bản</button>
     </div>`).join("");
 }
 async function scrapeNews(){
@@ -591,11 +586,20 @@ async function scrapeNews(){
   try{
     const j=await (await fetch(API+"/news-scrape",{method:"POST",headers:{"Content-Type":"application/json"},body:"{}"})).json();
     if(!j.success)throw new Error(j.error||"lỗi");
-    renderNewsPool(j.items||[], Date.now()/1000); toast(`Cào ${j.count||0} tin`);
+    renderNewsPool(j.items||[], Date.now()/1000);
+    toast((j.count||0)>0?`Cào được ${j.count} tin mới`:"⚠ Không có tin mới nào trong 24h qua");
   }catch(e){ toast("Lỗi cào: "+e.message); }
   finally{ if(btn){btn.disabled=false;btn.textContent="🔄 Cào tin mới";} }
 }
-function useNews(url){ const el=document.getElementById("manualLink"); if(el){el.value=url; el.scrollIntoView({behavior:"smooth"});} researchNews('manual'); }
+async function newsMakeScript(btn,url,title){
+  const old=btn.textContent; btn.disabled=true; btn.textContent="⏳ AI đang viết…";
+  try{
+    const j=await (await fetch(API+"/news-use",{method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({url:decodeURIComponent(url),title:decodeURIComponent(title)})})).json();
+    if(!j.success)throw new Error(j.error||"lỗi");
+    btn.textContent="✓ Đã tạo"; toast("📝 Đã tạo kịch bản từ tin này — xem ở Kịch bản chờ (📚 Thư viện / Video)");
+  }catch(e){ toast("Lỗi: "+e.message); btn.disabled=false; btn.textContent=old; }
+}
 function pickColor(c,el){ newsColor=c; document.querySelectorAll(".colordot").forEach(d=>d.classList.toggle("active",d===el)); updateHookOverlay(); }
 
 async function researchNews(mode){
@@ -847,7 +851,14 @@ async function renderAll(){
         const r=await fetch(API+"/assemble-listreview",{method:"POST",body:fd}); const t=await r.text();
         let res; try{res=JSON.parse(t);}catch{throw new Error("Phản hồi lạ");}
         if(!res.success) throw new Error(res.error||"render fail");
-        job.status="done"; job.progress=100; job.videoUrl=res.video_url||"";
+        if(res.queued){
+          // RENDER NỀN: server đã nhận đủ file — logout cũng vẫn render tiếp.
+          job.status="queued"; job.progress=60; job.serverJob=res.job_id;
+          toast(`🎬 Đã vào hàng render nền (vị trí ${res.position}). Có thể LOGOUT — video xong tự vào thư viện Video.`);
+          startJobPolling();
+        } else {
+          job.status="done"; job.progress=100; job.videoUrl=res.video_url||"";
+        }
         renderLibrary(); continue;
       }
       const fd=new FormData();
@@ -868,6 +879,26 @@ async function renderAll(){
     renderLibrary();
   }
   rendering=false;
+}
+
+// Poll trạng thái render nền (server queue) — cập nhật job local khi xong/lỗi.
+let _jobPollTimer=null;
+function startJobPolling(){
+  if(_jobPollTimer)return;
+  _jobPollTimer=setInterval(async()=>{
+    const waiting=jobs.filter(j=>j.status==="queued"&&j.serverJob);
+    if(!waiting.length){ clearInterval(_jobPollTimer); _jobPollTimer=null; return; }
+    try{
+      const j=await (await fetch(API+`/render-jobs?user=${SESSION.username}`,{cache:"no-store"})).json();
+      (j.jobs||[]).forEach(sj=>{
+        const loc=jobs.find(x=>x.serverJob===sj.job_id); if(!loc)return;
+        if(sj.status==="done"){ loc.status="done"; loc.progress=100; loc.videoUrl=sj.video_url||""; toast("✅ Render xong: "+(loc.topic||"")); }
+        else if(sj.status==="failed"){ loc.status="error"; loc.error=sj.error||"render lỗi"; toast("⚠ Render lỗi: "+(sj.error||"")); }
+        else if(sj.status==="rendering"){ loc.progress=80; }
+      });
+      renderLibrary();
+    }catch(e){}
+  }, 5000);
 }
 
 // ---------- VIDEO (trang riêng: kịch bản đã lưu + video) ----------
@@ -938,7 +969,7 @@ function renderLibrary(){
     } else fbox.innerHTML="";
   }
   if(!LIB_FILTER){
-    jobs.filter(j=>j.status!=="done").forEach(j=>{cards.push(`<div class="lib-card"><div class="lib-render" style="${j.hookPrev?`background-image:url(${j.hookPrev})`:""}"><div class="blur" style="${j.hookPrev?`background-image:url(${j.hookPrev})`:""}"></div><div class="mid">${j.status==="error"?`<div style="color:#ffb4b4">Lỗi</div><div class="muted" style="color:#ddd;max-width:90%;text-align:center">${j.error||""}</div>`:`<div class="spin"></div><div>${j.status==="rendering"?"Đang render "+j.progress+"%":"Chờ…"}</div>`}</div><div class="lib-bar" style="width:${j.progress}%"></div></div><div class="cap"><span>${j.topic}</span></div></div>`);});
+    jobs.filter(j=>j.status!=="done").forEach(j=>{cards.push(`<div class="lib-card"><div class="lib-render" style="${j.hookPrev?`background-image:url(${j.hookPrev})`:""}"><div class="blur" style="${j.hookPrev?`background-image:url(${j.hookPrev})`:""}"></div><div class="mid">${j.status==="error"?`<div style="color:#ffb4b4">Lỗi</div><div class="muted" style="color:#ddd;max-width:90%;text-align:center">${j.error||""}</div>`:`<div class="spin"></div><div>${j.status==="rendering"?"Đang render "+j.progress+"%":j.status==="queued"?"🎬 Render nền (logout được)":"Chờ…"}</div>`}</div><div class="lib-bar" style="width:${j.progress}%"></div></div><div class="cap"><span>${j.topic}</span></div></div>`);});
   }
   const shown=new Set();
   if(!LIB_FILTER) jobs.filter(j=>j.status==="done"&&j.videoUrl).forEach(j=>{shown.add(j.videoUrl);cards.push(libCard(j.videoUrl,j.topic));});
@@ -999,7 +1030,7 @@ function renderReview(){
       : (it.cover?`<img src="${API+it.cover}?w=220" style="width:100%;aspect-ratio:4/5;object-fit:cover;border-radius:10px;cursor:pointer" onclick="openImg('${it.cover}')">`:"<div class='muted'>—</div>");
     const btns = it.status==="posted"
       ? `<button class="btn-ghost chip" onclick="setStatus('${it.kind}','${it.key}','pending')">↩ Chưa đăng</button>`
-      : `<button class="btn chip" style="background:#1976d2;border-color:#1976d2" onclick="setStatus('${it.kind}','${it.key}','posted')">Đăng</button><button class="btn-ghost chip" onclick="setStatus('${it.kind}','${it.key}','failed')">⚠ Lỗi</button><button class="btn-ghost chip" onclick="setStatus('${it.kind}','${it.key}','cancelled')">✕ Hủy</button>`;
+      : `<button class="btn chip" style="background:#1976d2;border-color:#1976d2" onclick="setStatus('${it.kind}','${it.key}','posted',this)">Đăng</button><button class="btn-ghost chip" onclick="setStatus('${it.kind}','${it.key}','failed',this)">⚠ Lỗi</button><button class="btn-ghost chip" onclick="setStatus('${it.kind}','${it.key}','cancelled',this)">✕ Hủy</button>`;
     return `<div class="lib-card" style="padding:8px">${media}
       <div class="cap" style="flex-direction:column;align-items:stretch;gap:6px">
         <span style="font-size:12px">${(it.title||"").replace(/</g,"&lt;")} · <b>${makerName(it.user)}</b> · ${statusLabel(it.status)}${it.kind==="album"?` · ${it.count} ảnh`:""}</span>
@@ -1007,14 +1038,15 @@ function renderReview(){
       </div></div>`;
   }).join("")+`</div>`;
 }
-async function setStatus(kind,key,status){
+async function setStatus(kind,key,status,btn){
+  if(btn){ btn.disabled=true; btn.style.opacity=".6"; if(status==="posted"){ btn.textContent="⏳ Đang đăng…"; toast("⏳ Đang đăng lên TikTok…"); } }
   try{ const j=await (await fetch(API+"/product-status",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({kind,key,status})})).json();
     if(!j.success)throw new Error(j.error||"không tìm thấy");
     if(status==="posted" && j.posted===false){ status="failed"; toast("Đăng lỗi: "+(j.error||"")); }
     else toast(status==="posted"&&j.posted?"✅ Đã đăng TikTok":"Đã cập nhật: "+statusLabel(status));
     const it=REVIEW_ITEMS.find(x=>x.kind===kind&&x.key===key); if(it)it.status=status;
     renderReview(); loadKpi();
-  }catch(e){toast("Lỗi: "+e.message);}
+  }catch(e){toast("Lỗi: "+e.message); if(btn){btn.disabled=false;btn.style.opacity="1";btn.textContent="Đăng";}}
 }
 
 // ---------- TẠO ẢNH (per-nv: mẫu album theo tài khoản + album đã lưu) ----------

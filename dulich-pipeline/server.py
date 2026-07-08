@@ -225,6 +225,65 @@ WEB_INDEX = Path(__file__).parent / "web" / "index.html"
 # still answer health checks + serve files while one render is running.
 _HEAVY_LOCK = threading.Lock()
 
+# ── Render NỀN: hàng đợi tuần tự — bấm render là vào queue, logout vẫn chạy ────
+import queue as _queue
+_RENDER_QUEUE: "_queue.Queue" = _queue.Queue()
+_RENDER_JOBS: dict = {}          # job_id → {user, topic, status, error, video_url, time}
+_RENDER_JOBS_LOCK = threading.Lock()
+
+
+def _job_update(job_id: str, **kw) -> None:
+    with _RENDER_JOBS_LOCK:
+        _RENDER_JOBS.setdefault(job_id, {})
+        _RENDER_JOBS[job_id].update(kw)
+
+
+def _render_worker():
+    """Worker nền: render tuần tự từng job trong queue (sống độc lập với session người dùng)."""
+    while True:
+        job = _RENDER_QUEUE.get()
+        jid = job["job_id"]
+        _job_update(jid, status="rendering")
+        print(f"[render-queue] bắt đầu {jid} (user {job.get('user')})", file=sys.stderr)
+        try:
+            with _HEAVY_LOCK:
+                for m in list(sys.modules.keys()):
+                    if m.startswith("tools.list_review_render"):
+                        sys.modules.pop(m, None)
+                from tools.list_review_render import render_list_review
+                result = render_list_review(job["spec"])
+            if result.get("success"):
+                video_url = _to_output_url(result.get("video_path", ""))
+                _job_update(jid, status="done", video_url=video_url)
+                try:
+                    import time as _t
+                    _append_product({"user": job["user"], "topic": job["topic"],
+                                     "hook_style": job.get("hook_style", ""),
+                                     "video_url": video_url, "time": _t.time()})
+                    _notify_publish(job["user"], job["topic"], video_url)
+                except Exception as _e:
+                    print(f"[render-queue] product log lỗi: {_e}", file=sys.stderr)
+                print(f"[render-queue] ✓ xong {jid}: {video_url}", file=sys.stderr)
+            else:
+                _job_update(jid, status="failed", error=_friendly_error(result.get("error", "render fail")))
+                print(f"[render-queue] ✗ {jid}: {result.get('error')}", file=sys.stderr)
+        except Exception as e:
+            import traceback
+            print(f"[render-queue] ✗ {jid}: {e}\n{traceback.format_exc()}", file=sys.stderr)
+            _job_update(jid, status="failed", error=_friendly_error(e))
+        finally:
+            def _cleanup(p=job.get("temp_dir")):
+                import time as _t
+                _t.sleep(60)
+                if p:
+                    shutil.rmtree(str(p), ignore_errors=True)
+            threading.Thread(target=_cleanup, daemon=True).start()
+
+
+def _start_render_worker():
+    threading.Thread(target=_render_worker, daemon=True).start()
+    print("[Server] Render queue nền bật (tuần tự).", file=sys.stderr)
+
 # No API keys in this demo → default voice engine is free Microsoft Edge TTS (vi-VN).
 os.environ.setdefault("VOICE_PROVIDER", "edge")
 
@@ -810,6 +869,8 @@ class AssembleHandler(BaseHTTPRequestHandler):
             self.handle_settings_save()
         elif self.path == "/user-keys":
             self.handle_user_keys_save()
+        elif self.path == "/news-use":
+            self.handle_news_use()
         elif self.path == "/venues":
             self.handle_venue_save()
         elif self.path == "/venues-delete":
@@ -880,6 +941,8 @@ class AssembleHandler(BaseHTTPRequestHandler):
             self._serve_font(self.path[len("/font/"):])
         elif self.path == "/health":
             self._json_response({"status": "ok", "port": PORT})
+        elif self.path.startswith("/render-jobs"):
+            self.handle_render_jobs()
         elif self.path.startswith("/library"):
             self._serve_library()
         elif self.path == "/stats":
@@ -1568,40 +1631,37 @@ class AssembleHandler(BaseHTTPRequestHandler):
                       "clips": _save_clips(outro.get("scene_id", "outro"))},
         }
 
+        # RENDER NỀN: đưa vào hàng đợi tuần tự rồi trả lời ngay — logout vẫn render tiếp.
         try:
-            with _HEAVY_LOCK:
-                for m in list(sys.modules.keys()):
-                    if m.startswith("tools.list_review_render"):
-                        sys.modules.pop(m, None)
-                from tools.list_review_render import render_list_review
-                result = render_list_review(spec)
-            if not result.get("success"):
-                self._json_response({"success": False,
-                                     "error": _friendly_error(result.get("error", "render fail"))}, 500)
-                return
-            video_url = _to_output_url(result.get("video_path", ""))
-            try:
-                import time as _t
-                _topic = intro.get("title", "") or "List review"
-                _append_product({"user": user, "topic": _topic,
-                                 "hook_style": hook_style, "video_url": video_url, "time": _t.time()})
-                _notify_publish(user, _topic, video_url)   # nv publish → gửi Telegram duyệt
-            except Exception as _e:
-                print(f"[Server] product log lỗi: {_e}", file=sys.stderr)
-            self._json_response({"success": True, "video_url": video_url,
-                                 "video_path": result.get("video_path", ""),
-                                 "duration": result.get("duration"), "job_id": job_id})
+            import time as _t
+            _topic = intro.get("title", "") or "List review"
+            position = _RENDER_QUEUE.qsize() + 1
+            _job_update(job_id, user=user, topic=_topic, status="queued",
+                        error="", video_url="", time=_t.time())
+            _RENDER_QUEUE.put({"job_id": job_id, "spec": spec, "user": user,
+                               "topic": _topic, "hook_style": hook_style,
+                               "temp_dir": job_temp})
+            print(f"[Server] /assemble-listreview → queue {job_id} (vị trí {position})", file=sys.stderr)
+            self._json_response({"success": True, "queued": True,
+                                 "job_id": job_id, "position": position})
         except Exception as e:
             import traceback
-            tb = traceback.format_exc()
-            print(f"[Server] ❌ list-review lỗi: {e}\n{tb}", file=sys.stderr)
+            print(f"[Server] ❌ queue lỗi: {e}\n{traceback.format_exc()}", file=sys.stderr)
+            shutil.rmtree(str(job_temp), ignore_errors=True)
             self._json_response({"success": False, "error": _friendly_error(e)}, 500)
-        finally:
-            def cleanup():
-                import time
-                time.sleep(60)
-                shutil.rmtree(str(job_temp), ignore_errors=True)
-            threading.Thread(target=cleanup, daemon=True).start()
+
+    def handle_render_jobs(self):
+        """GET /render-jobs?user= → trạng thái job render của user (admin: tất cả)."""
+        from urllib.parse import urlparse, parse_qs
+        q = parse_qs(urlparse(self.path).query)
+        user = (q.get("user", [""])[0] or "").strip()
+        role = (q.get("role", [""])[0] or "").strip()
+        with _RENDER_JOBS_LOCK:
+            jobs = [{"job_id": k, **v} for k, v in _RENDER_JOBS.items()
+                    if role == "admin" or v.get("user") == user]
+        jobs.sort(key=lambda j: j.get("time", 0), reverse=True)
+        self._json_response({"success": True, "jobs": jobs[:30],
+                             "queue_len": _RENDER_QUEUE.qsize()})
 
     def handle_assemble_image(self):
         """POST /assemble-image {album, user} → chạy script CLI dựng album ảnh, lưu lại, trả list ảnh PNG."""
@@ -1618,6 +1678,37 @@ class AssembleHandler(BaseHTTPRequestHandler):
             import traceback
             tb = traceback.format_exc()
             print(f"[Server] ❌ assemble-image lỗi: {e}\n{tb}", file=sys.stderr)
+            self._json_response({"success": False, "error": str(e)}, 500)
+
+    def handle_news_use(self):
+        """POST /news-use {url, title} → AI viết kịch bản video từ 1 tin → lưu Kịch bản chờ (tintuc)."""
+        try:
+            b = self._read_json_body()
+            title = (b.get("title") or "").strip()
+            url = (b.get("url") or "").strip()
+            if not title:
+                self._json_response({"success": False, "error": "Tin không có tiêu đề"}, 400)
+                return
+            from tools.script_ai import generate_script_ai
+            from tools.script_drafts import add_draft
+            sc = generate_script_ai(f"tin tức Đà Lạt: {title}", employee="tintuc")
+            if not sc:
+                self._json_response({"success": False, "error": "AI không viết được kịch bản (kiểm tra OPENROUTER_KEY)"}, 500)
+                return
+            scenes = [
+                {"scene_id": "scene_1", "kind": "intro", "label": "HOOK",
+                 "title": sc.get("title", title), "caption": sc.get("hook", "")},
+                {"scene_id": "scene_2", "kind": "spot", "label": "NỘI DUNG",
+                 "caption": sc.get("body", "")},
+                {"scene_id": "scene_3", "kind": "outro", "label": "CTA",
+                 "caption": sc.get("cta", "")},
+            ]
+            add_draft("tintuc", scenes, "hook_news", "none", "fade", "pil", "",
+                      f"news:{url}" if url else "news")
+            self._json_response({"success": True, "title": sc.get("title", title)})
+        except Exception as e:
+            import traceback
+            print(f"[Server] news-use lỗi: {e}\n{traceback.format_exc()}", file=sys.stderr)
             self._json_response({"success": False, "error": str(e)}, 500)
 
     def handle_albums_get(self):
@@ -2267,6 +2358,7 @@ Vui lòng chạy server bằng Python của môi trường ảo (.venv):
     _start_news_scheduler()
     _start_telegram_poller()
     _start_daily_scheduler()
+    _start_render_worker()
     server = ReusableHTTPServer(("127.0.0.1", PORT), AssembleHandler)
     print(f"[Server] Listening at http://localhost:{PORT}", file=sys.stderr)
     print(f"[Server] Press Ctrl+C to stop.", file=sys.stderr)
@@ -2312,12 +2404,14 @@ def _start_news_scheduler():
     print(f"[Server] News scheduler bật (khung {NEWS_SLOTS} giờ).", file=sys.stderr)
 
 
-# ── Tự động mỗi ngày: 5 album ảnh (1/nv) + kịch bản chờ mỗi nv+tin tức ─────────
-DAILY_SLOT_HOUR = 6
+# ── Tự động mỗi ngày 7h: 5 kịch bản video + 5 album ảnh cho mỗi nv ────────────
+DAILY_SLOT_HOUR = 7
+DAILY_N_ALBUMS = 5
+DAILY_N_SCRIPTS = 5
 
 
-def _daily_auto_job():
-    """Tạo trước 1 album ảnh/nv (không lặp seed gần đây) + 1 kịch bản chờ/nv+tin tức,
+def _daily_auto_job(only_users: list | None = None):
+    """7h mỗi ngày: tạo trước 5 album ảnh + 5 kịch bản chờ cho mỗi nv (tin tức: kịch bản),
     lưu vào 'Ảnh'/'Video' để người dùng vào chỉ việc thả clip. Báo admin qua Telegram."""
     from tools.script_drafts import add_draft
     users = _load_users()
@@ -2326,43 +2420,53 @@ def _daily_auto_job():
     for uid, u in users.items():
         if u.get("role") not in ("staff", "news"):
             continue
-        # 1) album ảnh (staff có handle album)
+        if only_users and uid not in only_users:
+            continue
+        # 1) album ảnh (staff có handle album) — 5 bộ, xoay vòng các mẫu
         albs = _albums_for(uid)
         if albs:
             import random
-            pick = random.choice(albs)
-            res = _generate_album(pick["id"], uid, auto=True)
-            if res.get("success"):
-                made_albums.append(f"{u.get('name', uid)} · {pick['label']}")
-            else:
-                print(f"[daily] album lỗi {uid}: {res.get('error')}", file=sys.stderr)
-        # 2) kịch bản chờ
-        try:
-            if u.get("role") == "staff":
-                from tools.listreview_content import build_prefill
-                pf = build_prefill(uid, regen=True)
-                if pf.get("scenes"):
-                    add_draft(uid, pf["scenes"], pf.get("hook_style", "hook_red"),
-                              pf.get("badge_mode", "none"), pf.get("transition", "fade"),
-                              pf.get("overlay_engine", "pil"), pf.get("style", ""),
-                              pf.get("generated_by", "auto"))
-                    made_scripts.append(u.get("name", uid))
-            else:  # news
-                from tools.script_ai import generate_script_ai
-                sc = generate_script_ai("tin tức / review Đà Lạt", employee=uid)
-                if sc:
-                    scenes = [
-                        {"scene_id": "scene_1", "kind": "intro", "label": "HOOK",
-                         "title": sc.get("title", ""), "caption": sc.get("hook", "")},
-                        {"scene_id": "scene_2", "kind": "spot", "label": "NỘI DUNG",
-                         "caption": sc.get("body", "")},
-                        {"scene_id": "scene_3", "kind": "outro", "label": "CTA",
-                         "caption": sc.get("cta", "")},
-                    ]
-                    add_draft(uid, scenes, "hook_news", "none", "fade", "pil", "", "auto")
-                    made_scripts.append(u.get("name", uid))
-        except Exception as e:
-            print(f"[daily] kịch bản lỗi {uid}: {e}", file=sys.stderr)
+            n_ok = 0
+            for i in range(DAILY_N_ALBUMS):
+                pick = albs[i % len(albs)] if len(albs) > 1 else albs[0]
+                res = _generate_album(pick["id"], uid, auto=True)
+                if res.get("success"):
+                    n_ok += 1
+                else:
+                    print(f"[daily] album lỗi {uid}: {res.get('error')}", file=sys.stderr)
+            if n_ok:
+                made_albums.append(f"{u.get('name', uid)} ×{n_ok}")
+        # 2) kịch bản chờ — 5 cái
+        n_sc = 0
+        for _ in range(DAILY_N_SCRIPTS):
+            try:
+                if u.get("role") == "staff":
+                    from tools.listreview_content import build_prefill
+                    pf = build_prefill(uid, regen=True)
+                    if pf.get("scenes"):
+                        add_draft(uid, pf["scenes"], pf.get("hook_style", "hook_red"),
+                                  pf.get("badge_mode", "none"), pf.get("transition", "fade"),
+                                  pf.get("overlay_engine", "pil"), pf.get("style", ""),
+                                  pf.get("generated_by", "auto"))
+                        n_sc += 1
+                else:  # news
+                    from tools.script_ai import generate_script_ai
+                    sc = generate_script_ai("tin tức / review Đà Lạt", employee=uid)
+                    if sc:
+                        scenes = [
+                            {"scene_id": "scene_1", "kind": "intro", "label": "HOOK",
+                             "title": sc.get("title", ""), "caption": sc.get("hook", "")},
+                            {"scene_id": "scene_2", "kind": "spot", "label": "NỘI DUNG",
+                             "caption": sc.get("body", "")},
+                            {"scene_id": "scene_3", "kind": "outro", "label": "CTA",
+                             "caption": sc.get("cta", "")},
+                        ]
+                        add_draft(uid, scenes, "hook_news", "none", "fade", "pil", "", "auto")
+                        n_sc += 1
+            except Exception as e:
+                print(f"[daily] kịch bản lỗi {uid}: {e}", file=sys.stderr)
+        if n_sc:
+            made_scripts.append(f"{u.get('name', uid)} ×{n_sc}")
 
     try:
         from tools import publisher
