@@ -40,41 +40,47 @@ def _day_bg(activities: list) -> str:
             return img
     return ""
 
-def _act(time, activity, venue_name, address):
-    """Tạo ActivityItem với thumbnail tự resolve từ DB."""
-    return ActivityItem(time, activity, venue_name, address,
-                        thumbnail_path=_venue_img(venue_name))
+def _act_v(time, activity, venue: dict):
+    """ActivityItem từ 1 venue trong thư viện (tên + địa chỉ + thumbnail random)."""
+    addr = (venue.get("address") or "").split(",")[0].strip()
+    return ActivityItem(time, activity, venue["name"], addr,
+                        thumbnail_path=VenuePicker.image(venue))
 
-# ── Lịch trình 3 ngày ────────────────────────────────────────────────────────
-NGAY_1_ACTIVITIES = [
-    _act("7:30",  "Ăn sáng",       "Sườn cay khổng lồ",    "42 Phan Chu Trinh"),
-    _act("9:00",  "Check-in",      "Cozy Garden Boutique Hotel", "94 Đ. Lữ Gia"),
-    _act("11:30", "Ăn trưa",       "Yod Thong",             "04 Đoàn Thị Điểm"),
-    _act("14:00", "Tham quan",     "Langbiang Land",        "93A Đường Bidoup"),
-    _act("17:00", "Sunset view",   "Đồi chè Cầu Đất",       "Xã Xuân Trường"),
-    _act("19:00", "Ăn tối & BBQ",  "Trạm Nắng BBQ",         "18 Đống Đa"),
-    _act("20:30", "Dạo chợ đêm",   "Chợ Đà Lạt",            "Nguyễn Thị Minh Khai"),
+# ── Pool venue theo loại, bốc NGẪU NHIÊN không lặp (hết pool thì xáo lại) ─────
+_POOLS: dict = {}
+
+def _pick(category: str) -> dict:
+    pool = _POOLS.get(category)
+    if not pool:
+        cands = [v for v in get_all() if (v.get("loai_quan") or "").strip() == category]
+        if category == "tham quan":   # gộp thêm cà phê cho phong phú điểm chơi
+            cands += [v for v in get_all() if (v.get("loai_quan") or "").strip() == "quán cà phê"]
+        _rnd.shuffle(cands)
+        pool = _POOLS[category] = cands
+    return pool.pop() if pool else {"name": "Đà Lạt", "address": "Đà Lạt", "images": []}
+
+# ── Lịch trình 3 ngày: khung giờ giữ nguyên, QUÁN random từ thư viện ──────────
+_DAY_SLOTS = [
+    [("7:30", "Ăn sáng", "quán ăn"), ("9:00", "Check-in", "khách sạn"),
+     ("11:30", "Ăn trưa", "quán ăn"), ("14:00", "Tham quan", "tham quan"),
+     ("17:00", "Chill chiều", "tham quan"), ("19:00", "Ăn tối", "quán ăn"),
+     ("20:30", "Dạo phố đêm", "tham quan")],
+    [("7:00", "Ăn sáng sớm", "quán ăn"), ("8:30", "Check-in view đẹp", "khách sạn"),
+     ("10:00", "Cà phê", "tham quan"), ("12:00", "Ăn trưa", "quán ăn"),
+     ("14:30", "Tham quan", "tham quan"), ("17:30", "Mua đặc sản", "tham quan"),
+     ("19:00", "Ăn tối", "quán ăn")],
+    [("7:00", "Ăn sáng", "quán ăn"), ("8:30", "Tham quan", "tham quan"),
+     ("10:30", "Check out", "khách sạn"), ("12:00", "Ăn trưa", "quán ăn"),
+     ("14:00", "Cà phê chill", "tham quan"), ("16:00", "Mua quà đặc sản", "tham quan"),
+     ("18:00", "Ăn tối chia tay", "quán ăn")],
 ]
 
-NGAY_2_ACTIVITIES = [
-    _act("7:00",  "Ăn sáng sớm",      "Bánh mì Đà Lạt",        "65 Phan Đình Phùng"),
-    _act("8:30",  "Check-in view đẹp", "Anmai Boutique Hotel",  "1A Đ. Lữ Gia"),
-    _act("10:00", "Cà phê",            "Tiệm cà phê Chạng Vạng","119 Huỳnh Tấn Phát"),
-    _act("12:00", "Ăn trưa Thái",      "Yod Thong",             "04 Đoàn Thị Điểm"),
-    _act("14:30", "Tham quan thác",    "Thác Datanla",          "Đèo Prenn"),
-    _act("17:30", "Mua đặc sản",       "Chợ Đà Lạt",            "Nguyễn Công Trứ"),
-    _act("19:00", "Lẩu bò tối",        "Lẩu bò Gia Lâm",        "30 Ngô Quyền"),
-]
+def _build_day(slots):
+    return [_act_v(t, act, _pick(cat)) for t, act, cat in slots]
 
-NGAY_3_ACTIVITIES = [
-    _act("7:00",  "Ăn sáng",         "Bánh Mì Xíu Mại 79",   "14 Yersin"),
-    _act("8:30",  "Tham quan thác",  "Thác Datanla",          "Đèo Prenn"),
-    _act("10:30", "Check out",        "Cozy Garden Boutique Hotel", "94 Đ. Lữ Gia"),
-    _act("12:00", "Ăn trưa",         "Nem nướng Tân Long",    "290 Bùi Thị Xuân"),
-    _act("14:00", "Cà phê",          "Cà phê Ollin",          "9 Nguyễn Chí Thanh"),
-    _act("16:00", "Mua quà đặc sản", "Chợ Đà Lạt",            "Nguyễn Công Trứ"),
-    _act("18:00", "Ăn tối chia tay", "Sườn cay khổng lồ",     "42 Phan Chu Trinh"),
-]
+NGAY_1_ACTIVITIES = _build_day(_DAY_SLOTS[0])
+NGAY_2_ACTIVITIES = _build_day(_DAY_SLOTS[1])
+NGAY_3_ACTIVITIES = _build_day(_DAY_SLOTS[2])
 
 
 def main():

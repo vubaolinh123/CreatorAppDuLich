@@ -35,21 +35,39 @@ def main():
     with open(spec_path, encoding="utf-8") as f:
         spec = json.load(f)
 
-    # Ảnh nền: chọn NGẪU NHIÊN theo tên quán trong thư viện (spec cũ chứa path
-    # tuyệt đối D:\ đã chết + luôn cùng 1 ảnh → mỗi lần tạo y hệt).
+    # RANDOM hoá từ thư viện: cả DANH SÁCH QUÁN lẫn ảnh nền mỗi slide
+    # (spec cũ cố định quán + chứa path ảnh D:\ đã chết → lần nào cũng y hệt).
     from tools.venues_db import get_all
     from tools.venue_picker import VenuePicker
-    _db = {v["name"]: v for v in get_all()}
-    import os as _os
-    for s in (spec.get("slides") or {}).values():
+    allv = get_all()
+
+    def _sample(cats: list[str], n: int) -> list[dict]:
+        pool = [v for v in allv if (v.get("loai_quan") or "").strip() in cats]
+        random.shuffle(pool)
+        return pool[:n]
+
+    def _sig(v: dict) -> str:
+        return (v.get("signature") or v.get("feature") or "").strip()
+
+    _CATS = {"quan_an": (["quán ăn"], 8),
+             "khach_san": (["khách sạn"], 8),
+             "checkin": (["tham quan", "quán cà phê"], 5)}
+    slides = spec.get("slides") or {}
+    for key, s in slides.items():
         if not isinstance(s, dict):
             continue
-        v = _db.get((s.get("bg_venue") or "").strip())
-        img = VenuePicker.image(v) if v else ""
-        if img:
-            s["bg_image"] = img
-        elif not _os.path.exists(s.get("bg_image", "")):
-            s["bg_image"] = ""
+        picked = None
+        if key in _CATS:
+            cats, n = _CATS[key]
+            picked = _sample(cats, n)
+            if picked:
+                s["venues"] = [{"name": v["name"], "signature": _sig(v),
+                                "address": (v.get("address") or "").strip()} for v in picked]
+        # ảnh nền: random từ 1 quán trong danh sách slide (cover: quán ăn bất kỳ)
+        bgv = random.choice(picked) if picked else random.choice(
+            [v for v in allv if (v.get("loai_quan") or "") == "quán ăn"] or allv)
+        s["bg_venue"] = bgv["name"]
+        s["bg_image"] = VenuePicker.image(bgv) or ""
 
     out_dir = Path(args.out) if args.out else spec_path.parent
     out_dir.mkdir(parents=True, exist_ok=True)
