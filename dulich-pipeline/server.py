@@ -2363,9 +2363,14 @@ Vui lòng chạy server bằng Python của môi trường ảo (.venv):
 +------------------------------------------------------+
 """, file=sys.stderr)
 
-    _start_news_scheduler()
-    _start_telegram_poller()
-    _start_daily_scheduler()
+    # DISABLE_BACKGROUND_JOBS=1: chạy nhiều server song song — chỉ 1 server giữ
+    # automation (Telegram poll, daily, news); các server khác vẫn render/web đủ.
+    if os.getenv("DISABLE_BACKGROUND_JOBS", "").strip() in ("", "0", "false"):
+        _start_news_scheduler()
+        _start_telegram_poller()
+        _start_daily_scheduler()
+    else:
+        print("[Server] Background jobs TẮT (DISABLE_BACKGROUND_JOBS).", file=sys.stderr)
     _start_render_worker()
     server = ReusableHTTPServer(("127.0.0.1", PORT), AssembleHandler)
     print(f"[Server] Listening at http://localhost:{PORT}", file=sys.stderr)
