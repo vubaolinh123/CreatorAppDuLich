@@ -74,9 +74,16 @@ def main():
 
     slides_spec = spec.get("slides", {})
     cover_spec = slides_spec.get("cover", {})
+    from tools.album_titles import ai_cover_texts
+    hook = ai_cover_texts("le2", {
+        "percent": "99%", "title": "khách du lịch",
+        "line1": "/chưa biết những điều này",
+        "line2": "hoặc chưa từng trải nghiệm /",
+    })
     cover_meta = {
         "month_tag":  spec.get("month_tag",  "Tháng 6"),
         "handle_tag": spec.get("handle_tag", "@thamhiemdalat"),
+        **hook,
     }
 
     paths = []

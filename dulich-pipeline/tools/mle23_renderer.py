@@ -145,6 +145,10 @@ def render_cover(bg_path: str, out_path: str, spec: dict | None = None) -> str:
     s = spec or {}
     month_tag  = s.get("month_tag",  "Tháng 6")
     handle_tag = s.get("handle_tag", "@thamhiemdalat")
+    percent    = s.get("percent", "99%")
+    title_txt  = s.get("title",   "khách du lịch")
+    line1      = s.get("line1",   "/chưa biết những điều này")
+    line2      = s.get("line2",   "hoặc chưa từng trải nghiệm /")
 
     img = load_bg(bg_path, W, H)
     draw = ImageDraw.Draw(img, "RGBA")
@@ -155,27 +159,25 @@ def render_cover(bg_path: str, out_path: str, spec: dict | None = None) -> str:
         draw.line([(0, i), (W, i)], fill=(0, 0, 0, a))
 
     # ── "99%" top-left ──────────────────────────────────────────────────────
-    draw.text((50, 25), "99%", fill=YELLOW, font=anton(160))
+    draw.text((50, 25), percent, fill=YELLOW, font=anton(160))
 
     # (badges moved down near oval — drawn after oval is composited)
 
-    # ── "khách du lịch" — Baloo2, BELOW 99%, auto-sized ────────────────────
+    # ── Title — Baloo2, BELOW 99%, auto-sized ──────────────────────────────
     _fs = 175
     while _fs > 60:
-        if draw.textlength("khách du lịch", font=baloo2(_fs)) < W - 40:
+        if draw.textlength(title_txt, font=baloo2(_fs)) < W - 40:
             break
         _fs -= 5
     _f_title = baloo2(_fs)
-    _tw = draw.textlength("khách du lịch", font=_f_title)
+    _tw = draw.textlength(title_txt, font=_f_title)
     _top99 = 25 + int(160 * 0.82)
     _title_y = _top99 + 10
-    draw.text(((W - _tw) // 2, _title_y), "khách du lịch",
+    draw.text(((W - _tw) // 2, _title_y), title_txt,
               fill=YELLOW, font=_f_title)
 
     # ── Dark oval with centered subtitle ────────────────────────────────────
     f_ov = beviet_bold(30)
-    line1 = "/chưa biết những điều này"
-    line2 = "hoặc chưa từng trải nghiệm /"
     bb1 = draw.textbbox((0, 0), line1, font=f_ov)
     bb2 = draw.textbbox((0, 0), line2, font=f_ov)
     max_tw = max(bb1[2] - bb1[0], bb2[2] - bb2[0])
@@ -183,7 +185,7 @@ def render_cover(bg_path: str, out_path: str, spec: dict | None = None) -> str:
     oh = 118
     ox = (W - ow) // 2
 
-    _bb_title = draw.textbbox(((W - _tw) // 2, _title_y), "khách du lịch", font=_f_title)
+    _bb_title = draw.textbbox(((W - _tw) // 2, _title_y), title_txt, font=_f_title)
     oy = _bb_title[3] + 28
 
     overlay = Image.new("RGBA", (W, H), (0, 0, 0, 0))

@@ -90,13 +90,18 @@ def main():
     parser.add_argument("--seed", type=int, default=None)   # đã xử lý sớm ở đầu module
     args = parser.parse_args()
 
+    from tools.album_titles import ai_cover_texts
+    texts = ai_cover_texts("le1", {
+        "title": "Soạn Plan đi Đà Lạt tháng 6",
+        "subtitle": "Các mom cho em xin ý kiến nhé",
+    })
     cover = CoverData(
         background_path=_day_bg(NGAY_1_ACTIVITIES),
         month_tag="Tháng 6",
         handle_tag="@thamhiemdalat",
         location_tag="Đà Lạt",
-        title="Soạn Plan đi Đà Lạt\ntháng 6",
-        subtitle="Các mom cho em xin ý kiến nhé",
+        title=texts["title"],
+        subtitle=texts["subtitle"],
     )
 
     slides = [
