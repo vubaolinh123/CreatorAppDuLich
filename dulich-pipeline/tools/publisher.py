@@ -34,8 +34,8 @@ def full_url(url: str) -> str:
     return (b + url) if b else url
 
 
-def zernio_tiktok_account() -> str | None:
-    key = os.getenv("ZERNIO_KEY")
+def zernio_tiktok_account(api_key: str | None = None) -> str | None:
+    key = api_key or os.getenv("ZERNIO_KEY")
     if not key:
         return None
     try:
@@ -49,18 +49,16 @@ def zernio_tiktok_account() -> str | None:
     return None
 
 
-def post_to_tiktok(video_url: str, caption: str, account_id: str | None = None) -> dict:
-    key = os.getenv("ZERNIO_KEY")
+def _zernio_post(media_items: list, caption: str, api_key: str | None = None,
+                 account_id: str | None = None) -> dict:
+    key = api_key or os.getenv("ZERNIO_KEY")
     if not key:
-        return {"success": False, "error": "Thiếu ZERNIO_KEY"}
-    acc = account_id or zernio_tiktok_account()
+        return {"success": False, "error": "Thiếu Zernio key (Cài đặt → key theo tài khoản)"}
+    acc = account_id or zernio_tiktok_account(key)
     if not acc:
         return {"success": False, "error": "Không tìm thấy tài khoản TikTok trong Zernio"}
-    full = full_url(video_url)
-    if not full.startswith("http"):
-        return {"success": False, "error": "Video chưa có URL công khai (đặt PUBLIC_BASE_URL khi deploy VPS)"}
     body = {"content": caption or "",
-            "mediaItems": [{"type": "video", "url": full}],
+            "mediaItems": media_items,
             "platforms": [{"platform": "tiktok", "accountId": acc}],
             "publishNow": True}
     try:
@@ -73,6 +71,28 @@ def post_to_tiktok(video_url: str, caption: str, account_id: str | None = None) 
         return {"success": False, "error": f"Zernio {r.status_code}: {r.text[:200]}"}
     except Exception as e:
         return {"success": False, "error": str(e)}
+
+
+def post_to_tiktok(video_url: str, caption: str, account_id: str | None = None,
+                   api_key: str | None = None) -> dict:
+    full = full_url(video_url)
+    if not full.startswith("http"):
+        return {"success": False, "error": "Video chưa có URL công khai (đặt PUBLIC_BASE_URL khi deploy VPS)"}
+    return _zernio_post([{"type": "video", "url": full}], caption, api_key, account_id)
+
+
+def post_images_to_tiktok(image_urls: list, caption: str,
+                          api_key: str | None = None) -> dict:
+    """Đăng bộ ảnh (carousel) lên TikTok qua Zernio. Tối đa 10 ảnh."""
+    items = []
+    for u in image_urls[:10]:
+        full = full_url(u)
+        if not full.startswith("http"):
+            return {"success": False, "error": "Ảnh chưa có URL công khai (đặt PUBLIC_BASE_URL khi deploy VPS)"}
+        items.append({"type": "image", "url": full})
+    if not items:
+        return {"success": False, "error": "Album không có ảnh"}
+    return _zernio_post(items, caption, api_key)
 
 
 # ── Telegram ──────────────────────────────────────────────────────────────────

@@ -308,6 +308,20 @@ async function renderSettings(){
         </div>`;
       });
     }
+    // ── Key theo từng tài khoản (Zernio đăng TikTok + Apify tin tức) ──
+    try{
+      const rk=await fetch(API+"/user-keys",{cache:"no-store"}); const jk=await rk.json();
+      html+=`<div style="margin:22px 0 8px;font-weight:800;color:var(--pine)">Key theo tài khoản (Zernio đăng TikTok · Apify tin tức)</div>
+        <div class="muted" style="font-size:12px;margin-bottom:10px">NV có Zernio key → admin duyệt là đăng thẳng TikTok kênh đó (cả video lẫn album ảnh). Để trống = giữ nguyên, gõ "xoa" = xóa key.</div>`;
+      (jk.items||[]).forEach(it=>{
+        const b=(s)=>s?`<span class="chip chip-hook">đã có</span>`:`<span class="chip" style="background:#eee;color:#999">chưa có</span>`;
+        html+=`<div style="display:flex;gap:8px;align-items:center;margin-bottom:9px;flex-wrap:wrap">
+          <b style="min-width:70px">${it.name}</b>
+          <input data-ukey="zernio_key" data-user="${it.user}" type="password" autocomplete="off" placeholder="Zernio key" style="flex:1;min-width:140px"> ${b(it.zernio_set)}
+          <input data-ukey="apify_key" data-user="${it.user}" type="password" autocomplete="off" placeholder="Apify key" style="flex:1;min-width:140px"> ${b(it.apify_set)}
+        </div>`;
+      });
+    }catch(e){}
     html+=`<div style="display:flex;gap:8px;margin-top:18px">
       <button class="btn" style="flex:1" onclick="saveSettings()">💾 Lưu</button>
       <button class="btn-ghost" onclick="renderHome()">← Quay lại</button></div>`;
@@ -317,11 +331,24 @@ async function renderSettings(){
 async function saveSettings(){
   const payload={};
   document.querySelectorAll("#setbox input[data-key]").forEach(i=>{ const v=i.value.trim(); if(v) payload[i.getAttribute("data-key")]=v; });
-  if(!Object.keys(payload).length){ toast("Chưa nhập key mới nào"); return; }
+  // Key theo tài khoản
+  const perUser={};
+  document.querySelectorAll("#setbox input[data-ukey]").forEach(i=>{
+    const v=i.value.trim(); if(!v)return;
+    const u=i.getAttribute("data-user");
+    (perUser[u]=perUser[u]||{user:u})[i.getAttribute("data-ukey")]=v;
+  });
+  if(!Object.keys(payload).length && !Object.keys(perUser).length){ toast("Chưa nhập key mới nào"); return; }
   try{
-    const r=await fetch(API+"/settings",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload)});
-    const j=await r.json();
-    if(j.success){ toast(j.message||"Đã lưu"); renderSettings(); } else toast(j.error||"Lưu lỗi");
+    if(Object.keys(payload).length){
+      const r=await fetch(API+"/settings",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload)});
+      const j=await r.json(); if(!j.success){ toast(j.error||"Lưu lỗi"); return; }
+    }
+    for(const u in perUser){
+      const r=await fetch(API+"/user-keys",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(perUser[u])});
+      const j=await r.json(); if(!j.success){ toast(`Lỗi key ${u}: `+(j.error||"")); return; }
+    }
+    toast("Đã lưu"); renderSettings();
   }catch(e){ toast("Lỗi: "+e.message); }
 }
 

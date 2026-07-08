@@ -64,9 +64,10 @@ def _query_list() -> list[str]:
 
 
 def scrape_news(keyword: str | None = None, hashtags: list[str] | None = None,
-                per_query: int = 4, upload_date: str = "today", only_24h: bool = True) -> dict:
+                per_query: int = 4, upload_date: str = "today", only_24h: bool = True,
+                api_key: str | None = None) -> dict:
     """Cào YouTube tin Đà Lạt (video + shorts) theo nhiều từ khóa + hashtag, chỉ tin trong 24h."""
-    tok = os.getenv("APIFY_API_KEY") or os.getenv("APIFY_TOKEN")
+    tok = api_key or os.getenv("APIFY_API_KEY") or os.getenv("APIFY_TOKEN")
     if not tok:
         return {"success": False, "error": "Thiếu APIFY_API_KEY", "items": []}
     try:

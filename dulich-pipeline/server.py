@@ -363,26 +363,99 @@ def _friendly_error(e) -> str:
 _TG_PENDING: dict = {}
 _TG_LOCK = threading.Lock()
 
+# Key Zernio/Apify RIÊNG từng tài khoản (admin nhập ở Cài đặt) — data/user_keys.json
+USER_KEYS_FILE = Path(__file__).parent / "data" / "user_keys.json"
+_USER_KEYS_LOCK = threading.Lock()
+
+
+def _load_user_keys() -> dict:
+    try:
+        return json.loads(USER_KEYS_FILE.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+
+
+def _save_user_keys(d: dict) -> None:
+    with _USER_KEYS_LOCK:
+        USER_KEYS_FILE.parent.mkdir(parents=True, exist_ok=True)
+        USER_KEYS_FILE.write_text(json.dumps(d, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+def _user_zernio(user: str) -> str:
+    """Zernio key của nv (per-account), fallback ZERNIO_KEY chung."""
+    k = ((_load_user_keys().get(user) or {}).get("zernio_key") or "").strip()
+    return k or (os.getenv("ZERNIO_KEY") or "").strip()
+
+
+def _user_apify(user: str) -> str:
+    k = ((_load_user_keys().get(user) or {}).get("apify_key") or "").strip()
+    return k or (os.getenv("APIFY_API_KEY") or "").strip()
+
 
 def _is_publish_user(user: str) -> bool:
+    """NV có key Zernio (riêng hoặc chung + cờ publish cũ) là đăng được."""
+    if ((_load_user_keys().get(user) or {}).get("zernio_key") or "").strip():
+        return True
     u = _load_users().get(user) or {}
-    return (u.get("publish") or "").lower() == "tiktok"
+    return (u.get("publish") or "").lower() == "tiktok" and bool(os.getenv("ZERNIO_KEY"))
 
 
-def _caption_for(topic: str) -> str:
-    tags = "#dalat #dulichdalat #reviewdalat #amthucdalat #checkindalat"
+_CAPTION_TAGS = "#reviewdalat #dalatdiary #dalatstory #dulichdalat"
+
+
+def _caption_for(topic: str, user: str = "") -> str:
+    """Caption ngắn gọn kiểu tâm tình + hashtag. AI viết (DeepSeek), fail → mẫu đơn giản."""
     topic = (topic or "").strip()
-    return f"{topic}\n{tags}" if topic else tags
+    key = os.getenv("OPENROUTER_KEY") or os.getenv("OPENROUTER_API_KEY")
+    if key:
+        try:
+            import requests as _rq, random as _rd
+            r = _rq.post(
+                "https://openrouter.ai/api/v1/chat/completions", timeout=25,
+                headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"},
+                json={"model": "deepseek/deepseek-chat", "temperature": 1.0, "max_tokens": 120,
+                      "messages": [
+                          {"role": "system", "content": "Bạn là người viết caption TikTok du lịch Đà Lạt."},
+                          {"role": "user", "content":
+                           "Viết 1 caption TikTok NGẮN GỌN (1 câu, tối đa 20 từ, giọng gần gũi tâm tình, "
+                           "không emoji, không hashtag) cho nội dung về Đà Lạt"
+                           + (f" chủ đề: {topic}." if topic else ".")
+                           + ' Ví dụ phong cách: "Anh sẽ ở đây giúp các em có những kỉ niệm toẹt vời tại Đà Lạt mộng mơ". '
+                           "Chỉ trả về đúng câu caption."
+                           + f" (seed: {_rd.randint(100, 999)})"}]})
+            if r.status_code == 200:
+                cap = r.json()["choices"][0]["message"]["content"].strip().strip('"')
+                if cap and len(cap) < 220:
+                    return f"{cap} {_CAPTION_TAGS}"
+        except Exception as e:
+            print(f"[pub] caption AI lỗi: {e}", file=sys.stderr)
+    return f"{topic} {_CAPTION_TAGS}".strip() if topic else _CAPTION_TAGS
 
 
 def _do_publish(video_url: str, caption: str, user: str) -> dict:
-    """Đăng TikTok qua Zernio + cập nhật status product."""
+    """Đăng TikTok qua Zernio (key riêng của nv) + cập nhật status product."""
     try:
         from tools import publisher
-        res = publisher.post_to_tiktok(video_url, caption)
+        res = publisher.post_to_tiktok(video_url, caption, api_key=_user_zernio(user))
     except Exception as e:
         res = {"success": False, "error": str(e)}
     _set_product_status(video_url, "posted" if res.get("success") else "failed")
+    return res
+
+
+def _do_publish_album(dir_rel: str, user: str) -> dict:
+    """Đăng bộ ảnh album lên TikTok (carousel) qua Zernio key của nv."""
+    rec = next((a for a in _load_albums() if a.get("dir") == dir_rel), None)
+    urls = [im.get("url", "") for im in (rec or {}).get("images", []) if im.get("url")]
+    if not urls:
+        return {"success": False, "error": "Album không có ảnh"}
+    caption = _caption_for((rec or {}).get("label", ""), user)
+    try:
+        from tools import publisher
+        res = publisher.post_images_to_tiktok(urls, caption, api_key=_user_zernio(user))
+    except Exception as e:
+        res = {"success": False, "error": str(e)}
+    _set_album_status(dir_rel, "posted" if res.get("success") else "failed")
     return res
 
 
@@ -394,7 +467,7 @@ def _notify_publish(user: str, topic: str, video_url: str) -> None:
         pid = _u.uuid4().hex[:10]
         with _TG_LOCK:
             _TG_PENDING[pid] = {"kind": "video", "video_url": video_url,
-                                "caption": _caption_for(topic), "user": user}
+                                "caption": _caption_for(topic, user), "user": user}
         name = (_load_users().get(user) or {}).get("name", user)
         txt = (f"🆕 <b>{(topic or 'Video mới')}</b>\nNhân viên: {name}"
                + ("\nDuyệt để đăng TikTok." if _is_publish_user(user) else "\nDuyệt để đánh dấu đã đăng."))
@@ -455,9 +528,17 @@ def _telegram_poller():
                 kind = pend.get("kind", "video")
                 if act == "post":
                     if kind == "album":
-                        _set_album_status(pend["dir"], "posted")
-                        publisher.answer_callback(cbid, "Đã duyệt album")
-                        publisher.send_telegram(f"✅ Đã duyệt album <b>{pend.get('caption','')}</b> — NV {pend['user']}")
+                        if _is_publish_user(pend["user"]):
+                            res = _do_publish_album(pend["dir"], pend["user"])
+                            ok = res.get("success")
+                            publisher.answer_callback(cbid, "Đã đăng TikTok" if ok else "Đăng lỗi")
+                            publisher.send_telegram(
+                                (f"✅ Đã đăng album TikTok — NV {pend['user']}" if ok
+                                 else f"⚠ Album đăng lỗi: {res.get('error','')} — NV {pend['user']}"))
+                        else:
+                            _set_album_status(pend["dir"], "posted")
+                            publisher.answer_callback(cbid, "Đã duyệt album")
+                            publisher.send_telegram(f"✅ Đã duyệt album <b>{pend.get('caption','')}</b> — NV {pend['user']}")
                     elif _is_publish_user(pend["user"]):
                         res = _do_publish(pend["video_url"], pend["caption"], pend["user"])
                         ok = res.get("success")
@@ -727,6 +808,8 @@ class AssembleHandler(BaseHTTPRequestHandler):
             self.handle_assemble_image()
         elif self.path == "/settings":
             self.handle_settings_save()
+        elif self.path == "/user-keys":
+            self.handle_user_keys_save()
         elif self.path == "/venues":
             self.handle_venue_save()
         elif self.path == "/venues-delete":
@@ -781,6 +864,8 @@ class AssembleHandler(BaseHTTPRequestHandler):
             self._serve_index()
         elif self.path == "/settings":
             self.handle_settings_get()
+        elif self.path == "/user-keys":
+            self.handle_user_keys_get()
         elif self.path == "/venues":
             self.handle_venues_get()
         elif self.path.startswith("/venue-thumb/"):
@@ -1569,12 +1654,21 @@ class AssembleHandler(BaseHTTPRequestHandler):
             if status not in ("pending", "posted", "failed", "cancelled"):
                 self._json_response({"success": False, "error": "status không hợp lệ"}, 400)
                 return
-            # Admin duyệt "đã đăng" video của nv publish → đăng TikTok thật (Zernio).
+            # Admin duyệt "đã đăng" → đăng TikTok thật qua Zernio key của nv.
             if kind == "video" and status == "posted":
                 rec = next((p for p in _load_products() if p.get("video_url") == key), None)
                 owner = (rec or {}).get("user", "")
                 if _is_publish_user(owner):
-                    res = _do_publish(key, _caption_for((rec or {}).get("topic", "")), owner)
+                    res = _do_publish(key, _caption_for((rec or {}).get("topic", ""), owner), owner)
+                    self._json_response({"success": bool(res.get("success")),
+                                         "posted": bool(res.get("success")),
+                                         "error": res.get("error", "")})
+                    return
+            if kind == "album" and status == "posted":
+                rec = next((a for a in _load_albums() if a.get("dir") == key), None)
+                owner = (rec or {}).get("user", "")
+                if _is_publish_user(owner):
+                    res = _do_publish_album(key, owner)
                     self._json_response({"success": bool(res.get("success")),
                                          "posted": bool(res.get("success")),
                                          "error": res.get("error", "")})
@@ -1592,7 +1686,8 @@ class AssembleHandler(BaseHTTPRequestHandler):
             hts = b.get("hashtags")
             from tools.news_youtube import scrape_news, save_pool, DEFAULT_KEYWORD
             with _HEAVY_LOCK:
-                res = scrape_news(kw or DEFAULT_KEYWORD, hts if isinstance(hts, list) else None)
+                res = scrape_news(kw or DEFAULT_KEYWORD, hts if isinstance(hts, list) else None,
+                                  api_key=_user_apify("tintuc"))
             if res.get("success"):
                 save_pool(res)
             self._json_response(res)
@@ -1760,6 +1855,41 @@ class AssembleHandler(BaseHTTPRequestHandler):
         except Exception as e:
             import traceback
             print(f"[Server] /listreview-prefill error: {e}\n{traceback.format_exc()}", file=sys.stderr)
+            self._json_response({"success": False, "error": str(e)}, 500)
+
+    def handle_user_keys_get(self):
+        """GET /user-keys → key Zernio/Apify từng tài khoản (chỉ báo đã có/chưa, không trả giá trị)."""
+        keys = _load_user_keys()
+        users = _load_users()
+        items = []
+        for uid, u in users.items():
+            if u.get("role") == "admin":
+                continue
+            k = keys.get(uid) or {}
+            items.append({"user": uid, "name": u.get("name", uid),
+                          "zernio_set": bool((k.get("zernio_key") or "").strip()),
+                          "apify_set": bool((k.get("apify_key") or "").strip())})
+        self._json_response({"success": True, "items": items})
+
+    def handle_user_keys_save(self):
+        """POST /user-keys {user, zernio_key?, apify_key?} — rỗng/ẩn = giữ nguyên, "xoa" = xóa."""
+        try:
+            data = self._read_json_body()
+            uid = (data.get("user") or "").strip()
+            if uid not in _load_users():
+                self._json_response({"success": False, "error": f"Tài khoản không tồn tại: {uid}"}, 400)
+                return
+            keys = _load_user_keys()
+            rec = keys.get(uid) or {}
+            for f in ("zernio_key", "apify_key"):
+                v = (data.get(f) or "").strip()
+                if not v or set(v) <= {"•", "*"}:
+                    continue
+                rec[f] = "" if v.lower() == "xoa" else v
+            keys[uid] = rec
+            _save_user_keys(keys)
+            self._json_response({"success": True})
+        except Exception as e:
             self._json_response({"success": False, "error": str(e)}, 500)
 
     def handle_settings_get(self):
@@ -2166,7 +2296,7 @@ def _news_scheduler():
                     from tools.news_youtube import scrape_news, save_pool
                     print(f"[news] scheduler cào tin (khung {lt.tm_hour}h)...", file=sys.stderr)
                     with _HEAVY_LOCK:
-                        res = scrape_news()
+                        res = scrape_news(api_key=_user_apify("tintuc"))
                     if res.get("success"):
                         save_pool(res)
                         print(f"[news] cào xong: {res.get('count')} video", file=sys.stderr)
