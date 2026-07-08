@@ -191,9 +191,9 @@ SETTINGS_KEYS = [
     {"key": "GEMINI_API_KEY",    "label": "Gemini",          "group": "Phần Ảnh (sắp ra mắt)",
      "desc": "AI vision dựng khung ảnh.", "link": "https://aistudio.google.com/apikey"},
     {"key": "OPENAI_API_KEY",    "label": "OpenAI",          "group": "Khác",
-     "desc": "TTS/Vision OpenAI.", "link": "https://platform.openai.com/api-keys"},
-    {"key": "MONGO_URI",         "label": "MongoDB URI",     "group": "Khác",
-     "desc": "Lưu DB. Thiếu → tự dùng file mock.", "link": ""},
+     "desc": "Whisper đọc voice để ghép phụ đề chính xác.", "link": "https://platform.openai.com/api-keys"},
+    {"key": "ZERNIO_KEY",        "label": "Zernio",          "group": "Đăng bài",
+     "desc": "Đăng TikTok khi admin duyệt. Thiếu → chỉ đánh dấu trạng thái.", "link": "https://zernio.com"},
 ]
 _SETTINGS_ALLOWED = {k["key"] for k in SETTINGS_KEYS}
 _ENV_LOCK = threading.Lock()
