@@ -999,7 +999,7 @@ function renderReview(){
       : (it.cover?`<img src="${API+it.cover}?w=220" style="width:100%;aspect-ratio:4/5;object-fit:cover;border-radius:10px;cursor:pointer" onclick="openImg('${it.cover}')">`:"<div class='muted'>—</div>");
     const btns = it.status==="posted"
       ? `<button class="btn-ghost chip" onclick="setStatus('${it.kind}','${it.key}','pending')">↩ Chưa đăng</button>`
-      : `<button class="btn chip" onclick="setStatus('${it.kind}','${it.key}','posted')">✅ Đã đăng</button><button class="btn-ghost chip" onclick="setStatus('${it.kind}','${it.key}','failed')">⚠ Lỗi</button><button class="btn-ghost chip" onclick="setStatus('${it.kind}','${it.key}','cancelled')">✕ Hủy</button>`;
+      : `<button class="btn chip" style="background:#1976d2;border-color:#1976d2" onclick="setStatus('${it.kind}','${it.key}','posted')">Đăng</button><button class="btn-ghost chip" onclick="setStatus('${it.kind}','${it.key}','failed')">⚠ Lỗi</button><button class="btn-ghost chip" onclick="setStatus('${it.kind}','${it.key}','cancelled')">✕ Hủy</button>`;
     return `<div class="lib-card" style="padding:8px">${media}
       <div class="cap" style="flex-direction:column;align-items:stretch;gap:6px">
         <span style="font-size:12px">${(it.title||"").replace(/</g,"&lt;")} · <b>${makerName(it.user)}</b> · ${statusLabel(it.status)}${it.kind==="album"?` · ${it.count} ảnh`:""}</span>
@@ -1010,8 +1010,10 @@ function renderReview(){
 async function setStatus(kind,key,status){
   try{ const j=await (await fetch(API+"/product-status",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({kind,key,status})})).json();
     if(!j.success)throw new Error(j.error||"không tìm thấy");
+    if(status==="posted" && j.posted===false){ status="failed"; toast("Đăng lỗi: "+(j.error||"")); }
+    else toast(status==="posted"&&j.posted?"✅ Đã đăng TikTok":"Đã cập nhật: "+statusLabel(status));
     const it=REVIEW_ITEMS.find(x=>x.kind===kind&&x.key===key); if(it)it.status=status;
-    renderReview(); loadKpi(); toast("Đã cập nhật: "+statusLabel(status));
+    renderReview(); loadKpi();
   }catch(e){toast("Lỗi: "+e.message);}
 }
 

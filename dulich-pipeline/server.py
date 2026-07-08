@@ -176,24 +176,14 @@ def _generate_album(album: str, user: str = "", auto: bool = False,
 
 # Danh sách key cho trang Cài đặt. Tất cả TÙY CHỌN — thiếu vẫn chạy free.
 SETTINGS_KEYS = [
-    {"key": "OPENROUTER_KEY",    "label": "OpenRouter",      "group": "AI viết kịch bản",
-     "desc": "AI tự viết script cho nv1. Thiếu → dùng nội dung mẫu/clone.", "link": "https://openrouter.ai/keys"},
-    {"key": "APIFY_API_KEY",     "label": "Apify",           "group": "Tin tức",
-     "desc": "Quét TikTok/Facebook cho luồng tin tức. Thiếu → không tự quét.", "link": "https://console.apify.com/account/integrations"},
-    {"key": "VBEE_API_KEY",      "label": "Vbee API key",    "group": "Giọng đọc",
-     "desc": "Giọng tiếng Việt xịn hơn gTTS.", "link": "https://vbee.vn"},
-    {"key": "VBEE_APP_ID",       "label": "Vbee App ID",     "group": "Giọng đọc",
+    {"key": "OPENROUTER_KEY",    "label": "OpenRouter",      "group": "AI viết kịch bản + caption",
+     "desc": "AI viết script, title album, caption đăng bài. Thiếu → dùng nội dung mẫu.", "link": "https://openrouter.ai/keys"},
+    {"key": "VBEE_API_KEY",      "label": "Vbee API key (Voice)", "group": "Giọng đọc Vbee",
+     "desc": "Giọng clone tiếng Việt. Thiếu → fallback Edge (free).", "link": "https://vbee.vn"},
+    {"key": "VBEE_APP_ID",       "label": "Vbee Account ID (App ID)", "group": "Giọng đọc Vbee",
      "desc": "Đi kèm Vbee API key.", "link": "https://vbee.vn"},
-    {"key": "ELEVENLABS_API_KEY","label": "ElevenLabs",      "group": "Giọng đọc",
-     "desc": "Giọng/voice clone. Thiếu → fallback gTTS/Edge (free).", "link": "https://elevenlabs.io/app/settings/api-keys"},
-    {"key": "PEXELS_API_KEY",    "label": "Pexels",          "group": "Phần Ảnh (sắp ra mắt)",
-     "desc": "Ảnh stock cho module ảnh. Free tier.", "link": "https://www.pexels.com/api/"},
-    {"key": "GEMINI_API_KEY",    "label": "Gemini",          "group": "Phần Ảnh (sắp ra mắt)",
-     "desc": "AI vision dựng khung ảnh.", "link": "https://aistudio.google.com/apikey"},
-    {"key": "OPENAI_API_KEY",    "label": "OpenAI",          "group": "Khác",
+    {"key": "OPENAI_API_KEY",    "label": "OpenAI",          "group": "Phụ đề",
      "desc": "Whisper đọc voice để ghép phụ đề chính xác.", "link": "https://platform.openai.com/api-keys"},
-    {"key": "ZERNIO_KEY",        "label": "Zernio",          "group": "Đăng bài",
-     "desc": "Đăng TikTok khi admin duyệt. Thiếu → chỉ đánh dấu trạng thái.", "link": "https://zernio.com"},
 ]
 _SETTINGS_ALLOWED = {k["key"] for k in SETTINGS_KEYS}
 _ENV_LOCK = threading.Lock()
@@ -401,12 +391,17 @@ def _is_publish_user(user: str) -> bool:
 
 
 _CAPTION_TAGS = "#reviewdalat #dalatdiary #dalatstory #dulichdalat"
+_CAPTION_TAGS_SHORT = "#reviewdalat #dulichdalat"
 
 
-def _caption_for(topic: str, user: str = "") -> str:
-    """Caption ngắn gọn kiểu tâm tình + hashtag. AI viết (DeepSeek), fail → mẫu đơn giản."""
+def _caption_for(topic: str, user: str = "", photo: bool = False) -> str:
+    """Caption ngắn kiểu tâm tình + hashtag. AI viết (DeepSeek), fail → mẫu đơn giản.
+    photo=True: TikTok cap 90 ký tự cho bài ảnh → viết cực ngắn + ít hashtag."""
     topic = (topic or "").strip()
+    limit_words = "tối đa 8 từ" if photo else "tối đa 20 từ"
+    tags = _CAPTION_TAGS_SHORT if photo else _CAPTION_TAGS
     key = os.getenv("OPENROUTER_KEY") or os.getenv("OPENROUTER_API_KEY")
+    cap = ""
     if key:
         try:
             import requests as _rq, random as _rd
@@ -417,7 +412,7 @@ def _caption_for(topic: str, user: str = "") -> str:
                       "messages": [
                           {"role": "system", "content": "Bạn là người viết caption TikTok du lịch Đà Lạt."},
                           {"role": "user", "content":
-                           "Viết 1 caption TikTok NGẮN GỌN (1 câu, tối đa 20 từ, giọng gần gũi tâm tình, "
+                           f"Viết 1 caption TikTok NGẮN GỌN (1 câu, {limit_words}, giọng gần gũi tâm tình, "
                            "không emoji, không hashtag) cho nội dung về Đà Lạt"
                            + (f" chủ đề: {topic}." if topic else ".")
                            + ' Ví dụ phong cách: "Anh sẽ ở đây giúp các em có những kỉ niệm toẹt vời tại Đà Lạt mộng mơ". '
@@ -425,11 +420,16 @@ def _caption_for(topic: str, user: str = "") -> str:
                            + f" (seed: {_rd.randint(100, 999)})"}]})
             if r.status_code == 200:
                 cap = r.json()["choices"][0]["message"]["content"].strip().strip('"')
-                if cap and len(cap) < 220:
-                    return f"{cap} {_CAPTION_TAGS}"
         except Exception as e:
             print(f"[pub] caption AI lỗi: {e}", file=sys.stderr)
-    return f"{topic} {_CAPTION_TAGS}".strip() if topic else _CAPTION_TAGS
+    if not cap:
+        cap = topic
+    out = f"{cap} {tags}".strip() if cap else tags
+    if photo and len(out) > 90:   # TikTok photo: content = slideshow title, max 90 ký tự
+        out = f"{cap} {_CAPTION_TAGS_SHORT}".strip()
+        if len(out) > 90:
+            out = cap[:90].strip()
+    return out
 
 
 def _do_publish(video_url: str, caption: str, user: str) -> dict:
@@ -449,7 +449,7 @@ def _do_publish_album(dir_rel: str, user: str) -> dict:
     urls = [im.get("url", "") for im in (rec or {}).get("images", []) if im.get("url")]
     if not urls:
         return {"success": False, "error": "Album không có ảnh"}
-    caption = _caption_for((rec or {}).get("label", ""), user)
+    caption = _caption_for("", user, photo=True)   # label mẫu album không phải chủ đề
     try:
         from tools import publisher
         res = publisher.post_images_to_tiktok(urls, caption, api_key=_user_zernio(user))
@@ -1660,7 +1660,7 @@ class AssembleHandler(BaseHTTPRequestHandler):
                 owner = (rec or {}).get("user", "")
                 if _is_publish_user(owner):
                     res = _do_publish(key, _caption_for((rec or {}).get("topic", ""), owner), owner)
-                    self._json_response({"success": bool(res.get("success")),
+                    self._json_response({"success": True,
                                          "posted": bool(res.get("success")),
                                          "error": res.get("error", "")})
                     return
@@ -1669,7 +1669,7 @@ class AssembleHandler(BaseHTTPRequestHandler):
                 owner = (rec or {}).get("user", "")
                 if _is_publish_user(owner):
                     res = _do_publish_album(key, owner)
-                    self._json_response({"success": bool(res.get("success")),
+                    self._json_response({"success": True,
                                          "posted": bool(res.get("success")),
                                          "error": res.get("error", "")})
                     return
