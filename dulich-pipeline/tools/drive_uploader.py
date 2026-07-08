@@ -46,7 +46,21 @@ class DriveUploader:
         if self.service:
             return self.service
 
-        # Try Service Account first (recommended for server)
+        # OAuth2 token TRƯỚC (Google chặn Service Account upload — không có storage quota)
+        if self.token_path and os.path.exists(self.token_path):
+            try:
+                creds = Credentials.from_authorized_user_file(self.token_path, SCOPES)
+                if creds and creds.expired and creds.refresh_token:
+                    creds.refresh(Request())
+                    Path(self.token_path).write_text(creds.to_json(), encoding="utf-8")
+                if creds and creds.valid:
+                    self.service = build("drive", "v3", credentials=creds)
+                    print(f"[DriveUploader] ✓ Connected via OAuth2: {self.token_path}", file=sys.stderr)
+                    return self.service
+            except Exception as e:
+                print(f"[DriveUploader] OAuth2 error: {e}", file=sys.stderr)
+
+        # Fallback: Service Account (chỉ còn dùng được cho đọc/list, upload bị Google chặn)
         if self.service_account_path and os.path.exists(self.service_account_path):
             try:
                 creds = service_account.Credentials.from_service_account_file(
@@ -57,19 +71,6 @@ class DriveUploader:
                 return self.service
             except Exception as e:
                 print(f"[DriveUploader] Service Account error: {e}", file=sys.stderr)
-
-        # Fallback to OAuth2 token
-        if self.token_path and os.path.exists(self.token_path):
-            try:
-                creds = Credentials.from_authorized_user_file(self.token_path, SCOPES)
-                if creds and creds.expired and creds.refresh_token:
-                    creds.refresh(Request())
-                if creds and creds.valid:
-                    self.service = build("drive", "v3", credentials=creds)
-                    print(f"[DriveUploader] ✓ Connected via OAuth2: {self.token_path}", file=sys.stderr)
-                    return self.service
-            except Exception as e:
-                print(f"[DriveUploader] OAuth2 error: {e}", file=sys.stderr)
 
         print("[DriveUploader] ⚠ No valid credentials found. Upload will fail.", file=sys.stderr)
         return None
