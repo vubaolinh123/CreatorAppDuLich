@@ -286,12 +286,19 @@ def _valid_timings(words: list[dict], vo_text: str, dur: float) -> bool:
     số từ phải gần với kịch bản."""
     if not words:
         return False
-    cover = (float(words[-1]["end"]) - float(words[0]["start"])) / max(dur, 0.1)
-    if cover < 0.5:
+    # Phủ audio: từ đầu tiên phải gần đầu file, từ cuối gần cuối file (Whisper sót
+    # 1 câu đầu/cuối → lệch → loại, dùng fallback theo câu cho khớp giọng).
+    first_start = float(words[0]["start"])
+    last_end = float(words[-1]["end"])
+    if first_start > 1.2:                       # bỏ sót phần đầu
+        return False
+    if (last_end / max(dur, 0.1)) < 0.75:       # bỏ sót phần cuối
+        return False
+    if (last_end - first_start) / max(dur, 0.1) < 0.6:
         return False
     if vo_text:
         expect = max(1, len(vo_text.split()))
-        if len(words) < 0.5 * expect:
+        if len(words) < 0.75 * expect:          # số từ phải gần kịch bản (siết 0.5→0.75)
             return False
     return True
 
@@ -404,12 +411,41 @@ def _timed_cues(vo_path: str, vo_text: str, dur: float) -> list[tuple[str, float
             if out:
                 return _no_overlap(out)
         except Exception as e:
-            print(f"[list_review] cue lỗi ({e}) → chia đều", file=sys.stderr)
-    lines = _chunk_caption(vo_text)
-    if not lines:
+            print(f"[list_review] cue lỗi ({e}) → chia theo câu", file=sys.stderr)
+    # Fallback KHÔNG dùng Whisper: chia theo CÂU, cấp thời lượng tỉ lệ số ký tự
+    # (Vbee đọc đều → bám giọng tốt hơn nhiều so với chia đều theo dòng).
+    return _no_overlap(_proportional_cues(vo_text, dur))
+
+
+def _proportional_cues(vo_text: str, dur: float) -> list[tuple[str, float, float]]:
+    """Chia câu → cue 3-5 chữ, phân bổ thời gian theo tỉ lệ ký tự trên tổng thời lượng."""
+    import re as _re
+    text = unicodedata.normalize("NFC", (vo_text or "").strip())
+    if not text or dur <= 0:
         return []
-    per = dur / len(lines)
-    return _no_overlap([(ln, i * per, (i + 1) * per) for i, ln in enumerate(lines)])
+    sents = [s.strip() for s in _re.split(r"(?<=[\.\!\?…])\s+|\n+", text) if s.strip()]
+    if not sents:
+        sents = [text]
+    total = sum(len(s) for s in sents) or 1
+    cues: list[tuple[str, float, float]] = []
+    t = 0.0
+    for s in sents:
+        seg = dur * (len(s) / total)
+        s0, s1 = t, min(dur, t + seg)
+        t = s1
+        # trong câu: gom 3-5 chữ 1 cue, chia thời gian câu theo số chữ mỗi cue
+        words = s.split()
+        chunks, i = [], 0
+        while i < len(words):
+            chunks.append(words[i:i + 5]); i += 5
+        cw = sum(len(c) for c in chunks) or 1
+        ct = s0
+        for c in chunks:
+            frac = len(c) / cw
+            c0, c1 = ct, min(s1, ct + seg * frac)
+            ct = c1
+            cues.append((" ".join(c), c0, max(c1, c0 + 0.3)))
+    return cues
 
 
 def build_caption_png(text: str, out_path: str, max_w: int = 980):

@@ -24,7 +24,7 @@ _TEMPLATES = {
     "nv2": {"badge_mode": "none", "transition": "fade"},
     "nv3": {"badge_mode": "none", "transition": "fade"},
     "nv4": {"badge_mode": "none", "transition": "fade"},
-    "nv5": {"badge_mode": "name", "transition": "fade"},
+    "nv5": {"badge_mode": "none", "transition": "fade"},
 }
 _DEFAULT_TEMPLATE = {"badge_mode": "none", "transition": "fade"}
 
@@ -134,7 +134,7 @@ def _to_scenes(script: dict, venues: list[dict], badge_mode: str = "full") -> li
     for i, v in enumerate(venues, start=1):
         sp = ai_spots[i - 1] if i - 1 < len(ai_spots) else {}
         sc = {
-            "scene_id": f"spot{i}", "kind": "spot", "label": f"QUÁN {i}",
+            "scene_id": f"spot{i}", "kind": "spot", "label": f"CẢNH {i}",
             "name": (sp.get("name") or v["name"]).strip(),
             "caption": (sp.get("vo") or "").strip(),
             "reference_source": (sp.get("ref") or "").strip(),

@@ -82,7 +82,8 @@ def post_to_tiktok(video_url: str, caption: str, account_id: str | None = None,
 
 
 def post_images_to_tiktok(image_urls: list, caption: str,
-                          api_key: str | None = None) -> dict:
+                          api_key: str | None = None,
+                          account_id: str | None = None) -> dict:
     """Đăng bộ ảnh (carousel) lên TikTok qua Zernio. Tối đa 10 ảnh."""
     items = []
     for u in image_urls[:10]:
@@ -92,7 +93,26 @@ def post_images_to_tiktok(image_urls: list, caption: str,
         items.append({"type": "image", "url": full})
     if not items:
         return {"success": False, "error": "Album không có ảnh"}
-    return _zernio_post(items, caption, api_key)
+    return _zernio_post(items, caption, api_key, account_id)
+
+
+def list_tiktok_accounts(api_key: str | None = None) -> list:
+    """Danh sách tài khoản TikTok dưới 1 key Zernio → [{id, name}]. 1 key có thể có nhiều acc."""
+    key = api_key or os.getenv("ZERNIO_KEY")
+    if not key:
+        return []
+    try:
+        import requests
+        r = requests.get(ZERNIO_ACCOUNTS, headers={"Authorization": f"Bearer {key}"}, timeout=20)
+        out = []
+        for a in (r.json() or {}).get("accounts", []):
+            if a.get("platform") == "tiktok":
+                out.append({"id": a.get("_id") or a.get("accountId") or "",
+                            "name": a.get("displayName") or a.get("username") or a.get("name") or "TikTok"})
+        return out
+    except Exception as e:
+        print(f"[pub] list_tiktok_accounts lỗi: {e}")
+        return []
 
 
 # ── Telegram ──────────────────────────────────────────────────────────────────

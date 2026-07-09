@@ -311,15 +311,28 @@ async function renderSettings(){
     // ── Key theo từng tài khoản (Zernio đăng TikTok + Apify tin tức) ──
     try{
       const rk=await fetch(API+"/user-keys",{cache:"no-store"}); const jk=await rk.json();
-      html+=`<div style="margin:22px 0 8px;font-weight:800;color:var(--pine)">Key theo tài khoản (Zernio đăng TikTok · Apify tin tức)</div>
-        <div class="muted" style="font-size:12px;margin-bottom:10px">NV có Zernio key → admin duyệt là đăng thẳng TikTok kênh đó (cả video lẫn album ảnh). Để trống = giữ nguyên, gõ "xoa" = xóa key.</div>`;
+      html+=`<div style="margin:22px 0 8px;font-weight:800;color:var(--pine)">Key theo tài khoản</div>
+        <div class="muted" style="font-size:12px;margin-bottom:10px">NV có key Zernio → admin duyệt là đăng thẳng TikTok (1 key có thể có 2 tài khoản TikTok, lúc đăng chọn). Ô có sẵn (••) = giữ key cũ; để trống = bỏ. Bấm "➕ Thêm key" nếu nv có nhiều tài khoản Zernio. Apify chỉ dùng cho kênh Tin tức.</div>`;
       (jk.items||[]).forEach(it=>{
-        const b=(s)=>s?`<span class="chip chip-hook">đã có</span>`:`<span class="chip" style="background:#eee;color:#999">chưa có</span>`;
-        html+=`<div style="display:flex;gap:8px;align-items:center;margin-bottom:9px;flex-wrap:wrap">
-          <b style="min-width:70px">${it.name}</b>
-          <input data-ukey="zernio_key" data-user="${it.user}" type="password" autocomplete="off" placeholder="Zernio key" style="flex:1;min-width:140px"> ${b(it.zernio_set)}
-          <input data-ukey="apify_key" data-user="${it.user}" type="password" autocomplete="off" placeholder="Apify key" style="flex:1;min-width:140px"> ${b(it.apify_set)}
-        </div>`;
+        if(it.role==="news"){
+          html+=`<div style="display:flex;gap:8px;align-items:center;margin-bottom:9px;flex-wrap:wrap">
+            <b style="min-width:80px">${it.name}</b>
+            <input data-ukey="apify_key" data-user="${it.user}" type="password" autocomplete="off" placeholder="Apify key (cào tin)" style="flex:1;min-width:180px">
+            ${it.apify_set?`<span class="chip chip-hook">đã có</span>`:`<span class="chip" style="background:#eee;color:#999">chưa có</span>`}
+          </div>`;
+        } else {
+          const n=Math.max(it.zernio_count||0,1);
+          let rows="";
+          for(let i=0;i<n;i++){
+            const has=i<(it.zernio_count||0);
+            rows+=`<input data-zuser="${it.user}" type="password" autocomplete="off" placeholder="${has?'•••••• (giữ key cũ)':'Zernio key'}" style="flex:1;min-width:200px;margin-bottom:5px">`;
+          }
+          html+=`<div style="margin-bottom:12px;border-left:3px solid var(--surface2);padding-left:10px">
+            <b>${it.name}</b> <span class="muted" style="font-size:11px">${it.zernio_count||0} key Zernio</span>
+            <div id="zbox-${it.user}" style="display:flex;flex-direction:column;margin-top:5px">${rows}</div>
+            <button class="btn-ghost chip" onclick="addZernioKey('${it.user}')">➕ Thêm key</button>
+          </div>`;
+        }
       });
     }catch(e){}
     html+=`<div style="display:flex;gap:8px;margin-top:18px">
@@ -328,17 +341,35 @@ async function renderSettings(){
     document.getElementById("setbox").innerHTML=html;
   }catch(e){ document.getElementById("setbox").textContent="Lỗi tải cài đặt: "+e.message; }
 }
+function addZernioKey(u){
+  const box=document.getElementById("zbox-"+u); if(!box)return;
+  const inp=document.createElement("input");
+  inp.setAttribute("data-zuser",u); inp.type="password"; inp.autocomplete="off";
+  inp.placeholder="Zernio key"; inp.style.cssText="flex:1;min-width:200px;margin-bottom:5px";
+  box.appendChild(inp);
+}
 async function saveSettings(){
   const payload={};
   document.querySelectorAll("#setbox input[data-key]").forEach(i=>{ const v=i.value.trim(); if(v) payload[i.getAttribute("data-key")]=v; });
-  // Key theo tài khoản
+  // Apify per-nv (chỉ tin tức)
   const perUser={};
   document.querySelectorAll("#setbox input[data-ukey]").forEach(i=>{
     const v=i.value.trim(); if(!v)return;
     const u=i.getAttribute("data-user");
     (perUser[u]=perUser[u]||{user:u})[i.getAttribute("data-ukey")]=v;
   });
-  if(!Object.keys(payload).length && !Object.keys(perUser).length){ toast("Chưa nhập key mới nào"); return; }
+  // Zernio keys (mảng theo thứ tự ô; ô để trống mà là placeholder cũ → gửi '•' để giữ)
+  document.querySelectorAll("#setbox [id^='zbox-']").forEach(box=>{
+    const u=box.id.slice(5);
+    const arr=[...box.querySelectorAll("input[data-zuser]")].map(i=>{
+      const v=i.value.trim();
+      if(v) return v;
+      return i.placeholder.includes("•") ? "••" : "";   // giữ key cũ nếu là ô có sẵn
+    });
+    (perUser[u]=perUser[u]||{user:u}).zernio_keys=arr;
+  });
+  const hasUser=Object.values(perUser).some(o=>o.zernio_keys?.some(x=>x&&x!=="••")||o.apify_key);
+  if(!Object.keys(payload).length && !hasUser){ toast("Chưa nhập key mới nào"); return; }
   try{
     if(Object.keys(payload).length){
       const r=await fetch(API+"/settings",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload)});
@@ -485,7 +516,7 @@ function loadClipMeta(file){return new Promise(res=>{const url=URL.createObjectU
 function curHookStyle(){ return SESSION.role==="news" ? ("hook_news_"+newsColor) : SESSION.hook_style; }
 
 function lrIntro(){return {scene_id:"intro",kind:"intro",label:"HOOK",title:"",caption:"",min_duration_sec:13,type:"clip",files:[]};}
-function lrSpot(n){return {scene_id:"spot"+n,kind:"spot",label:"QUÁN "+n,name:"",rating:"",address:"",caption:"",min_duration_sec:9,type:"clip",files:[]};}
+function lrSpot(n){return {scene_id:"spot"+n,kind:"spot",label:"CẢNH "+n,name:"",rating:"",address:"",caption:"",min_duration_sec:9,type:"clip",files:[]};}
 function lrOutro(){return {scene_id:"outro",kind:"outro",label:"OUTRO",caption:"",min_duration_sec:5,type:"clip",files:[]};}
 
 function renderStaff(){
@@ -525,14 +556,14 @@ function moveSpot(i,dir){
   if(j<0||j>=currentScenes.length)return;
   if(currentScenes[i].kind!=="spot"||currentScenes[j].kind!=="spot")return;
   const t=currentScenes[i]; currentScenes[i]=currentScenes[j]; currentScenes[j]=t;  // clip (scene.files) đi theo
-  let n=0; currentScenes.forEach(s=>{if(s.kind==="spot"){n++;s.scene_id="spot"+n;s.label="QUÁN "+n;}});
+  let n=0; currentScenes.forEach(s=>{if(s.kind==="spot"){n++;s.scene_id="spot"+n;s.label="CẢNH "+n;}});
   scenePage=Math.floor(j/PAGE);
   renderSceneInputs(); renderPreview();
 }
 function removeSpot(i){
   if(currentScenes[i].kind!=="spot")return;
   currentScenes.splice(i,1);
-  let n=0; currentScenes.forEach(s=>{if(s.kind==="spot"){n++;s.scene_id="spot"+n;s.label="QUÁN "+n;}});
+  let n=0; currentScenes.forEach(s=>{if(s.kind==="spot"){n++;s.scene_id="spot"+n;s.label="CẢNH "+n;}});
   const pages=Math.ceil(currentScenes.length/PAGE); if(scenePage>=pages)scenePage=pages-1;
   renderSceneInputs(); renderPreview();
 }
@@ -1085,7 +1116,7 @@ function renderReview(){
       : (it.cover?`<img src="${API+it.cover}?w=220" style="width:100%;aspect-ratio:4/5;object-fit:cover;border-radius:10px;cursor:pointer" onclick="openImg('${it.cover}')">`:"<div class='muted'>—</div>");
     const btns = it.status==="posted"
       ? `<button class="btn-ghost chip" onclick="setStatus('${it.kind}','${it.key}','pending')">↩ Chưa đăng</button>`
-      : `<button class="btn chip" style="background:#1976d2;border-color:#1976d2" onclick="setStatus('${it.kind}','${it.key}','posted',this)">Đăng</button><button class="btn-ghost chip" onclick="setStatus('${it.kind}','${it.key}','failed',this)">⚠ Lỗi</button><button class="btn-ghost chip" onclick="setStatus('${it.kind}','${it.key}','cancelled',this)">✕ Hủy</button>`;
+      : `<button class="btn chip" style="background:#1976d2;border-color:#1976d2" onclick="publishItem('${it.kind}','${it.key}','${it.user||""}',this)">Đăng</button><button class="btn-ghost chip" onclick="setStatus('${it.kind}','${it.key}','failed',this)">⚠ Lỗi</button><button class="btn-ghost chip" onclick="setStatus('${it.kind}','${it.key}','cancelled',this)">✕ Hủy</button>`;
     return `<div class="lib-card" style="padding:8px">${media}
       <div class="cap" style="flex-direction:column;align-items:stretch;gap:6px">
         <span style="font-size:12px">${(it.title||"").replace(/</g,"&lt;")} · <b>${makerName(it.user)}</b> · ${statusLabel(it.status)}${it.kind==="album"?` · ${it.count} ảnh`:""}</span>
@@ -1093,9 +1124,27 @@ function renderReview(){
       </div></div>`;
   }).join("")+`</div>`;
 }
-async function setStatus(kind,key,status,btn){
+// Đăng: nếu nv có >1 tài khoản TikTok → cho admin chọn account trước khi đăng.
+async function publishItem(kind,key,user,btn){
+  if(btn){ btn.disabled=true; btn.style.opacity=".6"; btn.textContent="⏳…"; }
+  let accounts=[];
+  try{ const j=await (await fetch(API+`/zernio-accounts?user=${encodeURIComponent(user)}`,{cache:"no-store"})).json(); accounts=j.accounts||[]; }catch{}
+  if(accounts.length<=1){
+    return setStatus(kind,key,"posted",btn, accounts[0]?{zernio_ki:accounts[0].ki,account_id:accounts[0].account_id}:{});
+  }
+  // >1 account → hiện picker chọn
+  if(btn){ btn.disabled=false; btn.style.opacity="1"; btn.textContent="Đăng"; }
+  const wrap=btn.closest(".lib-card");
+  let box=wrap.querySelector(".acc-pick"); if(box) box.remove();
+  box=document.createElement("div"); box.className="acc-pick"; box.style.cssText="display:flex;flex-direction:column;gap:4px;margin-top:6px";
+  box.innerHTML=`<div class="muted" style="font-size:11px">Chọn tài khoản TikTok để đăng:</div>`+
+    accounts.map(a=>`<button class="btn-ghost chip" style="text-align:left">${(a.name||"TikTok").replace(/</g,"&lt;")}</button>`).join("");
+  box.querySelectorAll("button").forEach((b,i)=>b.onclick=()=>{ box.remove(); setStatus(kind,key,"posted",btn,{zernio_ki:accounts[i].ki,account_id:accounts[i].account_id}); });
+  wrap.appendChild(box);
+}
+async function setStatus(kind,key,status,btn,opts){
   if(btn){ btn.disabled=true; btn.style.opacity=".6"; if(status==="posted"){ btn.textContent="⏳ Đang đăng…"; toast("⏳ Đang đăng lên TikTok…"); } }
-  try{ const j=await (await fetch(API+"/product-status",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({kind,key,status})})).json();
+  try{ const j=await (await fetch(API+"/product-status",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({kind,key,status,...(opts||{})})})).json();
     if(!j.success)throw new Error(j.error||"không tìm thấy");
     if(status==="posted" && j.posted===false){ status="failed"; toast("Đăng lỗi: "+(j.error||"")); }
     else toast(status==="posted"&&j.posted?"✅ Đã đăng TikTok":"Đã cập nhật: "+statusLabel(status));

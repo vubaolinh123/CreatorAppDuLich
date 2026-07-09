@@ -54,12 +54,17 @@ def _within_24h(iso_date: str) -> bool:
 
 
 def _query_list() -> list[str]:
-    """Xoay vòng KEYWORDS_PER_RUN keyword theo khung giờ + 1 combo hashtag."""
+    """Xoay vòng KEYWORDS_PER_RUN keyword theo khung giờ + 1-2 hashtag LẺ (mỗi cái 1 query).
+    KHÔNG gộp tất cả hashtag thành 1 chuỗi — YouTube trả rác/không có kết quả."""
     import time
     lt = time.localtime()
     start = (lt.tm_hour * 60 + lt.tm_yday) % max(1, len(DEFAULT_KEYWORDS))
-    picked = [DEFAULT_KEYWORDS[(start + i) % len(DEFAULT_KEYWORDS)] for i in range(min(KEYWORDS_PER_RUN, len(DEFAULT_KEYWORDS)))]
-    picked.append(" ".join(DEFAULT_HASHTAGS))
+    picked = [DEFAULT_KEYWORDS[(start + i) % len(DEFAULT_KEYWORDS)]
+              for i in range(min(KEYWORDS_PER_RUN, len(DEFAULT_KEYWORDS)))]
+    if DEFAULT_HASHTAGS:  # 2 hashtag lẻ xoay vòng, mỗi cái 1 query riêng
+        hs = start % len(DEFAULT_HASHTAGS)
+        picked.append(DEFAULT_HASHTAGS[hs])
+        picked.append(DEFAULT_HASHTAGS[(hs + 1) % len(DEFAULT_HASHTAGS)])
     return picked
 
 
@@ -75,8 +80,9 @@ def scrape_news(keyword: str | None = None, hashtags: list[str] | None = None,
     except Exception:
         return {"success": False, "error": "requests chưa cài", "items": []}
 
-    if keyword:  # cào 1 từ khóa cụ thể (từ UI)
-        queries = [keyword.strip(), " ".join(hashtags if hashtags is not None else DEFAULT_HASHTAGS)]
+    if keyword:  # cào 1 từ khóa cụ thể (từ UI) + vài hashtag lẻ (không gộp)
+        hs = hashtags if hashtags is not None else DEFAULT_HASHTAGS[:2]
+        queries = [keyword.strip()] + [h for h in hs[:2]]
     else:
         queries = _query_list()
     queries = [q for q in queries if q]

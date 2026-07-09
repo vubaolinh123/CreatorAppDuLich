@@ -69,6 +69,71 @@ def _split_for_tts(text: str, limit: int = 280) -> list[str]:
 
 import re
 
+def _split_sentences_vi(text: str, max_len: int = 90) -> list[str]:
+    """Tách text thành câu ngắn để Vbee synth đúng (text dài Vbee hay rớt câu).
+    Cắt sau . ! ? … và xuống dòng; câu vẫn quá dài thì cắt thêm ở dấu phẩy."""
+    import re as _re
+    text = (text or "").strip()
+    if not text:
+        return []
+    raw = _re.split(r"(?<=[\.\!\?…])\s+|\n+", text)
+    out: list[str] = []
+    for s in raw:
+        s = s.strip()
+        if not s:
+            continue
+        if len(s) <= max_len:
+            out.append(s)
+            continue
+        # câu dài → cắt tiếp theo dấu phẩy, gộp cho tới max_len
+        cur = ""
+        for part in _re.split(r"(?<=,)\s+", s):
+            if cur and len(cur) + len(part) + 1 > max_len:
+                out.append(cur.strip()); cur = part
+            else:
+                cur = (cur + " " + part).strip() if cur else part
+        if cur.strip():
+            out.append(cur.strip())
+    # gộp mẩu quá ngắn (<8 ký tự) vào câu trước để tránh audio vụn
+    merged: list[str] = []
+    for s in out:
+        if merged and len(s) < 8:
+            merged[-1] = merged[-1] + " " + s
+        else:
+            merged.append(s)
+    return merged
+
+
+def _concat_mp3(files: list, out_path) -> bool:
+    """Ghép nhiều mp3 thành 1 bằng ffmpeg (concat demuxer, re-encode cho đồng nhất)."""
+    import subprocess, tempfile, os as _os
+    from pathlib import Path as _P
+    files = [str(f) for f in files if f and _P(str(f)).exists()]
+    if not files:
+        return False
+    if len(files) == 1:
+        _P(str(out_path)).write_bytes(_P(files[0]).read_bytes())
+        return True
+    lst = tempfile.NamedTemporaryFile("w", suffix=".txt", delete=False, encoding="utf-8")
+    try:
+        for f in files:
+            lst.write(f"file '{_P(f).resolve().as_posix()}'\n")
+        lst.close()
+        r = subprocess.run(
+            ["ffmpeg", "-y", "-f", "concat", "-safe", "0", "-i", lst.name,
+             "-c:a", "libmp3lame", "-q:a", "4", str(out_path)],
+            capture_output=True, text=True)
+        if r.returncode != 0:
+            print(f"[Voice] ⚠ concat mp3 lỗi: {r.stderr[-300:]}", file=sys.stderr)
+            return False
+        return _P(str(out_path)).exists()
+    finally:
+        try:
+            _os.unlink(lst.name)
+        except Exception:
+            pass
+
+
 def clean_text_for_tts(text: str) -> str:
     """Remove emojis, special characters, and double spaces from text for clean TTS generation."""
     # Remove emojis and icons
@@ -206,56 +271,78 @@ class VoiceGenerator:
 
         output_path = OUTPUT_DIR / f"{output_name}.mp3"
         sp = max(0.5, min(1.5, float(speed)))
-        api = "https://vbee.vn/api/v1/tts"   # endpoint chính thức (api.vbee.vn cũ trả HTML)
-        headers = {"Authorization": f"Bearer {self._vbee_key}", "Content-Type": "application/json"}
-        import time as _time
+
+        # Vbee LỖI với text dài (rớt câu / chèn watermark "subscribe…"): tách theo câu,
+        # synth từng câu (text ngắn luôn đúng) rồi ghép lại. Text ngắn → 1 request như cũ.
+        parts = _split_sentences_vi(text)
         try:
-            # 1) Submit job (indirect + poll; callback chỉ để đủ tham số)
-            r = _requests.post(api, headers=headers, timeout=60, json={
-                "app_id": self._vbee_app_id,
-                "input_text": text,
-                "voice_code": voice_code,
-                "speed_rate": str(sp),
-                "audio_type": "mp3",
-                "response_type": "indirect",
-                "callback_url": "https://example.com/vbee-cb",
-            })
-            if r.status_code not in (200, 201):
-                print(f"[Voice] ⚠ Vbee submit {r.status_code}: {r.text[:200]}", file=sys.stderr)
-                return None
-            j = r.json()
-            res = j.get("result") or {}
-            rid = res.get("request_id") or j.get("request_id")
-            # gói direct có thể trả audio_link luôn
-            link = res.get("audio_link") or j.get("audio_link")
-            if not rid and not link:
-                print(f"[Voice] ⚠ Vbee không trả request_id: {str(j)[:200]}", file=sys.stderr)
-                return None
-
-            # 2) Poll tới khi SUCCESS (~90s)
-            if not link:
-                for _ in range(45):
-                    _time.sleep(2)
-                    g = _requests.get(f"{api}/{rid}", headers=headers, timeout=30).json()
-                    gr = g.get("result") or {}
-                    st = (gr.get("status") or "").upper()
-                    if st == "SUCCESS":
-                        link = gr.get("audio_link"); break
-                    if st in ("FAILED", "ERROR"):
-                        print(f"[Voice] ⚠ Vbee FAILED: {str(g)[:200]}", file=sys.stderr); return None
-            if not link:
-                print("[Voice] ⚠ Vbee timeout chờ audio.", file=sys.stderr); return None
-
-            # 3) Tải audio
-            a = _requests.get(link, timeout=60); a.raise_for_status()
-            if len(a.content) < 500:
-                return None
-            output_path.write_bytes(a.content)
-            print(f"[Voice] ✓ Vbee TTS saved: {output_path} (voice={voice_code})", file=sys.stderr)
+            if len(parts) <= 1:
+                data = self._vbee_once(parts[0] if parts else text, voice_code, sp)
+                if not data:
+                    return None
+                output_path.write_bytes(data)
+            else:
+                seg_files = []
+                tmp = OUTPUT_DIR / f"{output_name}_parts"
+                tmp.mkdir(parents=True, exist_ok=True)
+                for i, s in enumerate(parts):
+                    d = self._vbee_once(s, voice_code, sp)
+                    if not d:
+                        print(f"[Voice] ⚠ Vbee rớt câu {i}: {s[:40]!r}", file=sys.stderr)
+                        return None
+                    fp = tmp / f"{i:02d}.mp3"
+                    fp.write_bytes(d)
+                    seg_files.append(fp)
+                if not _concat_mp3(seg_files, output_path):
+                    return None
+                import shutil as _sh
+                _sh.rmtree(tmp, ignore_errors=True)
+            print(f"[Voice] ✓ Vbee TTS saved: {output_path} (voice={voice_code}, {len(parts)} câu)", file=sys.stderr)
             return str(output_path.resolve())
         except Exception as e:
             print(f"[Voice] ⚠ Vbee lỗi: {e}", file=sys.stderr)
             return None
+
+    def _vbee_once(self, text: str, voice_code: str, sp: float) -> Optional[bytes]:
+        """1 request Vbee cho 1 đoạn NGẮN (1 câu) → trả bytes mp3. Poll tới SUCCESS."""
+        api = "https://vbee.vn/api/v1/tts"   # endpoint chính thức (api.vbee.vn cũ trả HTML)
+        headers = {"Authorization": f"Bearer {self._vbee_key}", "Content-Type": "application/json"}
+        import time as _time
+        r = _requests.post(api, headers=headers, timeout=60, json={
+            "app_id": self._vbee_app_id,
+            "input_text": text,
+            "voice_code": voice_code,
+            "speed_rate": str(sp),
+            "audio_type": "mp3",
+            "response_type": "indirect",
+            "callback_url": "https://example.com/vbee-cb",
+        })
+        if r.status_code not in (200, 201):
+            print(f"[Voice] ⚠ Vbee submit {r.status_code}: {r.text[:200]}", file=sys.stderr)
+            return None
+        j = r.json()
+        res = j.get("result") or {}
+        rid = res.get("request_id") or j.get("request_id")
+        link = res.get("audio_link") or j.get("audio_link")
+        if not rid and not link:
+            print(f"[Voice] ⚠ Vbee không trả request_id: {str(j)[:200]}", file=sys.stderr)
+            return None
+        if not link:
+            for _ in range(45):
+                _time.sleep(2)
+                g = _requests.get(f"{api}/{rid}", headers=headers, timeout=30).json()
+                gr = g.get("result") or {}
+                st = (gr.get("status") or "").upper()
+                if st == "SUCCESS":
+                    link = gr.get("audio_link"); break
+                if st in ("FAILED", "ERROR"):
+                    print(f"[Voice] ⚠ Vbee FAILED: {str(g)[:200]}", file=sys.stderr); return None
+        if not link:
+            print("[Voice] ⚠ Vbee timeout chờ audio.", file=sys.stderr); return None
+        a = _requests.get(link, timeout=60); a.raise_for_status()
+        if len(a.content) < 500:
+            return None
+        return a.content
 
     # ── ElevenLabs ───────────────────────────────────────────────────────────
 

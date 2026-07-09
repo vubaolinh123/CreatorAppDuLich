@@ -437,10 +437,25 @@ def _save_user_keys(d: dict) -> None:
         USER_KEYS_FILE.write_text(json.dumps(d, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
-def _user_zernio(user: str) -> str:
-    """Zernio key của nv (per-account), fallback ZERNIO_KEY chung."""
-    k = ((_load_user_keys().get(user) or {}).get("zernio_key") or "").strip()
-    return k or (os.getenv("ZERNIO_KEY") or "").strip()
+def _user_zernio_keys(user: str) -> list:
+    """Danh sách key Zernio của nv (mỗi nv có thể nhiều key). Migrate key đơn cũ.
+    Rỗng → fallback ZERNIO_KEY chung (1 phần tử)."""
+    rec = _load_user_keys().get(user) or {}
+    keys = rec.get("zernio_keys")
+    if not isinstance(keys, list):
+        old = (rec.get("zernio_key") or "").strip()
+        keys = [old] if old else []
+    keys = [k.strip() for k in keys if (k or "").strip()]
+    if keys:
+        return keys
+    g = (os.getenv("ZERNIO_KEY") or "").strip()
+    return [g] if g else []
+
+
+def _user_zernio(user: str, ki: int = 0) -> str:
+    """1 key Zernio theo index (mặc định key đầu)."""
+    keys = _user_zernio_keys(user)
+    return keys[ki] if 0 <= ki < len(keys) else (keys[0] if keys else "")
 
 
 def _user_apify(user: str) -> str:
@@ -450,10 +465,15 @@ def _user_apify(user: str) -> str:
 
 def _is_publish_user(user: str) -> bool:
     """NV có key Zernio (riêng hoặc chung + cờ publish cũ) là đăng được."""
-    if ((_load_user_keys().get(user) or {}).get("zernio_key") or "").strip():
-        return True
-    u = _load_users().get(user) or {}
-    return (u.get("publish") or "").lower() == "tiktok" and bool(os.getenv("ZERNIO_KEY"))
+    if _user_zernio_keys(user):
+        u = _load_users().get(user) or {}
+        # có key riêng → luôn cho đăng; nếu chỉ có key chung thì cần cờ publish
+        rec = _load_user_keys().get(user) or {}
+        own = rec.get("zernio_keys") or ([rec["zernio_key"]] if rec.get("zernio_key") else [])
+        if any((k or "").strip() for k in own):
+            return True
+        return (u.get("publish") or "").lower() == "tiktok"
+    return False
 
 
 _CAPTION_TAGS = "#reviewdalat #dalatdiary #dalatstory #dulichdalat"
@@ -498,19 +518,23 @@ def _caption_for(topic: str, user: str = "", photo: bool = False) -> str:
     return out
 
 
-def _do_publish(video_url: str, caption: str, user: str) -> dict:
-    """Đăng TikTok qua Zernio (key riêng của nv) + cập nhật status product."""
+def _do_publish(video_url: str, caption: str, user: str,
+                ki: int = 0, account_id: str = "") -> dict:
+    """Đăng TikTok qua Zernio (key ki của nv, account_id đã chọn) + cập nhật status."""
     try:
         from tools import publisher
-        res = publisher.post_to_tiktok(video_url, caption, api_key=_user_zernio(user))
+        res = publisher.post_to_tiktok(video_url, caption,
+                                       api_key=_user_zernio(user, ki),
+                                       account_id=account_id or None)
     except Exception as e:
         res = {"success": False, "error": str(e)}
     _set_product_status(video_url, "posted" if res.get("success") else "failed")
     return res
 
 
-def _do_publish_album(dir_rel: str, user: str) -> dict:
-    """Đăng bộ ảnh album lên TikTok (carousel) qua Zernio key của nv."""
+def _do_publish_album(dir_rel: str, user: str,
+                      ki: int = 0, account_id: str = "") -> dict:
+    """Đăng bộ ảnh album lên TikTok (carousel) qua Zernio key ki + account_id đã chọn."""
     rec = next((a for a in _load_albums() if a.get("dir") == dir_rel), None)
     urls = [im.get("url", "") for im in (rec or {}).get("images", []) if im.get("url")]
     if not urls:
@@ -518,7 +542,9 @@ def _do_publish_album(dir_rel: str, user: str) -> dict:
     caption = _caption_for("", user, photo=True)   # label mẫu album không phải chủ đề
     try:
         from tools import publisher
-        res = publisher.post_images_to_tiktok(urls, caption, api_key=_user_zernio(user))
+        res = publisher.post_images_to_tiktok(urls, caption,
+                                              api_key=_user_zernio(user, ki),
+                                              account_id=account_id or None)
     except Exception as e:
         res = {"success": False, "error": str(e)}
     _set_album_status(dir_rel, "posted" if res.get("success") else "failed")
@@ -934,6 +960,8 @@ class AssembleHandler(BaseHTTPRequestHandler):
             self.handle_settings_get()
         elif self.path == "/user-keys":
             self.handle_user_keys_get()
+        elif self.path.startswith("/zernio-accounts"):
+            self.handle_zernio_accounts()
         elif self.path == "/venues":
             self.handle_venues_get()
         elif self.path.startswith("/venue-thumb/"):
@@ -1750,15 +1778,18 @@ class AssembleHandler(BaseHTTPRequestHandler):
             kind = (b.get("kind") or "video").strip()
             key = (b.get("key") or "").strip()
             status = (b.get("status") or "").strip()
+            ki = int(b.get("zernio_ki") or 0)
+            account_id = (b.get("account_id") or "").strip()
             if status not in ("pending", "posted", "failed", "cancelled"):
                 self._json_response({"success": False, "error": "status không hợp lệ"}, 400)
                 return
-            # Admin duyệt "đã đăng" → đăng TikTok thật qua Zernio key của nv.
+            # Admin duyệt "đã đăng" → đăng TikTok thật qua Zernio key + account đã chọn.
             if kind == "video" and status == "posted":
                 rec = next((p for p in _load_products() if p.get("video_url") == key), None)
                 owner = (rec or {}).get("user", "")
                 if _is_publish_user(owner):
-                    res = _do_publish(key, _caption_for((rec or {}).get("topic", ""), owner), owner)
+                    res = _do_publish(key, _caption_for((rec or {}).get("topic", ""), owner),
+                                      owner, ki=ki, account_id=account_id)
                     self._json_response({"success": True,
                                          "posted": bool(res.get("success")),
                                          "error": res.get("error", "")})
@@ -1767,7 +1798,7 @@ class AssembleHandler(BaseHTTPRequestHandler):
                 rec = next((a for a in _load_albums() if a.get("dir") == key), None)
                 owner = (rec or {}).get("user", "")
                 if _is_publish_user(owner):
-                    res = _do_publish_album(key, owner)
+                    res = _do_publish_album(key, owner, ki=ki, account_id=account_id)
                     self._json_response({"success": True,
                                          "posted": bool(res.get("success")),
                                          "error": res.get("error", "")})
@@ -1957,7 +1988,7 @@ class AssembleHandler(BaseHTTPRequestHandler):
             self._json_response({"success": False, "error": str(e)}, 500)
 
     def handle_user_keys_get(self):
-        """GET /user-keys → key Zernio/Apify từng tài khoản (chỉ báo đã có/chưa, không trả giá trị)."""
+        """GET /user-keys → nv staff: số key Zernio đã có; tin tức: Apify. Không trả giá trị key."""
         keys = _load_user_keys()
         users = _load_users()
         items = []
@@ -1965,31 +1996,69 @@ class AssembleHandler(BaseHTTPRequestHandler):
             if u.get("role") == "admin":
                 continue
             k = keys.get(uid) or {}
+            zk = k.get("zernio_keys")
+            if not isinstance(zk, list):
+                zk = [k["zernio_key"]] if (k.get("zernio_key") or "").strip() else []
+            zk = [x for x in zk if (x or "").strip()]
             items.append({"user": uid, "name": u.get("name", uid),
-                          "zernio_set": bool((k.get("zernio_key") or "").strip()),
+                          "role": u.get("role", "staff"),
+                          "zernio_count": len(zk),
                           "apify_set": bool((k.get("apify_key") or "").strip())})
         self._json_response({"success": True, "items": items})
 
     def handle_user_keys_save(self):
-        """POST /user-keys {user, zernio_key?, apify_key?} — rỗng/ẩn = giữ nguyên, "xoa" = xóa."""
+        """POST /user-keys {user, zernio_keys?: [..], apify_key?}. Ô ẩn (•) giữ key cũ theo index."""
         try:
             data = self._read_json_body()
             uid = (data.get("user") or "").strip()
-            if uid not in _load_users():
+            urec = _load_users().get(uid)
+            if not urec:
                 self._json_response({"success": False, "error": f"Tài khoản không tồn tại: {uid}"}, 400)
                 return
             keys = _load_user_keys()
             rec = keys.get(uid) or {}
-            for f in ("zernio_key", "apify_key"):
-                v = (data.get(f) or "").strip()
-                if not v or set(v) <= {"•", "*"}:
-                    continue
-                rec[f] = "" if v.lower() == "xoa" else v
+            # migrate key đơn cũ → list
+            old = rec.get("zernio_keys")
+            if not isinstance(old, list):
+                old = [rec["zernio_key"]] if (rec.get("zernio_key") or "").strip() else []
+                rec.pop("zernio_key", None)
+            # zernio_keys: mảng ô từ UI; ô ẩn (chỉ • *) = giữ key cũ cùng index; rỗng = bỏ
+            if isinstance(data.get("zernio_keys"), list):
+                newk = []
+                for i, v in enumerate(data["zernio_keys"]):
+                    v = (v or "").strip()
+                    if set(v) <= {"•", "*"} and v:      # ẩn → giữ cũ
+                        if i < len(old) and old[i].strip():
+                            newk.append(old[i].strip())
+                    elif v:
+                        newk.append(v)
+                rec["zernio_keys"] = newk
+            # apify: chỉ dùng cho kênh tin tức
+            av = (data.get("apify_key") or "").strip()
+            if av and not (set(av) <= {"•", "*"}):
+                rec["apify_key"] = "" if av.lower() == "xoa" else av
             keys[uid] = rec
             _save_user_keys(keys)
             self._json_response({"success": True})
         except Exception as e:
             self._json_response({"success": False, "error": str(e)}, 500)
+
+    def handle_zernio_accounts(self):
+        """GET /zernio-accounts?user= → các tài khoản TikTok của nv (gộp qua các key Zernio).
+        Trả [{ki, account_id, name}] để admin chọn account đăng."""
+        try:
+            from urllib.parse import urlparse, parse_qs
+            q = parse_qs(urlparse(self.path).query)
+            user = (q.get("user", [""])[0] or "").strip()
+            from tools import publisher
+            out = []
+            for ki, key in enumerate(_user_zernio_keys(user)):
+                for a in publisher.list_tiktok_accounts(key):
+                    if a.get("id"):
+                        out.append({"ki": ki, "account_id": a["id"], "name": a.get("name", "TikTok")})
+            self._json_response({"success": True, "accounts": out})
+        except Exception as e:
+            self._json_response({"success": False, "error": str(e), "accounts": []}, 500)
 
     def handle_settings_get(self):
         """GET /settings → danh sách key + đã điền hay chưa (KHÔNG trả giá trị key)."""
