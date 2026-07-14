@@ -526,9 +526,40 @@ function renderStaff(){
       <h2 class="sec" style="margin:10px 0 6px">Video review list quán Đà Lạt</h2>
       <div class="muted" style="margin-bottom:20px;font-size:13px">AI sẽ soạn kịch bản + chia scene từ thư viện quán. Hook: <b>${HOOK_NAMES[SESSION.hook_style]||SESSION.hook_style}</b> · giọng Google · 9:16.</div>
       <button class="btn-pink" style="color:#fff;padding:13px 30px;font-size:15px" onclick="genStaffContent()">🪄 Tạo nội dung</button>
+      <div style="display:flex;gap:8px;justify-content:center;margin-top:12px">
+        <button class="btn-ghost chip" onclick="toggleImport('pasteBox')">📋 Dán kịch bản</button>
+        <button class="btn-ghost chip" onclick="toggleImport('linkBox')">🔗 Từ link clip</button>
+      </div>
+      <div id="pasteBox" class="hidden" style="margin-top:12px;text-align:left">
+        <textarea id="pasteScript" rows="6" placeholder="Dán kịch bản / ý tưởng của bạn vào đây — AI sẽ chia thành các cảnh" style="width:100%"></textarea>
+        <button class="btn" style="width:100%;margin-top:8px" id="pasteBtn" onclick="importScript('text')">Chuyển thành kịch bản</button>
+      </div>
+      <div id="linkBox" class="hidden" style="margin-top:12px;text-align:left">
+        <input id="linkScript" placeholder="Dán link TikTok / YouTube (clip ≤5 phút)" style="width:100%">
+        <div class="muted" style="font-size:11px;margin-top:4px">AI nghe clip rồi viết kịch bản MỚI cùng chủ đề (không copy nguyên văn).</div>
+        <button class="btn" style="width:100%;margin-top:8px" id="linkBtn" onclick="importScript('link')">Nghe clip + viết kịch bản</button>
+      </div>
       <div id="prefillStatus" class="muted" style="margin-top:16px;min-height:18px"></div>
     </div>
     <div id="editor" class="hidden"></div>`;
+}
+function toggleImport(id){
+  ["pasteBox","linkBox"].forEach(x=>{const el=document.getElementById(x); if(el&&x!==id)el.classList.add("hidden");});
+  const el=document.getElementById(id); if(el)el.classList.toggle("hidden");
+}
+async function importScript(mode){
+  const btn=document.getElementById(mode==="text"?"pasteBtn":"linkBtn"); const old=btn.textContent;
+  const body={user:SESSION.username};
+  if(mode==="text"){ body.text=(document.getElementById("pasteScript").value||"").trim(); if(!body.text){toast("Dán kịch bản trước");return;} }
+  else { body.url=(document.getElementById("linkScript").value||"").trim(); if(!body.url){toast("Dán link trước");return;} }
+  btn.disabled=true; btn.textContent=mode==="text"?"⏳ AI đang chia cảnh…":"⏳ Đang nghe clip + viết…";
+  try{
+    const j=await (await fetch(API+"/script-from-"+(mode==="text"?"text":"link"),{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)})).json();
+    if(!j.success||!j.scenes||!j.scenes.length)throw new Error(j.error||"AI không tạo được");
+    currentScenes=j.scenes.map(s=>({...s,caption:(s.caption!=null?s.caption:(s.vo||"")),files:[]})); scenePage=0;
+    openEditor(); toast("📝 Kịch bản đã sẵn sàng (cũng đã lưu vào Kịch bản chờ)");
+  }catch(e){ toast("Lỗi: "+e.message); }
+  finally{ btn.disabled=false; btn.textContent=old; }
 }
 async function genStaffContent(){
   const st=document.getElementById("prefillStatus"); if(st)st.textContent="⏳ AI đang soạn nội dung…";
@@ -578,10 +609,18 @@ function renderNews(){
       <div class="muted" style="margin:4px 0 8px">Chỉ tin trong <b>24h</b> (YouTube video + shorts). Tự cào 5h/11h/18h. Chọn tin → bấm <b>📝 Tạo kịch bản</b>.</div>
       <div id="newsKeywords" style="margin-bottom:8px"></div>
       <div id="newsPool" class="muted">Đang tải…</div>
-      <details style="margin-top:14px"><summary class="muted" style="cursor:pointer">✍️ Hoặc tạo kịch bản từ link TikTok</summary>
-        <input id="manualLink" placeholder="https://www.tiktok.com/@.../video/..." style="margin-top:8px">
-        <button class="btn-ghost" style="width:100%;margin-top:8px;padding:10px" id="manualBtn" onclick="researchNews('manual')">✍️ Tạo từ link này</button>
-      </details>
+      <div style="display:flex;gap:8px;margin-top:14px">
+        <button class="btn-ghost chip" onclick="toggleImport('pasteBox')">📋 Dán kịch bản</button>
+        <button class="btn-ghost chip" onclick="toggleImport('linkBox')">🔗 Từ link clip (AI nghe + viết mới)</button>
+      </div>
+      <div id="pasteBox" class="hidden" style="margin-top:10px">
+        <textarea id="pasteScript" rows="6" placeholder="Dán kịch bản / ý tưởng — AI chia thành các cảnh" style="width:100%"></textarea>
+        <button class="btn" style="width:100%;margin-top:8px" id="pasteBtn" onclick="importScript('text')">Chuyển thành kịch bản</button>
+      </div>
+      <div id="linkBox" class="hidden" style="margin-top:10px">
+        <input id="linkScript" placeholder="Dán link TikTok / YouTube (clip ≤5 phút)" style="width:100%">
+        <button class="btn" style="width:100%;margin-top:8px" id="linkBtn" onclick="importScript('link')">Nghe clip + viết kịch bản</button>
+      </div>
       <div id="srcbox" class="hidden" style="margin-top:14px"></div>
     </div>
     <div id="editor" class="hidden"></div>`;
@@ -880,8 +919,22 @@ async function renderAll(){
         if(job.draftId) fd.append("draft_id",job.draftId);
         fd.append("spec",JSON.stringify(job.spec));
         job.scenes.forEach(s=>s.files.forEach((f,k)=>fd.append(s.scene_id+"__"+k,f,f.name)));
-        job.progress=55; renderLibrary();
-        const r=await fetch(API+"/assemble-listreview",{method:"POST",body:fd}); const t=await r.text();
+        // Upload bằng XHR để có TIẾN ĐỘ thật (phone 4G upload lâu không còn tưởng đơ)
+        const t=await new Promise((resolve,reject)=>{
+          const xhr=new XMLHttpRequest();
+          xhr.open("POST",API+"/assemble-listreview");
+          xhr.upload.onprogress=(ev)=>{
+            if(ev.lengthComputable){
+              job.progress=Math.round(5+50*ev.loaded/ev.total);
+              job.uploadPct=Math.round(100*ev.loaded/ev.total);
+              renderLibrary();
+            }
+          };
+          xhr.onload=()=>resolve(xhr.responseText);
+          xhr.onerror=()=>reject(new Error("Mất kết nối khi tải lên"));
+          xhr.send(fd);
+        });
+        job.uploadPct=null; job.progress=55; renderLibrary();
         let res; try{res=JSON.parse(t);}catch{throw new Error("Phản hồi lạ");}
         if(!res.success) throw new Error(res.error||"render fail");
         if(res.queued){
@@ -1031,7 +1084,7 @@ function renderLibrary(){
     SERVER_RJOBS.filter(sj=>!localIds.has(sj.job_id)).forEach(sj=>{
       cards.push(`<div class="lib-card"><div class="lib-render"><div class="mid"><div class="spin"></div><div>${sj.status==="rendering"?"⏳ Đang render…":"🕓 Chờ render (hàng đợi)"}</div><div class="muted" style="color:#ddd;font-size:11px">${(sj.topic||"").replace(/</g,"&lt;")}</div></div><div class="lib-bar" style="width:${sj.status==="rendering"?70:30}%"></div></div><div class="cap"><span>${(sj.topic||"video").replace(/</g,"&lt;")}${SESSION.role==="admin"&&sj.user?" · "+makerName(sj.user):""}</span></div></div>`);
     });
-    jobs.filter(j=>j.status!=="done").forEach(j=>{cards.push(`<div class="lib-card"><div class="lib-render" style="${j.hookPrev?`background-image:url(${j.hookPrev})`:""}"><div class="blur" style="${j.hookPrev?`background-image:url(${j.hookPrev})`:""}"></div><div class="mid">${j.status==="error"?`<div style="color:#ffb4b4">Lỗi</div><div class="muted" style="color:#ddd;max-width:90%;text-align:center">${j.error||""}</div>`:`<div class="spin"></div><div>${j.status==="rendering"?"Đang render "+j.progress+"%":j.status==="queued"?"🎬 Render nền (logout được)":"Chờ…"}</div>`}</div><div class="lib-bar" style="width:${j.progress}%"></div></div><div class="cap"><span>${j.topic}</span></div></div>`);});
+    jobs.filter(j=>j.status!=="done").forEach(j=>{cards.push(`<div class="lib-card"><div class="lib-render" style="${j.hookPrev?`background-image:url(${j.hookPrev})`:""}"><div class="blur" style="${j.hookPrev?`background-image:url(${j.hookPrev})`:""}"></div><div class="mid">${j.status==="error"?`<div style="color:#ffb4b4">Lỗi</div><div class="muted" style="color:#ddd;max-width:90%;text-align:center">${j.error||""}</div>`:`<div class="spin"></div><div>${j.uploadPct!=null?"📤 Đang tải lên "+j.uploadPct+"%":j.status==="rendering"?"Đang render "+j.progress+"%":j.status==="queued"?"🎬 Render nền (logout được)":"Chờ…"}</div>`}</div><div class="lib-bar" style="width:${j.progress}%"></div></div><div class="cap"><span>${j.topic}</span></div></div>`);});
   }
   const shown=new Set();
   if(!LIB_FILTER) jobs.filter(j=>j.status==="done"&&j.videoUrl).forEach(j=>{shown.add(j.videoUrl);cards.push(libCard(j.videoUrl,j.topic));});

@@ -513,6 +513,7 @@ def _concat_with_xfade(segs: list[str], out_path: Path, work: Path,
     if n == 1:
         _run(["ffmpeg", "-y", "-i", Path(segs[0]).name,
               "-c:v", "libx264", "-preset", "fast", "-pix_fmt", "yuv420p",
+              "-movflags", "+faststart",   # moov đầu file → phone/stream phát ngay
               "-c:a", "aac", "-b:a", "160k", str(out_path)], cwd=str(work))
         return
     durs = [max(0.3, _ffprobe_dur(p)) for p in segs]
@@ -536,6 +537,7 @@ def _concat_with_xfade(segs: list[str], out_path: Path, work: Path,
     _run(["ffmpeg", "-y", *inputs, "-filter_complex", fc,
           "-map", f"[{prev}]", "-map", f"[{aprev}]",
           "-c:v", "libx264", "-preset", "fast", "-pix_fmt", "yuv420p",
+          "-movflags", "+faststart",   # moov đầu file → phone/stream phát ngay
           "-c:a", "aac", "-b:a", "160k", str(out_path)], cwd=str(work))
 
 
@@ -661,6 +663,7 @@ def render_list_review(spec: dict) -> dict:
         else:
             _run(["ffmpeg", "-y", "-i", Path(segs[0]).name,
                   "-c:v", "libx264", "-preset", "fast", "-pix_fmt", "yuv420p",
+                  "-movflags", "+faststart",
                   "-c:a", "aac", "-b:a", "160k", str(out_path)], cwd=str(work))
 
         return {"success": True, "video_path": str(out_path.resolve()),

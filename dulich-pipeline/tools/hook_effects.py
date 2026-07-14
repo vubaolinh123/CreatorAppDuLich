@@ -121,12 +121,14 @@ def apply_hook_effect(
 
     # ── Xử lý các style dynamic TikTok ───────────────────────────────────────
     if style in ("tiktok_tag_banner", "tiktok_tag_banner_purple", "tiktok_tag_banner_pink", "tiktok_tag_banner_green", "tiktok_quote_card", "tiktok_floating_box"):
-        # Tìm font Arial Bold trên hệ thống Windows, nếu không có dùng mặc định 'arial'
-        font_path = "C:/Windows/Fonts/arialbd.ttf"
-        if not os.path.exists(font_path):
-            font_path = "arial"
+        # Font bundled (đủ glyph Việt, chạy cả Linux/VPS); escape ':' cho drawtext
+        _bundled = Path(__file__).resolve().parent.parent / "assets" / "fonts" / "BeVietnamPro-Bold-full.ttf"
+        if _bundled.exists():
+            font_path = str(_bundled).replace("\\", "/").replace(":", "\\:")
+        elif os.path.exists("C:/Windows/Fonts/arialbd.ttf"):
+            font_path = "C\\:/Windows/Fonts/arialbd.ttf"
         else:
-            font_path = font_path.replace("\\", "/").replace(":", "\\:")
+            font_path = "arial"
 
         # Gói chữ thành nhiều dòng (wrap lines)
         import textwrap

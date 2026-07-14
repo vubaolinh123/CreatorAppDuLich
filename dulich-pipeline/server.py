@@ -239,17 +239,24 @@ def _job_update(job_id: str, **kw) -> None:
 
 
 def _render_worker():
-    """Worker nền: render tuần tự từng job trong queue (sống độc lập với session người dùng)."""
+    """Worker nền: render từng job trong queue (sống độc lập với session người dùng).
+    Số worker song song = env RENDER_WORKERS (mặc định 1)."""
+    n_workers = max(1, int(os.getenv("RENDER_WORKERS", "1") or 1))
     while True:
         job = _RENDER_QUEUE.get()
         jid = job["job_id"]
         _job_update(jid, status="rendering")
         print(f"[render-queue] bắt đầu {jid} (user {job.get('user')})", file=sys.stderr)
         try:
-            with _HEAVY_LOCK:
-                for m in list(sys.modules.keys()):
-                    if m.startswith("tools.list_review_render"):
-                        sys.modules.pop(m, None)
+            if n_workers == 1:
+                with _HEAVY_LOCK:
+                    for m in list(sys.modules.keys()):
+                        if m.startswith("tools.list_review_render"):
+                            sys.modules.pop(m, None)
+                    from tools.list_review_render import render_list_review
+                    result = render_list_review(job["spec"])
+            else:
+                # nhiều worker: không reload module (không thread-safe), không giữ _HEAVY_LOCK
                 from tools.list_review_render import render_list_review
                 result = render_list_review(job["spec"])
             if result.get("success"):
@@ -288,8 +295,10 @@ def _render_worker():
 
 
 def _start_render_worker():
-    threading.Thread(target=_render_worker, daemon=True).start()
-    print("[Server] Render queue nền bật (tuần tự).", file=sys.stderr)
+    n = max(1, int(os.getenv("RENDER_WORKERS", "1") or 1))
+    for _ in range(n):
+        threading.Thread(target=_render_worker, daemon=True).start()
+    print(f"[Server] Render queue nền bật ({n} worker).", file=sys.stderr)
 
 # No API keys in this demo → default voice engine is free Microsoft Edge TTS (vi-VN).
 os.environ.setdefault("VOICE_PROVIDER", "edge")
@@ -904,6 +913,10 @@ class AssembleHandler(BaseHTTPRequestHandler):
             self.handle_user_keys_save()
         elif self.path == "/news-use":
             self.handle_news_use()
+        elif self.path == "/script-from-text":
+            self.handle_script_from(mode="text")
+        elif self.path == "/script-from-link":
+            self.handle_script_from(mode="link")
         elif self.path == "/venues":
             self.handle_venue_save()
         elif self.path == "/venues-delete":
@@ -1715,6 +1728,42 @@ class AssembleHandler(BaseHTTPRequestHandler):
             tb = traceback.format_exc()
             print(f"[Server] ❌ assemble-image lỗi: {e}\n{tb}", file=sys.stderr)
             self._json_response({"success": False, "error": str(e)}, 500)
+
+    def handle_script_from(self, mode: str):
+        """POST /script-from-text {user,text} | /script-from-link {user,url}
+        → AI tạo scenes chuẩn editor + lưu Kịch bản chờ, trả scenes để nạp thẳng."""
+        try:
+            b = self._read_json_body()
+            user = (b.get("user") or "").strip() or "nv1"
+            from tools.script_import import scenes_from_text, scenes_from_link
+            if mode == "text":
+                scenes = scenes_from_text(b.get("text") or "")
+                src = "paste"
+            else:
+                url = (b.get("url") or "").strip()
+                if not url.startswith("http"):
+                    self._json_response({"success": False, "error": "Link không hợp lệ"}, 400)
+                    return
+                with _HEAVY_LOCK:   # tải audio + whisper — tránh chạy chồng
+                    scenes = scenes_from_link(url)
+                src = f"link:{url}"
+            if not scenes:
+                self._json_response({"success": False,
+                                     "error": "AI không tạo được kịch bản (kiểm tra OPENROUTER_KEY/nội dung)"}, 500)
+                return
+            try:
+                from tools.script_drafts import add_draft
+                from tools.listreview_content import _TEMPLATES, _DEFAULT_TEMPLATE
+                tpl = _TEMPLATES.get(user, _DEFAULT_TEMPLATE)
+                add_draft(user, scenes, "hook_red", tpl["badge_mode"], tpl["transition"],
+                          "pil", "", src)
+            except Exception as _e:
+                print(f"[script-from] lưu draft lỗi: {_e}", file=sys.stderr)
+            self._json_response({"success": True, "scenes": scenes})
+        except Exception as e:
+            import traceback
+            print(f"[Server] script-from-{mode} lỗi: {e}\n{traceback.format_exc()}", file=sys.stderr)
+            self._json_response({"success": False, "error": _friendly_error(e)}, 500)
 
     def handle_news_use(self):
         """POST /news-use {url, title} → AI viết kịch bản video từ 1 tin → lưu Kịch bản chờ (tintuc)."""

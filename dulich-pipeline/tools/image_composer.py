@@ -33,9 +33,15 @@ FORMATS = {
 
 
 def get_system_font(size: int = 40) -> ImageFont.FreeTypeFont | ImageFont.ImageFont:
-    """Find a system truetype font supporting Unicode (Vietnamese) on Windows/Unix."""
+    """Find a truetype font supporting Vietnamese. Ưu tiên font bundled (chạy đúng mọi OS)."""
+    bundled = Path(__file__).resolve().parent.parent / "assets" / "fonts" / "BeVietnamPro-Bold-full.ttf"
+    if bundled.exists():
+        try:
+            return ImageFont.truetype(str(bundled), size)
+        except Exception:
+            pass
     paths_to_check = []
-    
+
     if sys.platform.startswith("win"):
         # Windows Fonts directory
         paths_to_check.extend([
