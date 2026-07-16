@@ -1108,7 +1108,7 @@ function libCard(url,topic,user,status,time,rec){
   const d=time?new Date(time*1000).toLocaleDateString("vi"):"";
   const media=(rec&&rec.archived)
     ? `<a href="${rec.drive_link||"#"}" target="_blank" style="display:flex;flex-direction:column;align-items:center;justify-content:center;aspect-ratio:9/16;background:var(--surface2);border-radius:10px;text-decoration:none;gap:8px"><span style="font-size:34px">📁</span><span style="font-size:12px;font-weight:700">Đã lưu trên Drive</span><span class="muted" style="font-size:11px">bấm để mở</span></a>`
-    : `<video src="${API+url}" preload="none" onclick="openViewer('${url}')" style="cursor:pointer"></video>`;
+    : `<video src="${API+url}" preload="metadata" muted playsinline onclick="openViewer('${url}')" style="cursor:pointer"></video>`;
   return `<div class="lib-card">${media}<div class="cap" style="flex-direction:column;align-items:stretch;gap:2px"><span>${topic||""}${user?" · "+makerName(user):""}</span><div style="display:flex;justify-content:space-between;align-items:center">${status?statusChip(status):""}<span class="muted" style="font-size:11px">${d}</span>${(rec&&rec.archived)?"":`<button class="expand" onclick="openViewer('${url}')">⤢</button>`}</div></div></div>`;
 }
 
@@ -1178,7 +1178,7 @@ function renderReview(){
     const media = it.kind==="video"
       ? (it.archived
         ? `<a href="${it.drive_link||"#"}" target="_blank" style="display:flex;flex-direction:column;align-items:center;justify-content:center;aspect-ratio:9/16;background:var(--surface2);border-radius:10px;text-decoration:none;gap:8px"><span style="font-size:34px">📁</span><span style="font-size:12px;font-weight:700">Đã lưu trên Drive</span></a>`
-        : `<video src="${API+it.url}" preload="none" style="width:100%;aspect-ratio:9/16;object-fit:cover;background:#000;border-radius:10px;cursor:pointer" onclick="openViewer('${it.url}')"></video>`)
+        : `<video src="${API+it.url}" preload="metadata" muted playsinline style="width:100%;aspect-ratio:9/16;object-fit:cover;background:#000;border-radius:10px;cursor:pointer" onclick="openViewer('${it.url}')"></video>`)
       : (it.cover?`<img src="${API+it.cover}?w=220" style="width:100%;aspect-ratio:4/5;object-fit:cover;border-radius:10px;cursor:pointer" onclick="openImg('${it.cover}')">`:"<div class='muted'>—</div>");
     const btns = it.status==="posted"
       ? `<button class="btn-ghost chip" onclick="setStatus('${it.kind}','${it.key}','pending')">↩ Chưa đăng</button>`
