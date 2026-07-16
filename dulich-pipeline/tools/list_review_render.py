@@ -474,9 +474,8 @@ def build_caption_png(text: str, out_path: str, max_w: int = 980):
 # ─────────────────────────────────────────────────────────────────────────────
 
 def _run(cmd, cwd=None, timeout=240):
-    # giới hạn thread mỗi ffmpeg — 3 segment chạy song song không giành hết CPU
-    if cmd and cmd[0] == "ffmpeg" and "-threads" not in cmd:
-        cmd = [cmd[0], "-threads", "2", *cmd[1:]]
+    # KHÔNG ép -threads: decode 4K HEVC cần full thread (ép 2 làm chậm gấp đôi trên VPS);
+    # ffmpeg + OS tự chia CPU khi nhiều segment chạy song song.
     try:
         r = subprocess.run(cmd, capture_output=True, text=True, cwd=cwd, timeout=timeout)
     except subprocess.TimeoutExpired as e:
@@ -490,10 +489,11 @@ def _run(cmd, cwd=None, timeout=240):
 
 def _normalize(src: str, dst: str, max_dur: float | None = None):
     """Scale-cover về 1080x1920, 30fps, bỏ audio. max_dur: chỉ encode tối đa n giây
-    (source nặng/dài không bị transcode toàn bộ khi chỉ dùng vài giây)."""
+    (source nặng/dài không bị transcode toàn bộ khi chỉ dùng vài giây).
+    File trung gian → preset ultrafast (chất lượng cuối do bước encode sau quyết)."""
     cmd = ["ffmpeg", "-y", "-i", src,
            "-vf", f"scale={W}:{H}:force_original_aspect_ratio=increase,crop={W}:{H},fps={FPS}",
-           "-an", "-c:v", "libx264", "-preset", "veryfast", "-pix_fmt", "yuv420p"]
+           "-an", "-c:v", "libx264", "-preset", "ultrafast", "-crf", "20", "-pix_fmt", "yuv420p"]
     if max_dur and max_dur > 0:
         cmd += ["-t", f"{max_dur:.2f}"]
     cmd += [dst]
@@ -555,6 +555,8 @@ def _render_segment(kind: str, seg: dict, idx: int, work: Path,
     if not vo_text:
         return None
 
+    import time as _pt
+    _t0 = _pt.time()
     # 1) Voiceover
     vg = VoiceGenerator(provider=voice_provider or "gtts")
     vo_path = vg.generate_voice(text=vo_text, voice_id=voice_id or "",
@@ -563,19 +565,26 @@ def _render_segment(kind: str, seg: dict, idx: int, work: Path,
         print(f"[list_review] VO lỗi segment {kind}{idx}", file=sys.stderr)
         return None
     dur = max(1.2, _ffprobe_dur(vo_path))
+    print(f"[perf] {kind}{idx} VO: {_pt.time()-_t0:.1f}s", file=sys.stderr); _t1 = _pt.time()
 
     # 2) Visual base (concat clips → loop/trim về đúng dur)
     clips = [c for c in (seg.get("clips") or []) if c and os.path.exists(c)]
     base = work / f"base_{kind}{idx}.mp4"
-    if clips:
+    if len(clips) == 1 and _ffprobe_dur(clips[0]) >= dur:
+        # 1 clip đủ dài → normalize + cắt đúng dur làm base LUÔN (bỏ 2 lần encode thừa)
+        _normalize(clips[0], str(base), max_dur=dur)
+        print(f"[perf] {kind}{idx} normalize(base 1-clip): {_pt.time()-_t1:.1f}s", file=sys.stderr); _t1 = _pt.time()
+    elif clips:
         norm = []
         for j, c in enumerate(clips):
             n = work / f"n_{kind}{idx}_{j}.mp4"
             _normalize(c, str(n), max_dur=dur + 0.5); norm.append(str(n))
+        print(f"[perf] {kind}{idx} normalize x{len(clips)}: {_pt.time()-_t1:.1f}s", file=sys.stderr); _t1 = _pt.time()
         cat = work / f"cat_{kind}{idx}.mp4"
         _concat_clips(norm, str(cat), work)
         _run(["ffmpeg", "-y", "-stream_loop", "-1", "-i", str(cat), "-t", f"{dur:.2f}",
               "-c:v", "libx264", "-preset", "veryfast", "-pix_fmt", "yuv420p", "-an", str(base)])
+        print(f"[perf] {kind}{idx} concat+loop: {_pt.time()-_t1:.1f}s", file=sys.stderr); _t1 = _pt.time()
     else:
         _run(["ffmpeg", "-y", "-f", "lavfi", "-i", f"color=c=0x10243a:s={W}x{H}:r={FPS}",
               "-t", f"{dur:.2f}", "-c:v", "libx264", "-preset", "veryfast", "-pix_fmt", "yuv420p", str(base)])
@@ -600,6 +609,7 @@ def _render_segment(kind: str, seg: dict, idx: int, work: Path,
             p = work / f"cap_{kind}{idx}_{li}.png"
             build_caption_png(ln, str(p))
             cap_pngs.append((p.name, st, en))
+    print(f"[perf] {kind}{idx} subtitle(whisper+png): {_pt.time()-_t1:.1f}s", file=sys.stderr); _t1 = _pt.time()
 
     # 5) Gộp base + overlay (HTML: fade-in) + caption động + audio → segment hoàn chỉnh
     out = work / f"seg_{idx:03d}.mp4"
@@ -625,6 +635,7 @@ def _render_segment(kind: str, seg: dict, idx: int, work: Path,
           "-map", f"[{last}]", "-map", f"{audio_idx}:a", "-t", f"{dur:.2f}",
           "-c:v", "libx264", "-preset", "veryfast", "-pix_fmt", "yuv420p",
           "-c:a", "aac", "-shortest", out.name], cwd=str(work))
+    print(f"[perf] {kind}{idx} overlay+mux: {_pt.time()-_t1:.1f}s | segment total {_pt.time()-_t0:.1f}s", file=sys.stderr)
     return str(out)
 
 
