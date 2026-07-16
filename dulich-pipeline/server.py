@@ -527,6 +527,43 @@ def _caption_for(topic: str, user: str = "", photo: bool = False) -> str:
     return out
 
 
+def _update_product(video_url: str, **fields) -> None:
+    with _PROD_LOCK:
+        items = _load_products()
+        for p in items:
+            if p.get("video_url") == video_url:
+                p.update(fields)
+        PRODUCTS_FILE.write_text(json.dumps(items, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+def _archive_video(video_url: str, delay_sec: int = 900) -> None:
+    """Sau khi ĐĂNG xong: chờ delay (Zernio kịp tải video) → upload Google Drive
+    → ghi drive_link vào record → xóa mp4 local (giải phóng disk). Fail → giữ file."""
+    def _job():
+        import time as _t
+        _t.sleep(delay_sec)
+        try:
+            local = Path(__file__).parent / video_url.lstrip("/")
+            if not local.exists():
+                return
+            from tools.drive_uploader import get_drive_uploader
+            up = get_drive_uploader()
+            folder = up.create_subfolder(f"posted/{_t.strftime('%Y-%m')}")
+            if not folder:
+                print(f"[archive] không tạo được folder Drive → giữ {video_url}", file=sys.stderr)
+                return
+            res = up.upload_file(str(local), folder)
+            if res.get("error"):
+                print(f"[archive] upload fail ({str(res['error'])[:120]}) → giữ {video_url}", file=sys.stderr)
+                return
+            _update_product(video_url, drive_link=res.get("webViewLink", ""), archived=True)
+            local.unlink(missing_ok=True)
+            print(f"[archive] ✓ {video_url} → Drive, đã xóa local", file=sys.stderr)
+        except Exception as e:
+            print(f"[archive] lỗi {video_url}: {e}", file=sys.stderr)
+    threading.Thread(target=_job, daemon=True).start()
+
+
 def _do_publish(video_url: str, caption: str, user: str,
                 ki: int = 0, account_id: str = "") -> dict:
     """Đăng TikTok qua Zernio (key ki của nv, account_id đã chọn) + cập nhật status."""
@@ -538,6 +575,8 @@ def _do_publish(video_url: str, caption: str, user: str,
     except Exception as e:
         res = {"success": False, "error": str(e)}
     _set_product_status(video_url, "posted" if res.get("success") else "failed")
+    if res.get("success"):
+        _archive_video(video_url)   # 15 phút sau tự đẩy Drive + xóa local
     return res
 
 

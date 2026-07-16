@@ -102,9 +102,53 @@ def run(days: int = 5, dry_run: bool = False) -> dict:
     return {"archived": ok, "failed": fail}
 
 
+def archive_posted_now(dry_run: bool = False) -> dict:
+    """Video status=posted chưa archived → upload Drive (posted/YYYY-MM) + xóa local NGAY."""
+    import time
+    prod_file = ROOT / "output" / "products.json"
+    try:
+        items = json.loads(prod_file.read_text(encoding="utf-8"))
+    except Exception:
+        print("[cleanup] không đọc được products.json")
+        return {"archived": 0}
+    targets = [p for p in items
+               if p.get("status") == "posted" and not p.get("archived")
+               and (ROOT / (p.get("video_url") or "x").lstrip("/")).exists()]
+    if not targets:
+        print("[cleanup] không có video posted nào cần archive.")
+        return {"archived": 0}
+    if dry_run:
+        for p in targets:
+            print(f"[dry-run] sẽ đẩy Drive + xóa: {p['video_url']}")
+        return {"archived": 0, "candidates": len(targets)}
+    from tools.drive_uploader import get_drive_uploader
+    up = get_drive_uploader()
+    folder = up.create_subfolder(f"posted/{time.strftime('%Y-%m')}")
+    ok = 0
+    for p in targets:
+        local = ROOT / p["video_url"].lstrip("/")
+        res = up.upload_file(str(local), folder)
+        if res.get("error"):
+            print(f"[cleanup] ✗ {p['video_url']}: {str(res['error'])[:100]} → giữ")
+            continue
+        p["drive_link"] = res.get("webViewLink", "")
+        p["archived"] = True
+        local.unlink(missing_ok=True)
+        ok += 1
+        print(f"[cleanup] ✓ Drive + xóa: {p['video_url']}")
+    prod_file.write_text(json.dumps(items, ensure_ascii=False, indent=2), encoding="utf-8")
+    print(f"[cleanup] posted-now xong: {ok}/{len(targets)}")
+    return {"archived": ok}
+
+
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     ap.add_argument("--days", type=int, default=5)
     ap.add_argument("--dry-run", action="store_true")
+    ap.add_argument("--posted-now", action="store_true",
+                    help="đẩy Drive + xóa NGAY các video đã đăng (không chờ 5 ngày)")
     a = ap.parse_args()
-    run(a.days, a.dry_run)
+    if a.posted_now:
+        archive_posted_now(a.dry_run)
+    else:
+        run(a.days, a.dry_run)

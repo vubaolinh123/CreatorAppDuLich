@@ -557,6 +557,7 @@ async function importScript(mode){
     const j=await (await fetch(API+"/script-from-"+(mode==="text"?"text":"link"),{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)})).json();
     if(!j.success||!j.scenes||!j.scenes.length)throw new Error(j.error||"AI không tạo được");
     currentScenes=j.scenes.map(s=>({...s,caption:(s.caption!=null?s.caption:(s.vo||"")),files:[]})); scenePage=0;
+    LR_ENGINE="pil"; LR_BADGE="none"; LR_TRANSITION="fade";
     openEditor(); toast("📝 Kịch bản đã sẵn sàng (cũng đã lưu vào Kịch bản chờ)");
   }catch(e){ toast("Lỗi: "+e.message); }
   finally{ btn.disabled=false; btn.textContent=old; }
@@ -568,7 +569,7 @@ async function genStaffContent(){
     const j=await r.json(); if(!j.success||!j.scenes.length) throw new Error(j.error||"prefill rỗng");
     // nv2/nv3 để lời thoại ở 'vo'; nv1 ở 'caption' → chuẩn hoá về caption để UI + render dùng chung.
     currentScenes=j.scenes.map(s=>({...s,caption:(s.caption!=null?s.caption:(s.vo||"")),files:[]})); scenePage=0;
-    LR_ENGINE=j.overlay_engine||"pil"; LR_STYLE=j.style||""; LR_BADGE=j.badge_mode||"full"; LR_TRANSITION=j.transition||"none";
+    LR_ENGINE=j.overlay_engine||"pil"; LR_STYLE=j.style||""; LR_BADGE="none"; LR_TRANSITION=j.transition||"fade";
     openEditor();
   }catch(e){
     if(st)st.textContent="⚠ Không soạn được nội dung: "+e.message;
@@ -788,17 +789,7 @@ function renderSceneInputs(){
              </div>
              <label>Chữ hiển thị (mỗi dòng 1 ý)</label><textarea rows="3" data-body="${i}">${esc((sc.body||[]).join("\n"))}</textarea>
              <label>Lời thoại</label><textarea rows="2" data-cap="${i}">${esc(sc.caption)}</textarea>`
-          : (LR_BADGE==="none"
-            ? `<label style="margin-top:0">Lời thoại / phụ đề</label><textarea rows="2" data-cap="${i}">${esc(sc.caption)}</textarea>`
-            : LR_BADGE==="name"
-            ? `<label style="margin-top:0">Tên quán</label><input data-name="${i}" value="${escA(sc.name)}" placeholder="vd: Trạm Nắng BBQ">
-               <label>Lời thoại</label><textarea rows="2" data-cap="${i}">${esc(sc.caption)}</textarea>`
-            : `<div style="display:flex;gap:8px">
-                 <div style="flex:1"><label style="margin-top:0">Tên quán</label><input data-name="${i}" value="${escA(sc.name)}" placeholder="vd: Bếp khói sườn cay"></div>
-                 <div style="width:96px"><label style="margin-top:0">Điểm /10</label><input data-rating="${i}" value="${escA(sc.rating)}" placeholder="8.5"></div>
-               </div>
-               <label>Địa chỉ</label><input data-address="${i}" value="${escA(sc.address)}" placeholder="vd: 18 Đống Đa, Đà Lạt">
-               <label>Lời thoại / review</label><textarea rows="2" data-cap="${i}">${esc(sc.caption)}</textarea>`);
+          : `<label style="margin-top:0">Lời thoại / phụ đề</label><textarea rows="2" data-cap="${i}">${esc(sc.caption)}</textarea>`;   // form CƠ BẢN cho mọi nv/mọi nguồn
         extra=`<div style="display:flex;gap:6px;margin-top:8px"><button class="btn-ghost" style="padding:6px 13px;font-size:13px" onclick="moveSpot(${i},-1)" title="Đưa lên">▲</button><button class="btn-ghost" style="padding:6px 13px;font-size:13px" onclick="moveSpot(${i},1)" title="Đưa xuống">▼</button><button class="btn-ghost" style="flex:1;padding:6px 10px;font-size:13px" onclick="removeSpot(${i})">✕ xoá mục</button></div>`;
       } else {
         head = htmlEng
@@ -1053,7 +1044,7 @@ let CURRENT_DRAFT_ID="";
 function useDraft(i){
   const d=VIDEO_DRAFTS[i]; if(!d)return;
   currentScenes=(d.scenes||[]).map(s=>({...s,caption:(s.caption!=null?s.caption:(s.vo||"")),files:[]})); scenePage=0;
-  LR_ENGINE=d.overlay_engine||"pil"; LR_STYLE=d.style||""; LR_BADGE=d.badge_mode||"none"; LR_TRANSITION=d.transition||"fade";
+  LR_ENGINE=d.overlay_engine||"pil"; LR_STYLE=d.style||""; LR_BADGE="none"; LR_TRANSITION=d.transition||"fade";
   CURRENT_DRAFT_ID=d.id||"";   // render xong server sẽ đánh dấu "đã render" → vào Lưu trữ
   renderHome(); openEditor();
   toast("Đã nạp kịch bản: "+(d.topic||""));
@@ -1088,17 +1079,27 @@ function renderLibrary(){
   }
   const shown=new Set();
   if(!LIB_FILTER) jobs.filter(j=>j.status==="done"&&j.videoUrl).forEach(j=>{shown.add(j.videoUrl);cards.push(libCard(j.videoUrl,j.topic));});
-  libVideos.forEach(v=>{if(shown.has(v.video_url))return;if(LIB_FILTER&&v.user!==LIB_FILTER)return;cards.push(libCard(v.video_url,v.topic||"video",v.user,v.status,v.time));});
-  grid.innerHTML=cards.join(""); const e=document.getElementById("libEmpty"); if(e)e.style.display=cards.length?"none":"block";
+  let hidden=0;
+  libVideos.forEach(v=>{
+    if(shown.has(v.video_url))return; if(LIB_FILTER&&v.user!==LIB_FILTER)return;
+    if(cards.length>=LIB_SHOWN){hidden++;return;}
+    cards.push(libCard(v.video_url,v.topic||"video",v.user,v.status,v.time,v));
+  });
+  grid.innerHTML=cards.join("")+(hidden?`<div style="grid-column:1/-1;text-align:center"><button class="btn-ghost" onclick="LIB_SHOWN+=18;renderLibrary()">⌄ Xem thêm (${hidden})</button></div>`:"");
+  const e=document.getElementById("libEmpty"); if(e)e.style.display=cards.length?"none":"block";
 }
+let LIB_SHOWN=18;
 function statusChip(s){
   const m={posted:["✅ Đã đăng","#2f9d57"],failed:["⚠ Đăng lỗi","#e2536b"],cancelled:["✕ Hủy","#999"],pending:["🕓 Chưa đăng","#b98b00"]};
   const [t,c]=m[s]||m.pending;
   return `<span style="font-size:11px;font-weight:700;color:${c}">${t}</span>`;
 }
-function libCard(url,topic,user,status,time){
+function libCard(url,topic,user,status,time,rec){
   const d=time?new Date(time*1000).toLocaleDateString("vi"):"";
-  return `<div class="lib-card"><video src="${API+url}" preload="metadata"></video><div class="cap" style="flex-direction:column;align-items:stretch;gap:2px"><span>${topic||""}${user?" · "+makerName(user):""}</span><div style="display:flex;justify-content:space-between;align-items:center">${status?statusChip(status):""}<span class="muted" style="font-size:11px">${d}</span><button class="expand" onclick="openViewer('${url}')">⤢</button></div></div></div>`;
+  const media=(rec&&rec.archived)
+    ? `<a href="${rec.drive_link||"#"}" target="_blank" style="display:flex;flex-direction:column;align-items:center;justify-content:center;aspect-ratio:9/16;background:var(--surface2);border-radius:10px;text-decoration:none;gap:8px"><span style="font-size:34px">📁</span><span style="font-size:12px;font-weight:700">Đã lưu trên Drive</span><span class="muted" style="font-size:11px">bấm để mở</span></a>`
+    : `<video src="${API+url}" preload="none" onclick="openViewer('${url}')" style="cursor:pointer"></video>`;
+  return `<div class="lib-card">${media}<div class="cap" style="flex-direction:column;align-items:stretch;gap:2px"><span>${topic||""}${user?" · "+makerName(user):""}</span><div style="display:flex;justify-content:space-between;align-items:center">${status?statusChip(status):""}<span class="muted" style="font-size:11px">${d}</span>${(rec&&rec.archived)?"":`<button class="expand" onclick="openViewer('${url}')">⤢</button>`}</div></div></div>`;
 }
 
 // ---------- ADMIN: duyệt bài + KPI ----------
@@ -1138,7 +1139,7 @@ async function adminReviewLoad(){
       fetch(API+`/library?role=admin`,{cache:"no-store"}).then(r=>r.json()),
       fetch(API+`/album-library?role=admin`,{cache:"no-store"}).then(r=>r.json())
     ]);
-    const vids=(lv.videos||[]).map(v=>({kind:"video",key:v.video_url,url:v.video_url,user:v.user,title:v.topic||"video",status:v.status||"pending",time:v.time||0}));
+    const vids=(lv.videos||[]).map(v=>({kind:"video",key:v.video_url,url:v.video_url,user:v.user,title:v.topic||"video",status:v.status||"pending",time:v.time||0,archived:!!v.archived,drive_link:v.drive_link||""}));
     const albs=(la.albums||[]).map(a=>({kind:"album",key:a.dir,cover:(a.images&&a.images[0])?a.images[0].url:"",user:a.user,title:a.label||a.album,status:a.status||"pending",time:a.time||0,count:(a.images||[]).length}));
     REVIEW_ITEMS=[...vids,...albs].sort((x,y)=>y.time-x.time);
     renderReview();
@@ -1165,7 +1166,9 @@ function renderReview(){
   if(!list.length){ box.innerHTML="<div class='muted'>Không có mục nào.</div>"; return; }
   box.innerHTML=`<div class="lib-grid">`+list.map(it=>{
     const media = it.kind==="video"
-      ? `<video src="${API+it.url}" preload="metadata" style="width:100%;aspect-ratio:9/16;object-fit:cover;background:#000;border-radius:10px;cursor:pointer" onclick="openViewer('${it.url}')"></video>`
+      ? (it.archived
+        ? `<a href="${it.drive_link||"#"}" target="_blank" style="display:flex;flex-direction:column;align-items:center;justify-content:center;aspect-ratio:9/16;background:var(--surface2);border-radius:10px;text-decoration:none;gap:8px"><span style="font-size:34px">📁</span><span style="font-size:12px;font-weight:700">Đã lưu trên Drive</span></a>`
+        : `<video src="${API+it.url}" preload="none" style="width:100%;aspect-ratio:9/16;object-fit:cover;background:#000;border-radius:10px;cursor:pointer" onclick="openViewer('${it.url}')"></video>`)
       : (it.cover?`<img src="${API+it.cover}?w=220" style="width:100%;aspect-ratio:4/5;object-fit:cover;border-radius:10px;cursor:pointer" onclick="openImg('${it.cover}')">`:"<div class='muted'>—</div>");
     const btns = it.status==="posted"
       ? `<button class="btn-ghost chip" onclick="setStatus('${it.kind}','${it.key}','pending')">↩ Chưa đăng</button>`

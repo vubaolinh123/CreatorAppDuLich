@@ -473,6 +473,9 @@ def build_caption_png(text: str, out_path: str, max_w: int = 980):
 # ─────────────────────────────────────────────────────────────────────────────
 
 def _run(cmd, cwd=None, timeout=240):
+    # giới hạn thread mỗi ffmpeg — 3 segment chạy song song không giành hết CPU
+    if cmd and cmd[0] == "ffmpeg" and "-threads" not in cmd:
+        cmd = [cmd[0], "-threads", "2", *cmd[1:]]
     try:
         r = subprocess.run(cmd, capture_output=True, text=True, cwd=cwd, timeout=timeout)
     except subprocess.TimeoutExpired as e:
@@ -499,9 +502,10 @@ def _normalize(src: str, dst: str, max_dur: float | None = None):
 def _concat_clips(norm_paths: list[str], dst: str, work: Path):
     if len(norm_paths) == 1:
         shutil.copy2(norm_paths[0], dst); return
-    lst = work / "concat.txt"
+    # tên list file theo dst — các segment chạy SONG SONG không đè nhau
+    lst = work / f"concat_{Path(dst).stem}.txt"
     lst.write_text("".join(f"file '{Path(p).name}'\n" for p in norm_paths), encoding="utf-8")
-    _run(["ffmpeg", "-y", "-f", "concat", "-safe", "0", "-i", "concat.txt",
+    _run(["ffmpeg", "-y", "-f", "concat", "-safe", "0", "-i", lst.name,
           "-c:v", "libx264", "-preset", "veryfast", "-pix_fmt", "yuv420p", Path(dst).name], cwd=str(work))
 
 
@@ -640,18 +644,29 @@ def render_list_review(spec: dict) -> dict:
         # Engine HTML (nv2/nv3): render trước toàn bộ overlay trong 1 lần mở browser.
         ov = render_html_overlays(spec, work, style) if engine == "html" and style else {}
 
+        # Render các segment SONG SONG (3 luồng) — phần lớn thời gian là chờ API
+        # (Vbee/Whisper); file mỗi segment đều có suffix riêng nên không đụng nhau.
+        tasks = []
         if spec.get("intro"):
-            s = _render_segment("intro", spec["intro"], 0, work, hook_style, vp, vid,
-                                html_png=ov.get("intro"), badge_mode=badge_mode)
-            if s: segs.append(s)
+            tasks.append(("intro", spec["intro"], 0, ov.get("intro")))
         for i, spot in enumerate(spec.get("spots", []), start=1):
-            s = _render_segment("spot", spot, i, work, hook_style, vp, vid,
-                                html_png=ov.get(f"spot{i}"), badge_mode=badge_mode)
-            if s: segs.append(s)
+            tasks.append(("spot", spot, i, ov.get(f"spot{i}")))
         if spec.get("outro"):
-            s = _render_segment("outro", spec["outro"], 99, work, hook_style, vp, vid,
-                                html_png=ov.get("outro"), badge_mode=badge_mode)
-            if s: segs.append(s)
+            tasks.append(("outro", spec["outro"], 99, ov.get("outro")))
+
+        from concurrent.futures import ThreadPoolExecutor
+        results: dict = {}
+        with ThreadPoolExecutor(max_workers=min(3, max(1, len(tasks)))) as ex:
+            futs = {ex.submit(_render_segment, kind, seg, idx, work, hook_style,
+                              vp, vid, html_png=png, badge_mode=badge_mode): order
+                    for order, (kind, seg, idx, png) in enumerate(tasks)}
+            for f, order in futs.items():
+                try:
+                    results[order] = f.result()
+                except Exception as e:
+                    print(f"[list_review] segment {order} lỗi: {e}", file=sys.stderr)
+                    results[order] = None
+        segs = [results[o] for o in sorted(results) if results[o]]
 
         if not segs:
             return {"success": False, "error": "Không render được segment nào (thiếu VO?)."}
