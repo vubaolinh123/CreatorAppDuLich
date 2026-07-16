@@ -514,6 +514,12 @@ function loadClipMeta(file){return new Promise(res=>{const url=URL.createObjectU
 
 // ---------- STAFF / NEWS create flow ----------
 function curHookStyle(){ return SESSION.role==="news" ? ("hook_news_"+newsColor) : SESSION.hook_style; }
+function voicePickMode(){
+  const v=(document.getElementById("voicePick")||{}).value||"";
+  if(!v) return {mode:(SESSION.voice||"gtts"), id:""};
+  if(v.startsWith("chirp:")) return {mode:"chirp", id:v.slice(6)};
+  return {mode:"vbee", id:v};
+}
 
 function lrIntro(){return {scene_id:"intro",kind:"intro",label:"HOOK",title:"",caption:"",min_duration_sec:13,type:"clip",files:[]};}
 function lrSpot(n){return {scene_id:"spot"+n,kind:"spot",label:"CẢNH "+n,name:"",rating:"",address:"",caption:"",min_duration_sec:9,type:"clip",files:[]};}
@@ -721,9 +727,13 @@ function openEditor(){
         <label style="margin-top:6px">🎙 Giọng đọc</label>
         <select id="voicePick" style="margin-bottom:4px">
           <option value="">Miễn phí (Google/Edge)</option>
-          <option value="c_lamdong_female_giongmenmendalatnow_zero_shot_review_vc">Giọng Mèn Mén</option>
-          <option value="c_gialai_female_giongchauanh01_advertise_vc">Giọng Châu Anh</option>
-          <option value="c_lamdong_male_giongnamtramamdala_zero_shot_education_vc">Giọng Nam Trầm</option>
+          <option value="chirp:Aoede">Google HD · Nữ Aoede (nhanh)</option>
+          <option value="chirp:Kore">Google HD · Nữ Kore (nhanh)</option>
+          <option value="chirp:Puck">Google HD · Nam Puck (nhanh)</option>
+          <option value="chirp:Charon">Google HD · Nam Charon (nhanh)</option>
+          <option value="c_lamdong_female_giongmenmendalatnow_zero_shot_review_vc">Vbee · Giọng Mèn Mén</option>
+          <option value="c_gialai_female_giongchauanh01_advertise_vc">Vbee · Giọng Châu Anh</option>
+          <option value="c_lamdong_male_giongnamtramamdala_zero_shot_education_vc">Vbee · Giọng Nam Trầm</option>
         </select>
         <button class="btn-pink" style="width:100%;color:#fff;margin:10px 0 6px" onclick="createVideo()">🎬 Tạo video</button>
         <div id="scenes"></div>
@@ -861,7 +871,7 @@ async function createVideo(){
   const job={id:"job_"+Date.now().toString(36),topic:((currentScenes[0].title||"")||"Clip").slice(0,50),
     script:{hook:(currentScenes[0].title||"").trim(),body:(currentScenes[1].caption||"").trim(),cta:(currentScenes[2].caption||"").trim()},
     hookTitle:(currentScenes[0].title||"").trim(),hookSub:sub,hookStyle:curHookStyle(),hookPrev:hookOverlayUrl,
-    voiceMode:((document.getElementById("voicePick")||{}).value?"vbee":(SESSION.voice||"gtts")),voiceId:((document.getElementById("voicePick")||{}).value||""),
+    voiceMode:voicePickMode().mode,voiceId:voicePickMode().id,
     scenes:currentScenes.map(s=>({scene_id:s.scene_id,description:s.description||s.label,min_duration_sec:s.min_duration_sec,type:s.type,files:s.files.map(c=>c.file)})),
     status:"pending",progress:0,videoUrl:"",error:""};
   hookOverlayUrl=""; CURRENT_DRAFT_ID="";
@@ -885,10 +895,10 @@ function createVideoLR(){
       section_title:(s.section_title||"").trim(),emoji:(s.emoji||"").trim(),align:s.align||"left",no_pill:!!s.no_pill,body:s.body||null,vo:(s.caption||"").trim()})),
     outro:{scene_id:"outro",section_title:(outro&&outro.section_title||"").trim(),emoji:(outro&&outro.emoji||"").trim(),body:(outro&&outro.body)||null,vo:(outro?(outro.caption||""):"").trim()}
   };
-  const _vid=(document.getElementById("voicePick")||{}).value||"";
+  const _vp=voicePickMode();
   const job={id:"lr_"+Date.now().toString(36),mode:"listreview",topic:((intro.title||"")||"List review").slice(0,50),
     draftId:CURRENT_DRAFT_ID,
-    spec,hookStyle:curHookStyle(),voiceMode:_vid?"vbee":(SESSION.voice||"gtts"),voiceId:_vid,
+    spec,hookStyle:curHookStyle(),voiceMode:_vp.mode,voiceId:_vp.id,
     scenes:currentScenes.filter(s=>s.files.length).map(s=>({scene_id:s.scene_id,files:s.files.map(c=>c.file)})),
     status:"pending",progress:0,videoUrl:"",error:""};
   hookOverlayUrl=""; CURRENT_DRAFT_ID="";

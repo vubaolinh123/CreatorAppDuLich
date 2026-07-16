@@ -399,9 +399,10 @@ def _timed_cues(vo_path: str, vo_text: str, dur: float) -> list[tuple[str, float
                     words = align_words_with_punctuation(words, vo_text) or words
                 except Exception:
                     pass
-                # ưu tiên: AI chia dòng theo CỤM NGHĨA rồi map vào timing
-                # (chỉ khi số từ khớp 1-1 với kịch bản để map chính xác)
-                if len(words) == len(vo_text.split()):
+                # AI chia dòng theo CỤM NGHĨA — chậm (+5-10s/cảnh vì thêm 1 call AI).
+                # Mặc định TẮT (cắt theo dấu câu đủ tốt); bật lại: SUBTITLE_SEMANTIC=1
+                if (os.getenv("SUBTITLE_SEMANTIC", "0") == "1"
+                        and len(words) == len(vo_text.split())):
                     lines = _semantic_lines(vo_text, vo_path)
                     if lines:
                         out = _cues_from_lines(lines, words, dur)

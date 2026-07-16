@@ -208,6 +208,16 @@ class VoiceGenerator:
             if path:
                 return path
 
+        # Google Cloud TTS Chirp 3 HD — giọng Việt tự nhiên, tạo ~2-3s (nhanh hơn Vbee nhiều)
+        if self.provider == "chirp":
+            path = self._chirp_generate(text, voice_id, output_name, speed)
+            if path:
+                return path
+            print("[Voice] Chirp thất bại — fallback sang Edge TTS.")
+            path = self._edge_generate(text, voice_id, output_name, speed)
+            if path:
+                return path
+
         # Try OpenAI
         if self.provider == "openai":
             path = self._openai_generate(text, voice_id, output_name)
@@ -389,6 +399,36 @@ class VoiceGenerator:
             return str(output_path)
         except Exception as e:
             print(f"[Voice] ⚠ ElevenLabs lỗi: {e}. Fallback sang mock.")
+            return None
+
+    # ── Google Cloud TTS Chirp 3 HD (giọng Việt tự nhiên, nhanh) ─────────────
+    def _chirp_generate(self, text: str, voice_id: str, output_name: str,
+                        speed: float = 1.0) -> Optional[str]:
+        import requests, base64
+        key = os.getenv("GOOGLE_TTS_KEY") or os.getenv("GEMINI_KEY")
+        if not key:
+            print("[Voice] Thiếu GOOGLE_TTS_KEY/GEMINI_KEY cho Chirp.", file=sys.stderr)
+            return None
+        # voice_id: tên ngắn (Aoede/Puck...) hoặc full "vi-VN-Chirp3-HD-Aoede"
+        vname = voice_id if voice_id.startswith("vi-VN") else f"vi-VN-Chirp3-HD-{voice_id or 'Aoede'}"
+        try:
+            r = requests.post(
+                f"https://texttospeech.googleapis.com/v1/text:synthesize?key={key}",
+                json={"input": {"text": text},
+                      "voice": {"languageCode": "vi-VN", "name": vname},
+                      "audioConfig": {"audioEncoding": "MP3",
+                                      "speakingRate": max(0.5, min(2.0, speed))}},
+                timeout=120)
+            if r.status_code != 200:
+                print(f"[Voice] Chirp {r.status_code}: {r.text[:200]}", file=sys.stderr)
+                return None
+            output_path = OUTPUT_DIR / f"{output_name}.mp3"
+            output_path.parent.mkdir(parents=True, exist_ok=True)
+            output_path.write_bytes(base64.b64decode(r.json()["audioContent"]))
+            print(f"[Voice] ✓ Chirp {vname} → {output_path.name}", file=sys.stderr)
+            return str(output_path.resolve())
+        except Exception as e:
+            print(f"[Voice] Chirp lỗi: {e}", file=sys.stderr)
             return None
 
     # ── Google gTTS (free, tiếng Việt) ───────────────────────────────────────
