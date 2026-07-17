@@ -14,6 +14,28 @@ except ImportError:
     pass
 
 
+def _via_tikwm(url: str, tmp: Path, max_imgs: int) -> list[str]:
+    """tikwm.com — API công khai chuyên lấy bộ ảnh photo post TikTok (nguồn chính)."""
+    import requests
+    r = requests.post("https://www.tikwm.com/api/", data={"url": url}, timeout=60)
+    d = r.json() if r.ok else {}
+    if d.get("code") != 0:
+        print(f"[tiktok_photos] tikwm: {d.get('msg', r.status_code)}", file=sys.stderr)
+        return []
+    urls = (d.get("data") or {}).get("images") or []
+    out = []
+    for i, u in enumerate(urls[:max_imgs]):
+        try:
+            resp = requests.get(u, timeout=60)
+            if resp.ok and len(resp.content) > 10000:
+                p = tmp / f"tt_{i:02d}.jpg"
+                p.write_bytes(resp.content)
+                out.append(str(p))
+        except Exception:
+            pass
+    return out
+
+
 def _via_ytdlp(url: str, tmp: Path, max_imgs: int) -> list[str]:
     import yt_dlp
     opts = {"quiet": True, "outtmpl": str(tmp / "tt_%(autonumber)02d.%(ext)s"),
@@ -62,9 +84,15 @@ def download_photos(url: str, max_imgs: int = 3) -> tuple[list[str], str]:
     tmp = Path(tempfile.mkdtemp(prefix="ttp_"))
     imgs = []
     try:
-        imgs = _via_ytdlp(url, tmp, max_imgs)
+        imgs = _via_tikwm(url, tmp, max_imgs)
     except Exception as e:
-        print(f"[tiktok_photos] yt-dlp fail ({str(e)[:120]}) → thử APIFY", file=sys.stderr)
+        print(f"[tiktok_photos] tikwm fail ({str(e)[:120]})", file=sys.stderr)
+    if not imgs:
+        try:
+            # yt-dlp không nhận /photo/ → đổi sang /video/ (chỉ lấy được cover)
+            imgs = _via_ytdlp(url.replace("/photo/", "/video/"), tmp, max_imgs)
+        except Exception as e:
+            print(f"[tiktok_photos] yt-dlp fail ({str(e)[:120]})", file=sys.stderr)
     if not imgs:
         imgs = _via_apify(url, tmp, max_imgs)
     return imgs, str(tmp)
