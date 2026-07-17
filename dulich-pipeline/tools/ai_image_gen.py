@@ -114,6 +114,100 @@ def generate_infographic(spec: dict, out_name: str = "", size: str = "2K") -> di
         return {"success": False, "error": str(e)}
 
 
+def _resize_1080(png_path: str) -> None:
+    """Thu ảnh 2K về 1080×1920 (đủ đăng TikTok, nhẹ hơn)."""
+    try:
+        from PIL import Image
+        im = Image.open(png_path)
+        if im.width > 1080:
+            im = im.resize((1080, round(im.height * 1080 / im.width)), Image.LANCZOS)
+            im.save(png_path, optimize=True)
+    except Exception as e:
+        print(f"[ai_image] resize lỗi: {e}", file=sys.stderr)
+
+
+def spec_from_reference_images(image_paths: list[str]) -> dict | None:
+    """Gemini đọc bài mẫu (ảnh) → spec {title, subtitle, tagline, palette, category, items}."""
+    import requests
+    key = os.getenv("GEMINI_API_KEY") or os.getenv("GEMINI_KEY")
+    if not key or not image_paths:
+        return None
+    parts = [{"text":
+        "Đọc bộ ảnh infographic du lịch Đà Lạt này và trích xuất nội dung. Trả về JSON:\n"
+        '{"title":"headline chính","subtitle":"dòng phụ/ribbon","tagline":"câu mô tả ngắn",'
+        '"palette":"mô tả tông màu chủ đạo của bài (để tạo lại giống)",'
+        '"category":"quán ăn"|"quán cà phê"|"khách sạn"|"tham quan",'
+        '"items":[{"name":"tên địa điểm","sub":"địa chỉ/sđt nếu có","desc":"mô tả 1 câu"}...]}\n'
+        "Lấy TẤT CẢ các mục trong bài. Chỉ trả JSON."}]
+    for p in image_paths[:3]:
+        mime = mimetypes.guess_type(p)[0] or "image/jpeg"
+        parts.append({"inline_data": {"mime_type": mime,
+                                      "data": base64.b64encode(Path(p).read_bytes()).decode()}})
+    try:
+        r = requests.post(
+            f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={key}",
+            timeout=180, json={"contents": [{"parts": parts}],
+                               "generationConfig": {"responseMimeType": "application/json"}})
+        if r.status_code != 200:
+            print(f"[ai_image] đọc mẫu {r.status_code}: {r.text[:200]}", file=sys.stderr)
+            return None
+        txt = r.json()["candidates"][0]["content"]["parts"][0]["text"]
+        d = json.loads(txt)
+        return d if d.get("items") else None
+    except Exception as e:
+        print(f"[ai_image] đọc mẫu lỗi: {e}", file=sys.stderr)
+        return None
+
+
+def mix_in_seeding_venues(spec: dict, replace_n: int) -> dict:
+    """Thay replace_n mục trong spec.items bằng quán thư viện loại 'cần seeding' (quán mình + đối tác)."""
+    import random
+    from tools.venues_db import get_all
+    items = list(spec.get("items") or [])
+    if not items or replace_n <= 0:
+        return spec
+    cat = (spec.get("category") or "").strip()
+    seeding = [v for v in get_all() if (v.get("loai") or "").strip() == "cần seeding"]
+    pool = [v for v in seeding if (v.get("loai_quan") or "").strip() == cat] or seeding
+    random.shuffle(pool)
+    n = min(replace_n, len(items), len(pool))
+    idxs = random.sample(range(len(items)), n)
+    for k, i in enumerate(idxs):
+        v = pool[k]
+        items[i] = {"name": v.get("name", ""),
+                    "sub": (v.get("address") or "").split(",")[0].strip(),
+                    "desc": (v.get("signature") or v.get("feature") or "Địa điểm được yêu thích ở Đà Lạt.").strip()[:90]}
+    spec["items"] = items
+    spec["_replaced"] = [items[i]["name"] for i in idxs]
+    return spec
+
+
+def generate_from_tiktok(url: str, replace_n: int = 4, handle: str = "@dalatnow") -> dict:
+    """Flow đầy đủ: link bài ảnh TikTok → đọc mẫu → trộn quán seeding → render lại 1080."""
+    import shutil
+    from tools.tiktok_photos import download_photos
+    imgs, tmp = download_photos(url, max_imgs=3)
+    try:
+        if not imgs:
+            return {"success": False, "error": "Không tải được ảnh từ link (link phải là bài ẢNH TikTok)"}
+        spec = spec_from_reference_images(imgs)
+        if not spec:
+            return {"success": False, "error": "AI không đọc được nội dung bài mẫu"}
+        spec = mix_in_seeding_venues(spec, replace_n)
+        spec["template"] = "list8"
+        spec["handle"] = handle
+        # reference = ảnh trang list (ảnh 2 nếu có, không thì ảnh đầu) để bám bố cục
+        spec["reference"] = imgs[1] if len(imgs) > 1 else imgs[0]
+        res = generate_infographic(spec, size="2K")
+        if res.get("success"):
+            _resize_1080(res["path"])
+            res["replaced"] = spec.get("_replaced", [])
+            res["title"] = spec.get("title", "")
+        return res
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
 # ── Demo specs ────────────────────────────────────────────────────────────────
 DEMOS = {
     "1": {

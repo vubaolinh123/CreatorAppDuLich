@@ -1230,6 +1230,16 @@ function renderImageGen(){
         <div class="muted">Chọn mẫu album → tạo. Ảnh tạo ra tự lưu ở "Album đã lưu" bên dưới (mở lại / tải / xoá / tạo lại).</div></div>
       <button class="btn-ghost" onclick="renderHome()">← Trang chủ</button>
     </div>
+    <div class="card" style="margin-bottom:16px">
+      <h2 class="sec">🪄 Tạo từ bài mẫu TikTok (AI)</h2>
+      <div class="muted" style="margin-bottom:8px">Dán link bài ẢNH TikTok (dạng list quán viral) → AI đọc bài mẫu, render lại poster tương tự và thay bớt mục bằng quán của mình + đối tác (thư viện loại "cần seeding").</div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+        <input id="aiimgLink" placeholder="https://www.tiktok.com/@.../photo/..." style="flex:1;min-width:220px">
+        <label style="margin:0;font-size:12px">Thay <input id="aiimgN" type="number" min="0" max="10" value="4" style="width:52px;text-align:center"> mục</label>
+        <button class="btn" id="aiimgBtn" onclick="aiImageFromLink()">🪄 Tạo</button>
+      </div>
+      <div id="aiimgStatus" class="muted" style="margin-top:6px;font-size:12px"></div>
+    </div>
     <div class="card" style="margin-bottom:16px"><h2 class="sec">Mẫu album</h2><div id="albTpls" class="muted">Đang tải…</div></div>
     <div class="card"><h2 class="sec">📁 Album đã lưu</h2><div id="albSaved" class="muted">Đang tải…</div></div>`;
   loadAlbumTemplates(); loadSavedAlbums();
@@ -1273,6 +1283,22 @@ function renderSavedAlbums(){
   }).join("")}</div>`;
 }
 function openSavedAlbum(i){ const a=SAVED_ALBUMS[i]; if(a) renderAlbumView(a); }
+async function aiImageFromLink(){
+  const url=(document.getElementById("aiimgLink").value||"").trim();
+  if(!url){toast("Dán link bài ảnh TikTok trước");return;}
+  const n=parseInt(document.getElementById("aiimgN").value)||4;
+  const btn=document.getElementById("aiimgBtn"), st=document.getElementById("aiimgStatus");
+  btn.disabled=true; btn.textContent="⏳ Đang tạo…";
+  if(st)st.textContent="⏳ Tải bài mẫu → AI đọc → render lại (60-90 giây)…";
+  try{
+    const j=await (await fetch(API+"/ai-image-from-link",{method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({user:SESSION.username,url,replace_n:n})})).json();
+    if(!j.success)throw new Error(j.error||"lỗi");
+    if(st)st.textContent="✅ Đã thay: "+(j.replaced||[]).join(", ");
+    toast("🪄 Đã tạo ảnh từ bài mẫu"); renderAlbumView(j);
+  }catch(e){ toast("Lỗi: "+e.message); if(st)st.textContent="⚠ "+e.message; }
+  finally{ btn.disabled=false; btn.textContent="🪄 Tạo"; }
+}
 let ALB_TITLE_PROMPTS={};
 async function genAlbum(id){
   const btn=document.getElementById("gen-"+id); if(btn){btn.disabled=true;btn.textContent="⏳ Đang dựng…";}
