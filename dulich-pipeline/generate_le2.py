@@ -44,7 +44,7 @@ def main():
     def _sample(cats: list[str], n: int) -> list[dict]:
         pool = [v for v in allv if (v.get("loai_quan") or "").strip() in cats]
         random.shuffle(pool)
-        return pool[:n]
+        return VenuePicker.seeding_first(pool)[:n]   # quán 'cần seeding' lên đầu list
 
     def _sig(v: dict) -> str:
         return (v.get("signature") or v.get("feature") or "").strip()

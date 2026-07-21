@@ -46,18 +46,28 @@ def _act_v(time, activity, venue: dict):
     return ActivityItem(time, activity, venue["name"], addr,
                         thumbnail_path=VenuePicker.image(venue))
 
-# ── Pool venue theo loại, bốc NGẪU NHIÊN không lặp (hết pool thì xáo lại) ─────
+# ── Pool venue theo loại, tách seeding / thường để đưa seeding vào bữa hợp lý ──
 _POOLS: dict = {}
 
-def _pick(category: str) -> dict:
-    pool = _POOLS.get(category)
-    if not pool:
+def _catpool(category: str) -> dict:
+    p = _POOLS.get(category)
+    if not p:
         cands = [v for v in get_all() if (v.get("loai_quan") or "").strip() == category]
         if category == "tham quan":   # gộp thêm cà phê cho phong phú điểm chơi
             cands += [v for v in get_all() if (v.get("loai_quan") or "").strip() == "quán cà phê"]
         _rnd.shuffle(cands)
-        pool = _POOLS[category] = cands
-    return pool.pop() if pool else {"name": "Đà Lạt", "address": "Đà Lạt", "images": []}
+        p = _POOLS[category] = {"seed": [v for v in cands if VenuePicker.is_seeding(v)],
+                                "rest": [v for v in cands if not VenuePicker.is_seeding(v)]}
+    return p
+
+def _pick(category: str, prefer_seeding: bool = False) -> dict:
+    """Bốc 1 venue. prefer_seeding=True → ưu tiên quán seeding trước (dành cho bữa tối / check-in);
+    False → lấy quán thường trước, để dành seeding cho slot phù hợp."""
+    p = _catpool(category)
+    for key in (("seed", "rest") if prefer_seeding else ("rest", "seed")):
+        if p[key]:
+            return p[key].pop()
+    return {"name": "Đà Lạt", "address": "Đà Lạt", "images": []}
 
 # ── Lịch trình 3 ngày: khung giờ giữ nguyên, QUÁN random từ thư viện ──────────
 _DAY_SLOTS = [
@@ -76,7 +86,12 @@ _DAY_SLOTS = [
 ]
 
 def _build_day(slots):
-    return [_act_v(t, act, _pick(cat)) for t, act, cat in slots]
+    # Seeding vào bữa hợp lý: khách sạn → check-in; quán ăn 'tối' → bữa tối. Sáng/trưa/tham quan: quán thường.
+    out = []
+    for t, act, cat in slots:
+        prefer = (cat == "khách sạn") or (cat == "quán ăn" and "tối" in act.lower())
+        out.append(_act_v(t, act, _pick(cat, prefer)))
+    return out
 
 NGAY_1_ACTIVITIES = _build_day(_DAY_SLOTS[0])
 NGAY_2_ACTIVITIES = _build_day(_DAY_SLOTS[1])

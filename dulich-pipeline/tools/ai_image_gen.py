@@ -33,7 +33,8 @@ try:
 except ImportError:
     pass
 
-MODEL = "gemini-3-pro-image-preview"   # Nano Banana Pro — thinking + text tiếng Việt chuẩn
+MODEL = "gemini-2.5-flash-image"   # Nano Banana (thường) — ~1.000đ/ảnh (rẻ hơn Pro ~3.500đ);
+# đánh đổi: chữ tiếng Việt dễ sai/méo hơn Pro (user chọn ưu tiên chi phí). Đổi lại "gemini-3-pro-image-preview" nếu cần chữ chuẩn.
 API = f"https://generativelanguage.googleapis.com/v1beta/models/{MODEL}:generateContent"
 OUT_DIR = Path(__file__).resolve().parent.parent / "output" / "ai_images"
 REF_DIR = Path(__file__).resolve().parent.parent.parent / "source-anh-moi"   # mẫu gốc
@@ -319,8 +320,7 @@ def _recreate_one(ref_path: str, handle: str, key: str, size: str = "2K"):
             f"{API}?key={key}", timeout=600,
             json={"contents": [{"parts": parts}],
                   "generationConfig": {"responseModalities": ["IMAGE"],
-                                       "imageConfig": {"aspectRatio": _nearest_ratio(ref_path),
-                                                       "imageSize": size}}})
+                                       "imageConfig": {"aspectRatio": _nearest_ratio(ref_path)}}})
         if r.status_code != 200:
             return None, f"Gemini {r.status_code}: {r.text[:150]}"
         img = next((p["inlineData"]["data"]

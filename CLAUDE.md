@@ -20,7 +20,8 @@
     segment chạy song song, có faststart, hàng đợi render nền).
   - `voice_generator.py` — TTS: `chirp` (Google Chirp 3 HD, nhanh) · `vbee` (clone) ·
     `edge`/`gtts` (free).
-  - `ai_image_gen.py` — tạo infographic bằng Gemini 3 Pro Image (Nano Banana Pro);
+  - `ai_image_gen.py` — tạo/tạo-lại ảnh bằng Gemini 2.5 Flash Image (Nano Banana thường, ~1k/ảnh;
+    đổi `MODEL` sang `gemini-3-pro-image-preview` nếu cần chữ tiếng Việt chuẩn hơn, ~3.5k/ảnh);
     `tiktok_photos.py` — tải ảnh bài mẫu TikTok (tikwm → yt-dlp → APIFY).
   - `listreview_content.py` (`_TEMPLATES` per-nv), `script_import.py` (kịch bản từ text/link),
     `publisher.py` (đăng TikTok Zernio + Telegram duyệt), `news_youtube.py` (cào tin APIFY),

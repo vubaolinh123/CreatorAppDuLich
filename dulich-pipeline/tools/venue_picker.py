@@ -18,6 +18,18 @@ class VenuePicker:
     def reset_used(self):
         self._used = set()
 
+    @staticmethod
+    def is_seeding(v: dict) -> bool:
+        """Quán 'cần seeding' (quán mình + đối tác) cần ưu tiên lên đầu poster."""
+        return (v.get("loai") or "").strip().lower() == "cần seeding"
+
+    @staticmethod
+    def seeding_first(venues: list) -> list:
+        """Đưa quán seeding lên ĐẦU, phần còn lại giữ nguyên thứ tự."""
+        seed = [v for v in venues if VenuePicker.is_seeding(v)]
+        rest = [v for v in venues if not VenuePicker.is_seeding(v)]
+        return seed + rest
+
     def _pool(self, co_nguoi: str | None = None, loai_quan: str | None = None,
               exclude: set | None = None) -> list:
         pool = self._all
@@ -52,8 +64,7 @@ class VenuePicker:
         Loại không có quán seeding (tham quan, cà phê...) thì tự động về chọn ngẫu nhiên như cũ."""
         result = []
         if seeding_first:
-            seed = [v for v in self._pool(co_nguoi, loai_quan)
-                    if (v.get("loai") or "").strip().lower() == "cần seeding"]
+            seed = [v for v in self._pool(co_nguoi, loai_quan) if VenuePicker.is_seeding(v)]
             random.shuffle(seed)
             for v in seed[:n]:
                 result.append(v)
