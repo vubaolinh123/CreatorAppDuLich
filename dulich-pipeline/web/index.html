@@ -1076,7 +1076,7 @@ function renderLibrary(){
   const fbox=document.getElementById("libFilter");
   if(fbox){
     if(SESSION.role==="admin"){
-      const makers=["",...Array.from(new Set(libVideos.map(v=>v.user).filter(Boolean)))];
+      const makers=["",...Array.from(new Set(libVideos.filter(v=>!v.archived).map(v=>v.user).filter(Boolean)))];
       fbox.innerHTML=`<div style="display:flex;gap:6px;flex-wrap:wrap">`+makers.map(m=>`<button class="${LIB_FILTER===m?'btn':'btn-ghost'} chip" onclick="setLibFilter('${m}')">${m?makerName(m):'Tất cả'}</button>`).join("")+`</div>`;
     } else fbox.innerHTML="";
   }
@@ -1092,6 +1092,7 @@ function renderLibrary(){
   if(!LIB_FILTER) jobs.filter(j=>j.status==="done"&&j.videoUrl).forEach(j=>{shown.add(j.videoUrl);cards.push(libCard(j.videoUrl,j.topic,null,null,null,{thumb_url:j.thumbUrl||""}));});
   let hidden=0;
   libVideos.forEach(v=>{
+    if(v.archived)return;   // video đã đăng + lưu Drive: chỉ hiện ở tab "Đã đăng" (Duyệt bài), ẩn khỏi Thư viện
     if(shown.has(v.video_url))return; if(LIB_FILTER&&v.user!==LIB_FILTER)return;
     if(cards.length>=LIB_SHOWN){hidden++;return;}
     cards.push(libCard(v.video_url,v.topic||"video",v.user,v.status,v.time,v));
