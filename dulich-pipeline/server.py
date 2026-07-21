@@ -1763,6 +1763,27 @@ class AssembleHandler(BaseHTTPRequestHandler):
                       "clips": _save_clips(outro.get("scene_id", "outro"))},
         }
 
+        # Guard: cảnh nào SẼ render (có lời thoại) mà thiếu clip → render ra nền navy (blue screen) như
+        # bug nv2/nv3. Báo lỗi rõ ngay thay vì âm thầm tạo video hỏng. Log số clip từng cảnh để soi upload lỗi.
+        def _has_vo(seg):
+            return bool((seg.get("vo") or "").strip())
+        _counts, missing = {}, []
+        _scenes = ([("Hook", spec["intro"])]
+                   + [(spec["spots"][i].get("name") or f"Cảnh {i+1}", sp) for i, sp in enumerate(spec["spots"])]
+                   + [("Outro", spec["outro"])])
+        for name, seg in _scenes:
+            n = len(seg.get("clips") or [])
+            _counts[name] = n
+            if _has_vo(seg) and n == 0:
+                missing.append(name)
+        print(f"[Server] /assemble-listreview clip mỗi cảnh: {_counts}", file=sys.stderr)
+        if missing:
+            shutil.rmtree(str(job_temp), ignore_errors=True)
+            self._json_response({"success": False,
+                                 "error": "Thiếu footage ở: " + ", ".join(missing) +
+                                 ". Thêm clip cho các cảnh này rồi render lại (đừng để trống)."}, 400)
+            return
+
         # RENDER NỀN: đưa vào hàng đợi tuần tự rồi trả lời ngay — logout vẫn render tiếp.
         try:
             import time as _t

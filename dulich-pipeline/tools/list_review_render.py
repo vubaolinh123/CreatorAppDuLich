@@ -586,6 +586,9 @@ def _render_segment(kind: str, seg: dict, idx: int, work: Path,
               "-c:v", "libx264", "-preset", "veryfast", "-pix_fmt", "yuv420p", "-an", str(base)])
         print(f"[perf] {kind}{idx} concat+loop: {_pt.time()-_t1:.1f}s", file=sys.stderr); _t1 = _pt.time()
     else:
+        # KHÔNG có clip nguồn → nền navy (blue screen). Log rõ để biết cảnh nào thiếu footage.
+        print(f"[list_review] ⚠ segment {kind}{idx} KHÔNG có clip nguồn → nền navy "
+              f"(clips nhận vào: {seg.get('clips')})", file=sys.stderr)
         _run(["ffmpeg", "-y", "-f", "lavfi", "-i", f"color=c=0x10243a:s={W}x{H}:r={FPS}",
               "-t", f"{dur:.2f}", "-c:v", "libx264", "-preset", "veryfast", "-pix_fmt", "yuv420p", str(base)])
 
