@@ -308,12 +308,12 @@ def _nearest_ratio(path: str) -> str:
         return "3:4"
 
 
-def _recreate_one(ref_path: str, handle: str, key: str, size: str = "2K"):
-    """Vẽ lại 1 ảnh y hệt ảnh gốc bằng Nano Banana Pro. Trả (bytes|None, error)."""
+def _gen_image(ref_path: str, prompt: str, key: str):
+    """Gọi model ảnh (MODEL) với 1 prompt + ảnh tham chiếu. Trả (bytes|None, error)."""
     import requests
     try:
         mime = mimetypes.guess_type(ref_path)[0] or "image/jpeg"
-        parts = [{"text": _RECREATE_PROMPT.format(handle=handle)},
+        parts = [{"text": prompt},
                  {"inline_data": {"mime_type": mime,
                                   "data": base64.b64encode(Path(ref_path).read_bytes()).decode()}}]
         r = requests.post(
@@ -330,9 +330,53 @@ def _recreate_one(ref_path: str, handle: str, key: str, size: str = "2K"):
         return None, str(e)
 
 
-def recreate_all_from_tiktok(url: str, handle: str = "@dalatnow", max_imgs: int = 10) -> dict:
-    """Link bài ảnh TikTok → tải HẾT N ảnh → vẽ lại y hệt từng ảnh (đổi watermark = handle).
-    Trả {success, paths:[...], count, source_count, errors}."""
+def _recreate_one(ref_path: str, handle: str, key: str):
+    """Vẽ lại 1 ảnh Y HỆT ảnh gốc (giữ nguyên quán của bài gốc)."""
+    return _gen_image(ref_path, _RECREATE_PROMPT.format(handle=handle), key)
+
+
+def _venue_prompt(handle: str, venues: list) -> str:
+    """Prompt: giữ bố cục/tiêu đề/tips của ảnh gốc, THAY danh sách quán bằng quán thư viện (seeding đầu)."""
+    lines = "\n".join(
+        f"- {v.get('name', '')}" + (f" — {(v.get('address') or '').split(',')[0].strip()}"
+                                    if (v.get('address') or '').strip() else "")
+        for v in venues)
+    return (
+        "Đây là 1 trang poster carousel du lịch Đà Lạt. VẼ LẠI GIỐNG HỆT ảnh gốc về bố cục, phong cách "
+        "thiết kế, phối màu, ảnh nền, icon, TIÊU ĐỀ lớn và các dòng mẹo/nhận xét (👍/👎) — giữ đúng chính "
+        "tả tiếng Việt. NHƯNG THAY toàn bộ danh sách quán/địa điểm bằng ĐÚNG các quán sau (giữ THỨ TỰ, mỗi "
+        f"quán 1 dòng gồm TÊN + ĐỊA CHỈ), đúng {len(venues)} quán:\n{lines}\n"
+        "KHÔNG giữ tên quán cũ của ảnh gốc, KHÔNG bịa thêm quán khác. "
+        f"Watermark/handle đổi thành \"{handle}\". Chữ tiếng Việt đúng chính tả, đủ dấu "
+        "(sắc/huyền/hỏi/ngã/nặng, ă â ê ô ơ ư đ)."
+    )
+
+
+def _my_venues_for(ref_path: str, key: str):
+    """Đọc ảnh gốc: nếu là trang có list quán → trả list quán thư viện (seeding ĐẦU) cùng loại + đúng số lượng.
+    Trang không có list quán (bìa, trang mẹo) → None (sẽ vẽ lại y hệt)."""
+    spec = spec_from_reference_images([ref_path])
+    if not spec or not spec.get("items"):
+        return None
+    cat = (spec.get("category") or "").strip()
+    n = len(spec["items"])
+    if not cat or n <= 0:
+        return None
+    try:
+        from tools.venue_picker import VenuePicker
+        vs = VenuePicker().pick_n(n, loai_quan=cat)   # seeding_first mặc định → seeding lên đầu
+        return vs or None
+    except Exception as e:
+        print(f"[ai_image] pick venue lỗi: {e}", file=sys.stderr)
+        return None
+
+
+def recreate_all_from_tiktok(url: str, handle: str = "@dalatnow", max_imgs: int = 10,
+                             use_my_venues: bool = True) -> dict:
+    """Link bài ảnh TikTok → tải HẾT N ảnh → vẽ lại từng ảnh (watermark = handle).
+    use_my_venues=True: trang có list quán thì THAY bằng quán thư viện của mình (seeding ĐẦU), giữ bố cục;
+    trang bìa/mẹo thì vẽ lại y hệt. False: vẽ lại y hệt toàn bộ.
+    Trả {success, paths:[...], count, source_count, seeded_pages, errors}."""
     import shutil
     from tools.tiktok_photos import download_photos
     key = os.getenv("GEMINI_API_KEY") or os.getenv("GEMINI_KEY")
@@ -344,9 +388,15 @@ def recreate_all_from_tiktok(url: str, handle: str = "@dalatnow", max_imgs: int 
             return {"success": False, "error": "Không tải được ảnh từ link (link phải là bài ẢNH TikTok)"}
         OUT_DIR.mkdir(parents=True, exist_ok=True)
         stamp = int(time.time())
-        out_paths, errs = [], []
+        out_paths, errs, seeded_pages = [], [], 0
         for i, ref in enumerate(imgs):
-            data, err = _recreate_one(ref, handle, key)
+            venues = _my_venues_for(ref, key) if use_my_venues else None
+            if venues:
+                seeded_pages += 1
+                print(f"[ai_image] ảnh {i + 1}: thay {len(venues)} quán thư viện (seeding đầu)", file=sys.stderr)
+                data, err = _gen_image(ref, _venue_prompt(handle, venues), key)
+            else:
+                data, err = _recreate_one(ref, handle, key)
             if not data:
                 errs.append(f"ảnh {i + 1}: {err}")
                 print(f"[ai_image] recreate ảnh {i + 1} lỗi: {err}", file=sys.stderr)
@@ -358,7 +408,7 @@ def recreate_all_from_tiktok(url: str, handle: str = "@dalatnow", max_imgs: int 
         if not out_paths:
             return {"success": False, "error": "Không tạo lại được ảnh nào. " + "; ".join(errs[:3])}
         return {"success": True, "paths": out_paths, "count": len(out_paths),
-                "source_count": len(imgs), "errors": errs}
+                "source_count": len(imgs), "seeded_pages": seeded_pages, "errors": errs}
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
 
