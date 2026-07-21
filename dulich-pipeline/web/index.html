@@ -206,6 +206,7 @@
 <!-- overlays -->
 <div class="viewer hidden" id="viewer"><button class="close" onclick="closeViewer()">✕</button><video id="viewerVid" controls></video></div>
 <div class="imgview hidden" id="imgview" onclick="closeImg()"><button class="close" onclick="closeImg()">✕</button><img id="imgviewImg"></div>
+<div class="imgview hidden" id="galview" onclick="if(event.target.id==='galview')closeGal()" style="align-items:flex-start;overflow-y:auto;padding:24px 0"><button class="close" onclick="closeGal()" style="position:fixed">✕</button><div id="galInner" style="display:flex;flex-direction:column;gap:14px;align-items:center;width:100%"></div></div>
 <div class="created hidden" id="created"><div class="box"><div class="ok">✅</div><div style="font-weight:700;font-size:18px;margin-top:6px">Đã tạo video!</div><div class="muted">Đang render ở nền — bạn cứ tạo clip mới.</div></div></div>
 
 <script>
@@ -1150,7 +1151,7 @@ async function adminReviewLoad(){
       fetch(API+`/album-library?role=admin`,{cache:"no-store"}).then(r=>r.json())
     ]);
     const vids=(lv.videos||[]).map(v=>({kind:"video",key:v.video_url,url:v.video_url,user:v.user,title:v.topic||"video",status:v.status||"pending",time:v.time||0,archived:!!v.archived,drive_link:v.drive_link||""}));
-    const albs=(la.albums||[]).map(a=>({kind:"album",key:a.dir,cover:(a.images&&a.images[0])?a.images[0].url:"",user:a.user,title:a.label||a.album,status:a.status||"pending",time:a.time||0,count:(a.images||[]).length}));
+    const albs=(la.albums||[]).map(a=>({kind:"album",key:a.dir,cover:(a.images&&a.images[0])?a.images[0].url:"",images:(a.images||[]).map(im=>im.url),user:a.user,title:a.label||a.album,status:a.status||"pending",time:a.time||0,count:(a.images||[]).length}));
     REVIEW_ITEMS=[...vids,...albs].sort((x,y)=>y.time-x.time);
     renderReview();
   }catch(e){const b=document.getElementById("reviewBox");if(b)b.textContent="Lỗi tải: "+e.message;}
@@ -1179,7 +1180,7 @@ function renderReview(){
       ? (it.archived
         ? `<a href="${it.drive_link||"#"}" target="_blank" style="display:flex;flex-direction:column;align-items:center;justify-content:center;aspect-ratio:9/16;background:var(--surface2);border-radius:10px;text-decoration:none;gap:8px"><span style="font-size:34px">📁</span><span style="font-size:12px;font-weight:700">Đã lưu trên Drive</span></a>`
         : `<video src="${API+it.url}" preload="metadata" muted playsinline style="width:100%;aspect-ratio:9/16;object-fit:cover;background:#000;border-radius:10px;cursor:pointer" onclick="openViewer('${it.url}')"></video>`)
-      : (it.cover?`<img src="${API+it.cover}?w=220" style="width:100%;aspect-ratio:4/5;object-fit:cover;border-radius:10px;cursor:pointer" onclick="openImg('${it.cover}')">`:"<div class='muted'>—</div>");
+      : (it.cover?`<div style="position:relative;cursor:pointer" onclick="openAlbumImages('${it.key}')"><img src="${API+it.cover}?w=220" style="width:100%;aspect-ratio:4/5;object-fit:cover;border-radius:10px"><span style="position:absolute;bottom:6px;right:6px;background:rgba(0,0,0,.65);color:#fff;font-size:11px;padding:2px 7px;border-radius:8px">🖼 ${it.count} ảnh</span></div>`:"<div class='muted'>—</div>");
     const btns = it.status==="posted"
       ? `<button class="btn-ghost chip" onclick="setStatus('${it.kind}','${it.key}','pending')">↩ Chưa đăng</button>`
       : `<button class="btn chip" style="background:#1976d2;border-color:#1976d2" onclick="publishItem('${it.kind}','${it.key}','${it.user||""}',this)">Đăng</button><button class="btn-ghost chip" onclick="setStatus('${it.kind}','${it.key}','failed',this)">⚠ Lỗi</button><button class="btn-ghost chip" onclick="setStatus('${it.kind}','${it.key}','cancelled',this)">✕ Hủy</button>`;
@@ -1336,6 +1337,14 @@ async function deleteAlbum(dir){
 }
 function openImg(url){document.getElementById("imgviewImg").src=API+url;document.getElementById("imgview").classList.remove("hidden");}
 function closeImg(){document.getElementById("imgview").classList.add("hidden");document.getElementById("imgviewImg").removeAttribute("src");}
+function openAlbumImages(key){
+  const it=REVIEW_ITEMS.find(x=>x.kind==="album"&&x.key===key);
+  const imgs=(it&&it.images&&it.images.length)?it.images:(it&&it.cover?[it.cover]:[]);
+  if(!imgs.length)return;
+  document.getElementById("galInner").innerHTML=imgs.map(u=>`<img src="${API+u}" style="max-width:96vw;max-height:none;width:auto;border-radius:10px;box-shadow:0 10px 30px rgba(0,0,0,.4)">`).join("");
+  document.getElementById("galview").classList.remove("hidden");
+}
+function closeGal(){document.getElementById("galview").classList.add("hidden");document.getElementById("galInner").innerHTML="";}
 
 // ---------- Prompt viết kịch bản (nv1-5 + tin tức) ----------
 let PP_DEFAULT = "";
