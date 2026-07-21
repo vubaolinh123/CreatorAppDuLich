@@ -46,9 +46,20 @@ class VenuePicker:
 
     def pick_n(self, n: int, co_nguoi: str | None = None,
                loai_quan: str | list | None = None,
-               unique: bool = True) -> list:
+               unique: bool = True, seeding_first: bool = True) -> list:
+        """Chọn n venue. seeding_first=True (mặc định): quán 'cần seeding' (quán mình + đối tác)
+        lên ĐẦU danh sách, phần còn lại chọn ngẫu nhiên — để poster quán/khách sạn ưu tiên seeding.
+        Loại không có quán seeding (tham quan, cà phê...) thì tự động về chọn ngẫu nhiên như cũ."""
         result = []
-        for _ in range(n):
+        if seeding_first:
+            seed = [v for v in self._pool(co_nguoi, loai_quan)
+                    if (v.get("loai") or "").strip().lower() == "cần seeding"]
+            random.shuffle(seed)
+            for v in seed[:n]:
+                result.append(v)
+                if unique:
+                    self._used.add(v["name"])
+        for _ in range(n - len(result)):
             v = self.pick_one(co_nguoi, loai_quan, track=unique)
             if v:
                 result.append(v)
