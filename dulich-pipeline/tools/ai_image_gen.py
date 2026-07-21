@@ -283,6 +283,86 @@ def generate_from_tiktok(url: str, replace_n: int = 4, handle: str = "@dalatnow"
         shutil.rmtree(tmp, ignore_errors=True)
 
 
+# ── Tạo lại TOÀN BỘ ảnh trong 1 bài carousel (vẽ y hệt từng trang) ────────────
+_RECREATE_PROMPT = (
+    "Đây là 1 trang trong bộ carousel infographic du lịch Đà Lạt. VẼ LẠI trang này GIỐNG HỆT ảnh gốc: "
+    "y nguyên bố cục, phong cách thiết kế, phối màu, ảnh nền, các icon (ngón tay lên/xuống, ghim địa điểm, "
+    "tim, mũi tên...) và TOÀN BỘ chữ. Sao chép CHÍNH XÁC từng chữ tiếng Việt như trong ảnh gốc — đúng chính tả "
+    "và dấu thanh 100% (sắc/huyền/hỏi/ngã/nặng, ă â ê ô ơ ư đ), KHÔNG thêm/bớt/đổi/bịa chữ, không để chữ méo "
+    "thành chữ vô nghĩa. Chỉ thay đổi DUY NHẤT: watermark/handle (nếu có) đổi thành \"{handle}\". "
+    "Render sắc nét, chất lượng cao."
+)
+
+_RATIOS = {"1:1": 1.0, "3:4": 0.75, "2:3": 0.667, "9:16": 0.5625, "4:3": 1.333, "3:2": 1.5, "16:9": 1.778}
+
+
+def _nearest_ratio(path: str) -> str:
+    """Chọn aspectRatio Gemini gần nhất với ảnh gốc (bài TikTok thường 3:4 / 9:16 / 1:1)."""
+    try:
+        from PIL import Image
+        w, h = Image.open(path).size
+        r = w / h
+        return min(_RATIOS, key=lambda k: abs(_RATIOS[k] - r))
+    except Exception:
+        return "3:4"
+
+
+def _recreate_one(ref_path: str, handle: str, key: str, size: str = "2K"):
+    """Vẽ lại 1 ảnh y hệt ảnh gốc bằng Nano Banana Pro. Trả (bytes|None, error)."""
+    import requests
+    try:
+        mime = mimetypes.guess_type(ref_path)[0] or "image/jpeg"
+        parts = [{"text": _RECREATE_PROMPT.format(handle=handle)},
+                 {"inline_data": {"mime_type": mime,
+                                  "data": base64.b64encode(Path(ref_path).read_bytes()).decode()}}]
+        r = requests.post(
+            f"{API}?key={key}", timeout=600,
+            json={"contents": [{"parts": parts}],
+                  "generationConfig": {"responseModalities": ["IMAGE"],
+                                       "imageConfig": {"aspectRatio": _nearest_ratio(ref_path),
+                                                       "imageSize": size}}})
+        if r.status_code != 200:
+            return None, f"Gemini {r.status_code}: {r.text[:150]}"
+        img = next((p["inlineData"]["data"]
+                    for p in r.json()["candidates"][0]["content"]["parts"] if "inlineData" in p), None)
+        return (base64.b64decode(img) if img else None), ("" if img else "không trả ảnh (bị chặn?)")
+    except Exception as e:
+        return None, str(e)
+
+
+def recreate_all_from_tiktok(url: str, handle: str = "@dalatnow", max_imgs: int = 10) -> dict:
+    """Link bài ảnh TikTok → tải HẾT N ảnh → vẽ lại y hệt từng ảnh (đổi watermark = handle).
+    Trả {success, paths:[...], count, source_count, errors}."""
+    import shutil
+    from tools.tiktok_photos import download_photos
+    key = os.getenv("GEMINI_API_KEY") or os.getenv("GEMINI_KEY")
+    if not key:
+        return {"success": False, "error": "Thiếu GEMINI_API_KEY"}
+    imgs, tmp = download_photos(url, max_imgs=max_imgs)
+    try:
+        if not imgs:
+            return {"success": False, "error": "Không tải được ảnh từ link (link phải là bài ẢNH TikTok)"}
+        OUT_DIR.mkdir(parents=True, exist_ok=True)
+        stamp = int(time.time())
+        out_paths, errs = [], []
+        for i, ref in enumerate(imgs):
+            data, err = _recreate_one(ref, handle, key)
+            if not data:
+                errs.append(f"ảnh {i + 1}: {err}")
+                print(f"[ai_image] recreate ảnh {i + 1} lỗi: {err}", file=sys.stderr)
+                continue
+            p = OUT_DIR / f"recr_{stamp}_{i:02d}.png"
+            p.write_bytes(data)
+            _resize_1080(str(p))
+            out_paths.append(str(p))
+        if not out_paths:
+            return {"success": False, "error": "Không tạo lại được ảnh nào. " + "; ".join(errs[:3])}
+        return {"success": True, "paths": out_paths, "count": len(out_paths),
+                "source_count": len(imgs), "errors": errs}
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
 # ── Demo specs ────────────────────────────────────────────────────────────────
 DEMOS = {
     "1": {

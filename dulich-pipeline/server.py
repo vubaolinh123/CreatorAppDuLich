@@ -1902,45 +1902,48 @@ class AssembleHandler(BaseHTTPRequestHandler):
             self._json_response({"success": False, "error": str(e)}, 500)
 
     def handle_ai_image_from_link(self):
-        """POST /ai-image-from-link {user, url, replace_n} — bài ảnh TikTok mẫu →
-        AI đọc + render lại (Nano Banana Pro), thay N mục bằng quán 'cần seeding'."""
+        """POST /ai-image-from-link {user, url} — bài ảnh carousel TikTok mẫu →
+        AI vẽ lại Y HỆT TỪNG ảnh (Nano Banana Pro), đúng số lượng ảnh trong link, watermark @dalatnow."""
         try:
             b = self._read_json_body()
             user = (b.get("user") or "").strip() or "admin"
             url = (b.get("url") or "").strip()
-            try:
-                replace_n = max(0, min(10, int(b.get("replace_n") or 4)))
-            except Exception:
-                replace_n = 4
             if "tiktok.com" not in url:
                 self._json_response({"success": False, "error": "Dán link bài ẢNH TikTok"}, 400)
                 return
-            from tools.ai_image_gen import generate_from_tiktok
-            with _HEAVY_LOCK:
-                res = generate_from_tiktok(url, replace_n=replace_n)
-            if not res.get("success"):
-                self._json_response({"success": False, "error": res.get("error", "lỗi")}, 500)
-                return
-            # Lưu như 1 album (1 ảnh) → vào Album đã lưu + luồng duyệt/đăng như thường
-            base = Path(__file__).parent
-            out_dir = base / "output" / "albums" / f"app_aiimg_{uuid.uuid4().hex[:8]}"
-            out_dir.mkdir(parents=True, exist_ok=True)
-            dst = out_dir / "aiimg_00.png"
-            shutil.copy2(res["path"], dst)
-            images = [{"name": dst.name, "url": _to_output_url(str(dst))}]
-            dir_rel = str(out_dir.relative_to(base)).replace("\\", "/")
-            label = (res.get("title") or "Ảnh AI từ bài mẫu")[:60]
-            rec = {"user": user, "album": "aiimg", "label": label,
-                   "dir": dir_rel, "images": images, "auto": False}
-            try:
-                import time as _t
-                _append_album({**rec, "time": _t.time()})
-                threading.Thread(target=_notify_album,
-                                 args=(user, label, dir_rel, [str(dst)]),
-                                 daemon=True).start()
-            except Exception as _e:
-                print(f"[Server] aiimg log lỗi: {_e}", file=sys.stderr)
-            self._json_response({"success": True, **rec, "replaced": res.get("replaced", [])})
+
+            # Chạy NỀN: bài nhiều ảnh mất vài phút (mỗi ảnh ~30-45s) → vượt timeout nginx nếu đồng bộ.
+            # Trả lời ngay, xong tự lưu vào "Album đã lưu" + báo Telegram (logout vẫn chạy tiếp).
+            def _work():
+                try:
+                    from tools.ai_image_gen import recreate_all_from_tiktok
+                    with _HEAVY_LOCK:
+                        res = recreate_all_from_tiktok(url, handle="@dalatnow")
+                    if not res.get("success"):
+                        print(f"[Server] recreate-from-link fail: {res.get('error')}", file=sys.stderr)
+                        return
+                    base = Path(__file__).parent
+                    out_dir = base / "output" / "albums" / f"app_aiimg_{uuid.uuid4().hex[:8]}"
+                    out_dir.mkdir(parents=True, exist_ok=True)
+                    images = []
+                    for i, p in enumerate(res["paths"]):
+                        dst = out_dir / f"aiimg_{i:02d}.png"
+                        shutil.copy2(p, dst)
+                        images.append({"name": dst.name, "url": _to_output_url(str(dst))})
+                    dir_rel = str(out_dir.relative_to(base)).replace("\\", "/")
+                    label = f"Tạo lại từ TikTok ({len(images)} ảnh)"
+                    import time as _t
+                    _append_album({"user": user, "album": "aiimg", "label": label, "dir": dir_rel,
+                                   "images": images, "auto": False, "time": _t.time()})
+                    _notify_album(user, label, dir_rel, [str(out_dir / im["name"]) for im in images])
+                    print(f"[Server] recreate-from-link ✓ {len(images)}/{res.get('source_count')} ảnh cho {user}",
+                          file=sys.stderr)
+                except Exception as _e:
+                    import traceback
+                    print(f"[Server] recreate-from-link lỗi: {_e}\n{traceback.format_exc()}", file=sys.stderr)
+
+            threading.Thread(target=_work, daemon=True).start()
+            self._json_response({"success": True, "queued": True})
         except Exception as e:
             import traceback
             print(f"[Server] ai-image-from-link lỗi: {e}\n{traceback.format_exc()}", file=sys.stderr)
