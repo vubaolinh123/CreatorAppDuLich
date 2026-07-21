@@ -45,73 +45,148 @@ DEFAULT_REFS = {
 }
 
 
+# Quy tắc chữ — điểm mấu chốt để không sai chính tả (headline brush hay bịa chữ nhất).
+_TEXT_RULE = (
+    "\n\nQUY TẮC CHỮ (QUAN TRỌNG NHẤT — đọc kỹ):\n"
+    "1. Ảnh tham chiếu CHỈ để bám BỐ CỤC + PHONG CÁCH. TUYỆT ĐỐI KHÔNG chép lại chữ có trong ảnh mẫu.\n"
+    "2. CHỈ render đúng các chuỗi chữ tôi ghi ở trên — đúng TỪNG KÝ TỰ và TỪNG DẤU thanh tiếng Việt "
+    "(sắc/huyền/hỏi/ngã/nặng và ă â ê ô ơ ư đ).\n"
+    "3. KHÔNG thêm, KHÔNG bớt, KHÔNG bịa/đổi chữ. Chữ tiêu đề dù vẽ brush vẫn phải ĐỌC RA ĐÚNG chính tả, "
+    "không được méo thành chữ vô nghĩa (vd KHÔNG được biến 'YÊU'→'VƯU', 'NÊN'→'ĐẾN', 'LẤP'→'LẦP').\n"
+    "4. CHỈ render đúng những chuỗi chữ tôi cung cấp. Mọi vùng chữ phụ KHÔNG có trong danh sách của tôi "
+    "(dòng 'mẹo nhỏ' ở chân poster, ghi chú dán tay, tem, caption nhỏ...) thì ĐỂ TRỐNG hoặc thay bằng icon — "
+    "TUYỆT ĐỐI KHÔNG tự bịa thêm chữ tiếng Việt (rất hay sai chính tả).\n"
+    "5. Nếu không chắc 1 chữ, viết đơn giản rõ ràng còn hơn viết sai."
+)
+
+
 def _prompt_list8(spec: dict) -> str:
     items = spec.get("items") or []
     lines = "\n".join(
         f'{i}. "{it.get("name", "")}" — {it.get("sub", "")} — {it.get("desc", "")}'
         for i, it in enumerate(items, 1))
     return (
-        "Tạo poster infographic du lịch Đà Lạt GIỐNG HỆT bố cục, phong cách scrapbook, "
-        "typography brush vẽ tay và chất lượng của ảnh tham chiếu, nhưng ĐỔI nội dung và màu:\n"
-        f"- Headline: \"{spec.get('title', '')}\" + ribbon \"{spec.get('subtitle', '')}\""
-        f" + tagline \"{spec.get('tagline', '')}\".\n"
+        "Tạo poster infographic du lịch Đà Lạt bám SÁT bố cục, phong cách scrapbook, typography brush "
+        "vẽ tay và chất lượng của ảnh tham chiếu (ảnh mẫu chỉ để tham khảo bố cục + phong cách), "
+        "dùng nội dung + màu sau:\n"
+        "CHỮ TIÊU ĐỀ (render chính xác từng ký tự):\n"
+        f"• Tiêu đề lớn: \"{spec.get('title', '')}\"\n"
+        f"• Ribbon phụ: \"{spec.get('subtitle', '')}\"\n"
+        f"• Tagline: \"{spec.get('tagline', '')}\"\n"
         f"- Tông màu chủ đạo: {spec.get('palette', 'xanh rêu + kem giấy')}.\n"
         f"- 8 mục (mỗi card: số, ảnh ĐÚNG món/địa điểm đó, tên đậm, icon 📍 + địa chỉ, mô tả, giá tham khảo hợp lý):\n{lines}\n"
-        f"- Watermark góc: \"{spec.get('handle', '@dalatnow')}\".\n"
-        "TOÀN BỘ chữ tiếng Việt phải ĐÚNG CHÍNH TẢ VÀ DẤU 100%."
+        f"- Watermark góc: \"{spec.get('handle', '@dalatnow')}\"."
+        + _TEXT_RULE
     )
 
 
 def _prompt_map3d(spec: dict) -> str:
     places = ", ".join(spec.get("places") or [])
     return (
-        "Tạo poster BẢN ĐỒ DU LỊCH ĐÀ LẠT giống hệt phong cách, bố cục, chất lượng 3D isometric "
+        "Tạo poster BẢN ĐỒ DU LỊCH ĐÀ LẠT bám sát phong cách, bố cục, chất lượng 3D isometric "
         "của ảnh tham chiếu (thành phố thu nhỏ, nhãn tên địa danh trong bong bóng trắng chỉ đúng "
-        "công trình, chữ 3D lớn ĐÀ LẠT màu đá trắng ở giữa, headline brush vẽ tay trên cùng), nhưng ĐỔI:\n"
+        "công trình, chữ 3D lớn ĐÀ LẠT màu đá trắng ở giữa, headline brush vẽ tay trên cùng); "
+        "ảnh mẫu chỉ để tham khảo bố cục + phong cách:\n"
+        "CHỮ TIÊU ĐỀ (render chính xác từng ký tự):\n"
+        "• Headline trên cùng: \"BẢN ĐỒ DU LỊCH ĐÀ LẠT\"\n"
         f"- Khung cảnh/màu sắc: {spec.get('palette', 'nắng vàng rực rỡ, trời xanh')}.\n"
-        f"- Các địa danh phải có: {places}.\n"
-        f"- Watermark: \"{spec.get('handle', '@dalatnow')}\".\n"
-        "TOÀN BỘ chữ tiếng Việt ĐÚNG CHÍNH TẢ VÀ DẤU 100%."
+        f"- Nhãn địa danh (mỗi nhãn 1 bong bóng, render chính xác): {places}.\n"
+        f"- Watermark: \"{spec.get('handle', '@dalatnow')}\"."
+        + _TEXT_RULE
     )
 
 
-def generate_infographic(spec: dict, out_name: str = "", size: str = "2K") -> dict:
-    """Gọi Nano Banana Pro → PNG trong output/ai_images/. Trả {success, path|error}."""
+def _norm_text(s: str) -> str:
+    """Chuẩn hoá để so khớp: chữ HOA, chỉ giữ ký tự chữ/số (bỏ dấu cách, dấu câu)."""
+    return "".join(ch for ch in (s or "").upper() if ch.isalnum())
+
+
+def _ocr_title(png_path: str, key: str) -> str:
+    """OCR nhanh (Gemini flash) đọc chữ TIÊU ĐỀ LỚN của ảnh vừa tạo — để verify chính tả."""
     import requests
-    key = os.getenv("GEMINI_API_KEY")
+    try:
+        b64 = base64.b64encode(Path(png_path).read_bytes()).decode()
+        r = requests.post(
+            f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={key}",
+            timeout=90, json={"contents": [{"parts": [
+                {"text": "Đọc CHÍNH XÁC toàn bộ chữ TIÊU ĐỀ LỚN (headline + ribbon + tagline) ở đầu poster này, "
+                         "giữ nguyên dấu tiếng Việt. Trả JSON {\"title\":\"...\"} gộp hết thành 1 chuỗi."},
+                {"inline_data": {"mime_type": "image/png", "data": b64}}]}],
+                "generationConfig": {"responseMimeType": "application/json"}})
+        if r.status_code != 200:
+            return ""
+        return (json.loads(r.json()["candidates"][0]["content"]["parts"][0]["text"]).get("title") or "").strip()
+    except Exception:
+        return ""
+
+
+def _title_ok(intended: str, ocr: str) -> bool:
+    """True nếu mọi TỪ (>=3 ký tự) của tiêu đề mong muốn đều xuất hiện trong chữ OCR đọc được.
+    OCR rỗng → coi như pass (tránh render lại vô ích khi OCR lỗi)."""
+    got = _norm_text(ocr)
+    if not got:
+        return True
+    for w in (intended or "").split():
+        wn = _norm_text(w)
+        if len(wn) >= 3 and wn not in got:
+            return False
+    return True
+
+
+def generate_infographic(spec: dict, out_name: str = "", size: str = "2K", verify: bool = True) -> dict:
+    """Gọi Nano Banana Pro → PNG trong output/ai_images/. Trả {success, path|error}.
+    verify=True: OCR lại tiêu đề, nếu sai chính tả thì render lại (tối đa 2 lần)."""
+    import requests
+    key = os.getenv("GEMINI_API_KEY") or os.getenv("GEMINI_KEY")
     if not key:
         return {"success": False, "error": "Thiếu GEMINI_API_KEY"}
     tpl = (spec.get("template") or "list8").lower()
     prompt = _prompt_map3d(spec) if tpl == "map3d" else _prompt_list8(spec)
 
-    parts = [{"text": prompt}]
+    ref_part = None
     ref = spec.get("reference") or DEFAULT_REFS.get(tpl)
     if ref and Path(ref).exists():
         mime = mimetypes.guess_type(str(ref))[0] or "image/jpeg"
-        parts.append({"inline_data": {"mime_type": mime,
-                                      "data": base64.b64encode(Path(ref).read_bytes()).decode()}})
-    try:
-        r = requests.post(
-            f"{API}?key={key}", timeout=600,
-            json={"contents": [{"parts": parts}],
-                  "generationConfig": {
-                      "responseModalities": ["IMAGE"],
-                      "imageConfig": {"aspectRatio": "9:16", "imageSize": size}}})
-        if r.status_code != 200:
-            return {"success": False, "error": f"Gemini {r.status_code}: {r.text[:300]}"}
-        img_b64 = None
-        for p in r.json()["candidates"][0]["content"]["parts"]:
-            if "inlineData" in p:
-                img_b64 = p["inlineData"]["data"]
-                break
-        if not img_b64:
-            return {"success": False, "error": "Gemini không trả ảnh (bị chặn nội dung?)"}
-        OUT_DIR.mkdir(parents=True, exist_ok=True)
-        out = OUT_DIR / (out_name or f"aiimg_{tpl}_{int(time.time())}.png")
-        out.write_bytes(base64.b64decode(img_b64))
+        ref_part = {"inline_data": {"mime_type": mime,
+                                    "data": base64.b64encode(Path(ref).read_bytes()).decode()}}
+
+    OUT_DIR.mkdir(parents=True, exist_ok=True)
+    out = OUT_DIR / (out_name or f"aiimg_{tpl}_{int(time.time())}.png")
+    intended = " ".join(x for x in (spec.get("title", ""), spec.get("subtitle", ""),
+                                    spec.get("tagline", "")) if x)
+    max_try = 2 if verify else 1
+    last_err, warnings = "", []
+    for attempt in range(1, max_try + 1):
+        parts = [{"text": prompt}] + ([ref_part] if ref_part else [])
+        try:
+            r = requests.post(
+                f"{API}?key={key}", timeout=600,
+                json={"contents": [{"parts": parts}],
+                      "generationConfig": {
+                          "responseModalities": ["IMAGE"],
+                          "imageConfig": {"aspectRatio": "9:16", "imageSize": size}}})
+            if r.status_code != 200:
+                last_err = f"Gemini {r.status_code}: {r.text[:300]}"; continue
+            img_b64 = next((p["inlineData"]["data"]
+                            for p in r.json()["candidates"][0]["content"]["parts"]
+                            if "inlineData" in p), None)
+            if not img_b64:
+                last_err = "Gemini không trả ảnh (bị chặn nội dung?)"; continue
+            out.write_bytes(base64.b64decode(img_b64))
+        except Exception as e:
+            last_err = str(e); continue
+        # Verify tiêu đề — sai + còn lượt thì render lại (ảnh sinh ngẫu nhiên nên lần sau thường đúng)
+        if verify and intended:
+            ocr = _ocr_title(str(out), key)
+            if _title_ok(intended, ocr):
+                return {"success": True, "path": str(out)}
+            warnings = [f"Tiêu đề có thể sai chính tả (AI đọc lại: '{ocr}')"]
+            print(f"[ai_image] verify lần {attempt} nghi sai tiêu đề, OCR='{ocr}'", file=sys.stderr)
+            continue
         return {"success": True, "path": str(out)}
-    except Exception as e:
-        return {"success": False, "error": str(e)}
+    if out.exists():
+        return {"success": True, "path": str(out), "text_warnings": warnings}
+    return {"success": False, "error": last_err or "Không tạo được ảnh"}
 
 
 def _resize_1080(png_path: str) -> None:

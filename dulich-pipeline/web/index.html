@@ -204,7 +204,7 @@
 </div>
 
 <!-- overlays -->
-<div class="viewer hidden" id="viewer"><button class="close" onclick="closeViewer()">✕</button><video id="viewerVid" controls></video></div>
+<div class="viewer hidden" id="viewer"><button class="close" onclick="closeViewer()">✕</button><video id="viewerVid" controls playsinline preload="auto"></video></div>
 <div class="imgview hidden" id="imgview" onclick="closeImg()"><button class="close" onclick="closeImg()">✕</button><img id="imgviewImg"></div>
 <div class="imgview hidden" id="galview" onclick="if(event.target.id==='galview')closeGal()" style="align-items:flex-start;overflow-y:auto;padding:24px 0"><button class="close" onclick="closeGal()" style="position:fixed">✕</button><div id="galInner" style="display:flex;flex-direction:column;gap:14px;align-items:center;width:100%"></div></div>
 <div class="created hidden" id="created"><div class="box"><div class="ok">✅</div><div style="font-weight:700;font-size:18px;margin-top:6px">Đã tạo video!</div><div class="muted">Đang render ở nền — bạn cứ tạo clip mới.</div></div></div>
@@ -1066,7 +1066,7 @@ async function deleteDraft(i){
   try{ await fetch(API+"/script-drafts-delete",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({id:d.id})}); }catch{}
   VIDEO_DRAFTS.splice(i,1); renderDrafts(); toast("Đã xoá");
 }
-function openViewer(url){const v=document.getElementById("viewerVid");v.src=API+url;document.getElementById("viewer").classList.remove("hidden");v.play().catch(()=>{});}
+function openViewer(url,thumb){const v=document.getElementById("viewerVid");v.poster=thumb?API+thumb:"";v.src=API+url;document.getElementById("viewer").classList.remove("hidden");v.play().catch(()=>{});}
 function closeViewer(){const v=document.getElementById("viewerVid");v.pause();v.removeAttribute("src");document.getElementById("viewer").classList.add("hidden");}
 let LIB_FILTER="";
 function setLibFilter(m){ LIB_FILTER=m; renderLibrary(); }
@@ -1109,7 +1109,7 @@ function statusChip(s){
 // Không có thumb (video cũ) → fallback <video preload=metadata>.
 function videoMedia(url,thumb,ratio){
   const r=ratio||"9/16";
-  if(thumb) return `<div style="position:relative;cursor:pointer;aspect-ratio:${r}" onclick="openViewer('${url}')">
+  if(thumb) return `<div style="position:relative;cursor:pointer;aspect-ratio:${r}" onclick="openViewer('${url}','${thumb}')">
     <img src="${API+thumb}" loading="lazy" style="width:100%;height:100%;object-fit:cover;background:#000;border-radius:10px">
     <span style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:38px;color:#fff;text-shadow:0 2px 8px rgba(0,0,0,.6)">▶</span></div>`;
   return `<video src="${API+url}" preload="metadata" muted playsinline onclick="openViewer('${url}')" style="cursor:pointer;aspect-ratio:${r};width:100%;object-fit:cover;background:#000;border-radius:10px"></video>`;
@@ -1119,7 +1119,7 @@ function libCard(url,topic,user,status,time,rec){
   const media=(rec&&rec.archived)
     ? `<a href="${rec.drive_link||"#"}" target="_blank" style="display:flex;flex-direction:column;align-items:center;justify-content:center;aspect-ratio:9/16;background:var(--surface2);border-radius:10px;text-decoration:none;gap:8px"><span style="font-size:34px">📁</span><span style="font-size:12px;font-weight:700">Đã lưu trên Drive</span><span class="muted" style="font-size:11px">bấm để mở</span></a>`
     : videoMedia(url,(rec&&rec.thumb_url)||"");
-  return `<div class="lib-card">${media}<div class="cap" style="flex-direction:column;align-items:stretch;gap:2px"><span>${topic||""}${user?" · "+makerName(user):""}</span><div style="display:flex;justify-content:space-between;align-items:center">${status?statusChip(status):""}<span class="muted" style="font-size:11px">${d}</span>${(rec&&rec.archived)?"":`<button class="expand" onclick="openViewer('${url}')">⤢</button>`}</div></div></div>`;
+  return `<div class="lib-card">${media}<div class="cap" style="flex-direction:column;align-items:stretch;gap:2px"><span>${topic||""}${user?" · "+makerName(user):""}</span><div style="display:flex;justify-content:space-between;align-items:center">${status?statusChip(status):""}<span class="muted" style="font-size:11px">${d}</span>${(rec&&rec.archived)?"":`<button class="expand" onclick="openViewer('${url}','${(rec&&rec.thumb_url)||""}')">⤢</button>`}</div></div></div>`;
 }
 
 // ---------- ADMIN: duyệt bài + KPI ----------
@@ -1196,7 +1196,7 @@ function renderReview(){
     const dd=it.time?new Date(it.time*1000).toLocaleDateString("vi"):"";
     return `<div class="lib-card" style="padding:8px">${media}
       <div class="cap" style="flex-direction:column;align-items:stretch;gap:4px">
-        <span style="font-size:12px;font-weight:600">${(it.title||"").replace(/</g,"&lt;")} - ${makerName(it.user)}</span>
+        <span style="font-size:12px;font-weight:600">${(it.kind==="album"?albTitle(it.title):(it.title||"")).replace(/</g,"&lt;")} - ${makerName(it.user)}</span>
         <div style="display:flex;justify-content:space-between;align-items:center">${statusChip(it.status)}<span class="muted" style="font-size:11px">${dd}</span></div>
         <div style="display:flex;gap:5px;flex-wrap:wrap;margin-top:2px">${btns}</div>
       </div></div>`;
@@ -1234,6 +1234,8 @@ async function setStatus(kind,key,status,btn,opts){
 // ---------- TẠO ẢNH (per-nv: mẫu album theo tài khoản + album đã lưu) ----------
 let SAVED_ALBUMS=[], ALB_FILTER="";
 function makerName(u){ return ({nv1:"Lê",nv2:"Uyên",nv3:"Hiền",nv4:"Vy",nv5:"Muối",tintuc:"Tin tức",admin:"Quản lý"})[u]||u||""; }
+// Bỏ prefix "Tên · " trong label album (vì card đã ghép " - {maker}" phía sau) → "Muối · Album 1" hiện "Album 1".
+function albTitle(s){ s=(s||"").trim(); const m=s.replace(/^[^·]+·\s*/,"").trim(); return m||s; }
 function renderImageGen(){
   if(typeof resetEditor==="function") resetEditor();
   document.getElementById("appbody").innerHTML=`
@@ -1290,7 +1292,7 @@ function renderSavedAlbums(){
     const gi=SAVED_ALBUMS.indexOf(a);
     const cover=(a.images&&a.images[0])?`<img src="${API+a.images[0].url}?w=220" loading="lazy" style="width:100%;aspect-ratio:4/5;object-fit:cover;border-radius:10px;background:var(--surface2)">`:"";
     return `<div class="alb-card" style="cursor:pointer" onclick="openSavedAlbum(${gi})">${cover}
-      <div><div class="nm">${(a.label||a.album)} - ${makerName(a.user)}</div>
+      <div><div class="nm">${albTitle(a.label||a.album)} - ${makerName(a.user)}</div>
       <div style="display:flex;justify-content:space-between;align-items:center">${a.status?statusChip(a.status):""}<span class="muted" style="font-size:11px">${a.time?new Date(a.time*1000).toLocaleDateString("vi"):""}</span></div></div></div>`;
   }).join("")}</div>`;
 }
