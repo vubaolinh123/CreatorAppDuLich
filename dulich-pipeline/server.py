@@ -1065,15 +1065,56 @@ class AssembleHandler(BaseHTTPRequestHandler):
                             ".jpeg": "image/jpeg", ".webp": "image/webp",
                             ".gif": "image/gif"}
                 mime = mime_map.get(ext, "application/octet-stream")
-                self.send_response(200)
+                fsize = file_path.stat().st_size
+                # HTTP Range (206) — cho video phát/tua ngay như YouTube (không tải cả file).
+                # Chỉ xử lý single-range "bytes=a-b"; bất thường → gửi full 200 (fallback an toàn).
+                rng = self.headers.get("Range", "")
+                start, end = 0, fsize - 1
+                use_range = False
+                if rng.startswith("bytes=") and "," not in rng:
+                    try:
+                        s, e = rng[6:].split("-", 1)
+                        if s.strip() == "":            # bytes=-N → N byte cuối
+                            start = max(0, fsize - int(e))
+                        else:
+                            start = int(s)
+                            if e.strip() != "":
+                                end = min(int(e), fsize - 1)
+                        if 0 <= start <= end < fsize:
+                            use_range = True
+                    except Exception:
+                        use_range = False
+                if use_range and start > end:            # range không thoả mãn
+                    self.send_response(416)
+                    self.send_header("Content-Range", f"bytes */{fsize}")
+                    self._cors_headers(); self.end_headers()
+                    return
+                length = (end - start + 1) if use_range else fsize
+                self.send_response(206 if use_range else 200)
                 self._cors_headers()
                 self.send_header("Content-Type", mime)
-                self.send_header("Content-Length", str(file_path.stat().st_size))
+                self.send_header("Accept-Ranges", "bytes")
+                self.send_header("Content-Length", str(length))
+                if use_range:
+                    self.send_header("Content-Range", f"bytes {start}-{end}/{fsize}")
                 self.send_header("Connection", "close")
                 self.end_headers()
+                if self.command == "HEAD":
+                    self.close_connection = True
+                    return
+                remaining = length
                 with open(file_path, "rb") as f:
-                    while chunk := f.read(65536):
-                        self.wfile.write(chunk)
+                    if use_range:
+                        f.seek(start)
+                    while remaining > 0:
+                        chunk = f.read(min(65536, remaining))
+                        if not chunk:
+                            break
+                        try:
+                            self.wfile.write(chunk)
+                        except (BrokenPipeError, ConnectionResetError):
+                            break   # player đóng kết nối khi tua/dừng — bình thường
+                        remaining -= len(chunk)
                 self.close_connection = True
                 return
             else:
