@@ -693,7 +693,17 @@ def render_list_review(spec: dict) -> dict:
                   "-movflags", "+faststart",
                   "-c:a", "aac", "-b:a", "160k", str(out_path)], cwd=str(work))
 
+        # Thumbnail JPG nhẹ (~30KB) — thư viện hiện ảnh này thay vì load video (hết lag)
+        thumb_path = out_path.with_suffix(".jpg")
+        try:
+            _run(["ffmpeg", "-y", "-ss", "1", "-i", str(out_path), "-frames:v", "1",
+                  "-vf", "scale=360:-2", "-q:v", "5", str(thumb_path)])
+        except Exception as _e:
+            print(f"[list_review] thumb lỗi: {_e}", file=sys.stderr)
+            thumb_path = None
+
         return {"success": True, "video_path": str(out_path.resolve()),
+                "thumb_path": str(thumb_path.resolve()) if thumb_path and thumb_path.exists() else "",
                 "segments": len(segs), "duration": _ffprobe_dur(str(out_path))}
     finally:
         # giữ work dir nếu debug; xoá để gọn

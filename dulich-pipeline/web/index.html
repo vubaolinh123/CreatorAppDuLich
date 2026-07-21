@@ -980,7 +980,7 @@ function startJobPolling(){
       const j=await (await fetch(API+`/render-jobs?user=${SESSION.username}`,{cache:"no-store"})).json();
       (j.jobs||[]).forEach(sj=>{
         const loc=jobs.find(x=>x.serverJob===sj.job_id); if(!loc)return;
-        if(sj.status==="done"){ loc.status="done"; loc.progress=100; loc.videoUrl=sj.video_url||""; toast("✅ Render xong: "+(loc.topic||"")); }
+        if(sj.status==="done"){ loc.status="done"; loc.progress=100; loc.videoUrl=sj.video_url||""; loc.thumbUrl=sj.thumb_url||""; toast("✅ Render xong: "+(loc.topic||"")); }
         else if(sj.status==="failed"){ loc.status="error"; loc.error=sj.error||"render lỗi"; toast("⚠ Render lỗi: "+(sj.error||"")); }
         else if(sj.status==="rendering"){ loc.progress=80; }
       });
@@ -1089,7 +1089,7 @@ function renderLibrary(){
     jobs.filter(j=>j.status!=="done").forEach(j=>{cards.push(`<div class="lib-card"><div class="lib-render" style="${j.hookPrev?`background-image:url(${j.hookPrev})`:""}"><div class="blur" style="${j.hookPrev?`background-image:url(${j.hookPrev})`:""}"></div><div class="mid">${j.status==="error"?`<div style="color:#ffb4b4">Lỗi</div><div class="muted" style="color:#ddd;max-width:90%;text-align:center">${j.error||""}</div>`:`<div class="spin"></div><div>${j.uploadPct!=null?"📤 Đang tải lên "+j.uploadPct+"%":j.status==="rendering"?"Đang render "+j.progress+"%":j.status==="queued"?"🎬 Render nền (logout được)":"Chờ…"}</div>`}</div><div class="lib-bar" style="width:${j.progress}%"></div></div><div class="cap"><span>${j.topic}</span></div></div>`);});
   }
   const shown=new Set();
-  if(!LIB_FILTER) jobs.filter(j=>j.status==="done"&&j.videoUrl).forEach(j=>{shown.add(j.videoUrl);cards.push(libCard(j.videoUrl,j.topic));});
+  if(!LIB_FILTER) jobs.filter(j=>j.status==="done"&&j.videoUrl).forEach(j=>{shown.add(j.videoUrl);cards.push(libCard(j.videoUrl,j.topic,null,null,null,{thumb_url:j.thumbUrl||""}));});
   let hidden=0;
   libVideos.forEach(v=>{
     if(shown.has(v.video_url))return; if(LIB_FILTER&&v.user!==LIB_FILTER)return;
@@ -1105,11 +1105,20 @@ function statusChip(s){
   const [t,c]=m[s]||m.pending;
   return `<span style="font-size:11px;font-weight:700;color:${c}">${t}</span>`;
 }
+// Thẻ media cho video: ưu tiên ảnh thumbnail JPG (nhẹ, hết lag) — bấm ▶ mới load video.
+// Không có thumb (video cũ) → fallback <video preload=metadata>.
+function videoMedia(url,thumb,ratio){
+  const r=ratio||"9/16";
+  if(thumb) return `<div style="position:relative;cursor:pointer;aspect-ratio:${r}" onclick="openViewer('${url}')">
+    <img src="${API+thumb}" loading="lazy" style="width:100%;height:100%;object-fit:cover;background:#000;border-radius:10px">
+    <span style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:38px;color:#fff;text-shadow:0 2px 8px rgba(0,0,0,.6)">▶</span></div>`;
+  return `<video src="${API+url}" preload="metadata" muted playsinline onclick="openViewer('${url}')" style="cursor:pointer;aspect-ratio:${r};width:100%;object-fit:cover;background:#000;border-radius:10px"></video>`;
+}
 function libCard(url,topic,user,status,time,rec){
   const d=time?new Date(time*1000).toLocaleDateString("vi"):"";
   const media=(rec&&rec.archived)
     ? `<a href="${rec.drive_link||"#"}" target="_blank" style="display:flex;flex-direction:column;align-items:center;justify-content:center;aspect-ratio:9/16;background:var(--surface2);border-radius:10px;text-decoration:none;gap:8px"><span style="font-size:34px">📁</span><span style="font-size:12px;font-weight:700">Đã lưu trên Drive</span><span class="muted" style="font-size:11px">bấm để mở</span></a>`
-    : `<video src="${API+url}" preload="metadata" muted playsinline onclick="openViewer('${url}')" style="cursor:pointer"></video>`;
+    : videoMedia(url,(rec&&rec.thumb_url)||"");
   return `<div class="lib-card">${media}<div class="cap" style="flex-direction:column;align-items:stretch;gap:2px"><span>${topic||""}${user?" · "+makerName(user):""}</span><div style="display:flex;justify-content:space-between;align-items:center">${status?statusChip(status):""}<span class="muted" style="font-size:11px">${d}</span>${(rec&&rec.archived)?"":`<button class="expand" onclick="openViewer('${url}')">⤢</button>`}</div></div></div>`;
 }
 
@@ -1150,7 +1159,7 @@ async function adminReviewLoad(){
       fetch(API+`/library?role=admin`,{cache:"no-store"}).then(r=>r.json()),
       fetch(API+`/album-library?role=admin`,{cache:"no-store"}).then(r=>r.json())
     ]);
-    const vids=(lv.videos||[]).map(v=>({kind:"video",key:v.video_url,url:v.video_url,user:v.user,title:v.topic||"video",status:v.status||"pending",time:v.time||0,archived:!!v.archived,drive_link:v.drive_link||""}));
+    const vids=(lv.videos||[]).map(v=>({kind:"video",key:v.video_url,url:v.video_url,thumb_url:v.thumb_url||"",user:v.user,title:v.topic||"video",status:v.status||"pending",time:v.time||0,archived:!!v.archived,drive_link:v.drive_link||""}));
     const albs=(la.albums||[]).map(a=>({kind:"album",key:a.dir,cover:(a.images&&a.images[0])?a.images[0].url:"",images:(a.images||[]).map(im=>im.url),user:a.user,title:a.label||a.album,status:a.status||"pending",time:a.time||0,count:(a.images||[]).length}));
     REVIEW_ITEMS=[...vids,...albs].sort((x,y)=>y.time-x.time);
     renderReview();
@@ -1179,7 +1188,7 @@ function renderReview(){
     const media = it.kind==="video"
       ? (it.archived
         ? `<a href="${it.drive_link||"#"}" target="_blank" style="display:flex;flex-direction:column;align-items:center;justify-content:center;aspect-ratio:9/16;background:var(--surface2);border-radius:10px;text-decoration:none;gap:8px"><span style="font-size:34px">📁</span><span style="font-size:12px;font-weight:700">Đã lưu trên Drive</span></a>`
-        : `<video src="${API+it.url}" preload="metadata" muted playsinline style="width:100%;aspect-ratio:9/16;object-fit:cover;background:#000;border-radius:10px;cursor:pointer" onclick="openViewer('${it.url}')"></video>`)
+        : videoMedia(it.url,it.thumb_url||""))
       : (it.cover?`<div style="position:relative;cursor:pointer" onclick="openAlbumImages('${it.key}')"><img src="${API+it.cover}?w=220" style="width:100%;aspect-ratio:4/5;object-fit:cover;border-radius:10px"><span style="position:absolute;bottom:6px;right:6px;background:rgba(0,0,0,.65);color:#fff;font-size:11px;padding:2px 7px;border-radius:8px">🖼 ${it.count} ảnh</span></div>`:"<div class='muted'>—</div>");
     const btns = it.status==="posted"
       ? `<button class="btn-ghost chip" onclick="setStatus('${it.kind}','${it.key}','pending')">↩ Chưa đăng</button>`

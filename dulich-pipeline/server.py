@@ -261,12 +261,14 @@ def _render_worker():
                 result = render_list_review(job["spec"])
             if result.get("success"):
                 video_url = _to_output_url(result.get("video_path", ""))
-                _job_update(jid, status="done", video_url=video_url)
+                thumb_url = _to_output_url(result.get("thumb_path", ""))
+                _job_update(jid, status="done", video_url=video_url, thumb_url=thumb_url)
                 try:
                     import time as _t
                     _append_product({"user": job["user"], "topic": job["topic"],
                                      "hook_style": job.get("hook_style", ""),
-                                     "video_url": video_url, "time": _t.time()})
+                                     "video_url": video_url, "thumb_url": thumb_url,
+                                     "time": _t.time()})
                     _notify_publish(job["user"], job["topic"], video_url)
                 except Exception as _e:
                     print(f"[render-queue] product log lỗi: {_e}", file=sys.stderr)
