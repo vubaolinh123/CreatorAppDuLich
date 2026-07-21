@@ -109,13 +109,17 @@ def _transcribe_link(url: str) -> str:
         shutil.rmtree(tmp, ignore_errors=True)
 
 
-def scenes_from_link(url: str) -> list | None:
-    """Đọc clip từ link → AI viết kịch bản MỚI theo tinh thần clip (không copy nguyên văn)."""
+def scenes_from_link(url: str, employee: str = "") -> list | None:
+    """Đọc clip từ link → AI viết kịch bản MỚI theo tinh thần clip (không copy nguyên văn).
+    Chỉ thị viết-lại lấy từ prompt tuỳ chỉnh của nv (trang Prompt), không thì mặc định."""
     transcript = _transcribe_link(url)
     if not transcript:
         return None
-    return _ai_scenes(
-        "Dưới đây là nội dung (transcript) của 1 clip du lịch tham khảo. "
-        "Viết 1 kịch bản MỚI cùng chủ đề/tinh thần nhưng KHÔNG copy nguyên văn — "
-        "đổi cách diễn đạt, có thể đổi góc nhìn, giữ các thông tin địa điểm đúng.\n\n"
-        f"TRANSCRIPT:\n{transcript[:5000]}\n\n{_FORMAT_RULE}")
+    try:
+        from tools.script_prompts import effective_link_prompt
+        rewrite = effective_link_prompt(employee)
+    except Exception:
+        rewrite = ("Dưới đây là nội dung (transcript) của 1 clip du lịch tham khảo. "
+                   "Viết 1 kịch bản MỚI cùng chủ đề/tinh thần nhưng KHÔNG copy nguyên văn — "
+                   "đổi cách diễn đạt, có thể đổi góc nhìn, giữ các thông tin địa điểm đúng.")
+    return _ai_scenes(f"{rewrite}\n\nTRANSCRIPT:\n{transcript[:5000]}\n\n{_FORMAT_RULE}")

@@ -50,7 +50,7 @@ def zernio_tiktok_account(api_key: str | None = None) -> str | None:
 
 
 def _zernio_post(media_items: list, caption: str, api_key: str | None = None,
-                 account_id: str | None = None) -> dict:
+                 account_id: str | None = None, tiktok_settings: dict | None = None) -> dict:
     key = api_key or os.getenv("ZERNIO_KEY")
     if not key:
         return {"success": False, "error": "Thiếu Zernio key (Cài đặt → key theo tài khoản)"}
@@ -61,6 +61,8 @@ def _zernio_post(media_items: list, caption: str, api_key: str | None = None,
             "mediaItems": media_items,
             "platforms": [{"platform": "tiktok", "accountId": acc}],
             "publishNow": True}
+    if tiktok_settings:
+        body["tiktokSettings"] = tiktok_settings
     try:
         import requests
         r = requests.post(ZERNIO_POSTS, timeout=60,
@@ -93,7 +95,9 @@ def post_images_to_tiktok(image_urls: list, caption: str,
         items.append({"type": "image", "url": full})
     if not items:
         return {"success": False, "error": "Album không có ảnh"}
-    return _zernio_post(items, caption, api_key, account_id)
+    # TikTok bài ẢNH: bật auto-add-music để TikTok tự gắn nhạc gợi ý (không gắn nhạc theo link được).
+    return _zernio_post(items, caption, api_key, account_id,
+                        tiktok_settings={"autoAddMusic": True})
 
 
 def list_tiktok_accounts(api_key: str | None = None) -> list:

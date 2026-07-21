@@ -27,6 +27,13 @@ DEFAULT_PERSONA_NEWS = (
     "Giọng thân mật, hook gây tò mò, nhịp nhanh, xưng hô gần gũi như 'các vợ/mình/nha'."
 )
 
+# Chỉ thị viết lại kịch bản từ transcript clip TikTok (dán link) — sửa được ở trang Prompt.
+DEFAULT_LINK_PROMPT = (
+    "Dưới đây là nội dung (transcript) của 1 clip du lịch tham khảo. "
+    "Viết 1 kịch bản MỚI cùng chủ đề/tinh thần nhưng KHÔNG copy nguyên văn — "
+    "đổi cách diễn đạt, có thể đổi góc nhìn, giữ các thông tin địa điểm đúng."
+)
+
 
 def default_persona(employee: str) -> str:
     return DEFAULT_PERSONA_NEWS if (employee or "").lower() == "tintuc" else DEFAULT_PERSONA_NV
@@ -40,19 +47,22 @@ def _load() -> dict:
 
 
 def get_script_prompt(employee: str) -> dict:
-    """Trả {prompt, examples} đã lưu (rỗng nếu chưa set)."""
+    """Trả {prompt, examples, link_prompt} đã lưu (rỗng nếu chưa set)."""
     employee = (employee or "").strip().lower()
     with _LOCK:
         rec = (_load().get(employee) or {})
     return {"prompt": (rec.get("prompt") or "").strip(),
-            "examples": (rec.get("examples") or "").strip()}
+            "examples": (rec.get("examples") or "").strip(),
+            "link_prompt": (rec.get("link_prompt") or "").strip()}
 
 
-def set_script_prompt(employee: str, prompt: str, examples: str) -> None:
+def set_script_prompt(employee: str, prompt: str, examples: str, link_prompt: str = "") -> None:
     employee = (employee or "").strip().lower()
     with _LOCK:
         data = _load()
-        data[employee] = {"prompt": (prompt or "").strip(), "examples": (examples or "").strip()}
+        data[employee] = {"prompt": (prompt or "").strip(),
+                          "examples": (examples or "").strip(),
+                          "link_prompt": (link_prompt or "").strip()}
         DB_PATH.parent.mkdir(parents=True, exist_ok=True)
         DB_PATH.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
 
@@ -60,3 +70,8 @@ def set_script_prompt(employee: str, prompt: str, examples: str) -> None:
 def effective_persona(employee: str) -> str:
     """Persona dùng để gọi AI: custom nếu có, không thì mặc định."""
     return get_script_prompt(employee)["prompt"] or default_persona(employee)
+
+
+def effective_link_prompt(employee: str) -> str:
+    """Chỉ thị viết-lại-từ-link: custom nếu có, không thì mặc định."""
+    return get_script_prompt(employee)["link_prompt"] or DEFAULT_LINK_PROMPT

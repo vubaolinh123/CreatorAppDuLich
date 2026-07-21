@@ -15,6 +15,37 @@ except ImportError:
 OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
 MODEL = "deepseek/deepseek-chat"
 
+_HIST_FILE = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data", "album_text_history.json")
+
+
+def _recent_texts(kind: str, n: int = 8) -> list:
+    try:
+        with open(_HIST_FILE, encoding="utf-8") as f:
+            return (json.load(f).get(kind) or [])[-n:]
+    except Exception:
+        return []
+
+
+def _remember_text(kind: str, out: dict) -> None:
+    """Lưu 1 chuỗi gọn của bản vừa tạo để lần sau tránh lặp (giữ tối đa 12/kind)."""
+    line = " | ".join(str(v).replace("\n", " ") for v in out.values() if v)[:200]
+    if not line:
+        return
+    try:
+        try:
+            with open(_HIST_FILE, encoding="utf-8") as f:
+                d = json.load(f)
+        except Exception:
+            d = {}
+        lst = d.get(kind) or []
+        lst.append(line)
+        d[kind] = lst[-12:]
+        os.makedirs(os.path.dirname(_HIST_FILE), exist_ok=True)
+        with open(_HIST_FILE, "w", encoding="utf-8") as f:
+            json.dump(d, f, ensure_ascii=False, indent=2)
+    except Exception as e:
+        print(f"[album_titles] lưu history lỗi: {e}")
+
 # Góc sáng tạo để AI không lặp chủ đề (bốc random 2 góc mỗi lần)
 _ANGLES = [
     "cặp đôi hẹn hò", "gia đình có con nhỏ", "solo chữa lành", "nhóm bạn thân",
@@ -73,6 +104,9 @@ def ai_cover_texts(kind: str, fallback: dict, user_prompt: str = "") -> dict:
         return fallback
     user_prompt = (user_prompt or os.getenv("ALBUM_TITLE_PROMPT", "")).strip()
     angles = ", ".join(random.sample(_ANGLES, 2))
+    hist = _recent_texts(kind)
+    avoid = ("\nCÁC BẢN ĐÃ TẠO GẦN ĐÂY — PHẢI KHÁC HẲN (đừng lặp chữ/ý/cấu trúc):\n- "
+             + "\n- ".join(hist)) if hist else ""
     prompt = (
         "Viết lại bộ chữ cho ảnh cover album du lịch Đà Lạt.\n"
         f"Mô tả template: {desc}\n"
@@ -80,7 +114,10 @@ def ai_cover_texts(kind: str, fallback: dict, user_prompt: str = "") -> dict:
         "Yêu cầu: giữ đúng tinh thần + format từng field (số dòng \\n, IN HOA/thường, "
         "ký tự đặc biệt như 'POV:', '/', '%'), nhưng ĐỔI câu chữ hoàn toàn mới, sáng tạo, "
         f"không sao chép mẫu gốc. Gợi ý góc khai thác (tùy chọn): {angles}.\n"
-        "Tiếng Việt có dấu, không emoji, không hashtag.\n"
+        "CHÍNH TẢ + NGỮ PHÁP tiếng Việt CHUẨN, không viết sai/ngô nghê "
+        "(vd đúng: 'không nên quá tin', 'đừng quá tin' — SAI: 'không đến quá tin'). "
+        "Đọc lên phải xuôi tai, tự nhiên. Tiếng Việt có dấu, không emoji, không hashtag."
+        f"{avoid}\n"
         f"Trả về JSON có đúng các key: {list(fallback.keys())}"
         + f"\n(seed đa dạng: {random.randint(1000, 9999)})"
     )
@@ -93,7 +130,7 @@ def ai_cover_texts(kind: str, fallback: dict, user_prompt: str = "") -> dict:
                      "Content-Type": "application/json"},
             json={
                 "model": MODEL,
-                "temperature": 1.1,
+                "temperature": 0.9,
                 "max_tokens": 400,
                 "response_format": {"type": "json_object"},
                 "messages": [
@@ -118,6 +155,7 @@ def ai_cover_texts(kind: str, fallback: dict, user_prompt: str = "") -> dict:
                 if v or k == "line3":   # line3 muoi1 được phép rỗng
                     out[k] = v
         print(f"[album_titles] {kind}: {out}")
+        _remember_text(kind, out)   # ghi nhớ để lần sau tránh lặp
         return out
     except Exception as e:
         print(f"[album_titles] lỗi ({e}) → dùng mặc định")

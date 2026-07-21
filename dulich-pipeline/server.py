@@ -1829,7 +1829,7 @@ class AssembleHandler(BaseHTTPRequestHandler):
                     self._json_response({"success": False, "error": "Link không hợp lệ"}, 400)
                     return
                 with _HEAVY_LOCK:   # tải audio + whisper — tránh chạy chồng
-                    scenes = scenes_from_link(url)
+                    scenes = scenes_from_link(url, employee=user)
                 src = f"link:{url}"
             if not scenes:
                 self._json_response({"success": False,
@@ -2115,11 +2115,13 @@ class AssembleHandler(BaseHTTPRequestHandler):
             from urllib.parse import urlparse, parse_qs
             q = parse_qs(urlparse(self.path).query)
             employee = (q.get("employee", ["nv1"])[0] or "nv1").strip().lower()
-            from tools.script_prompts import get_script_prompt, default_persona
+            from tools.script_prompts import get_script_prompt, default_persona, DEFAULT_LINK_PROMPT
             rec = get_script_prompt(employee)
             self._json_response({"success": True, "employee": employee,
                                  "prompt": rec["prompt"], "examples": rec["examples"],
-                                 "default_prompt": default_persona(employee)})
+                                 "link_prompt": rec["link_prompt"],
+                                 "default_prompt": default_persona(employee),
+                                 "default_link_prompt": DEFAULT_LINK_PROMPT})
         except Exception as e:
             self._json_response({"success": False, "error": str(e)}, 500)
 
@@ -2132,7 +2134,8 @@ class AssembleHandler(BaseHTTPRequestHandler):
                 self._json_response({"success": False, "error": "Thiếu employee"}, 400)
                 return
             from tools.script_prompts import set_script_prompt
-            set_script_prompt(employee, body.get("prompt", ""), body.get("examples", ""))
+            set_script_prompt(employee, body.get("prompt", ""), body.get("examples", ""),
+                              body.get("link_prompt", ""))
             # Xoá cache prefill để lần tạo nội dung sau dùng prompt mới.
             try:
                 (Path(__file__).parent / "data" / "prefill" / f"{employee}.json").unlink(missing_ok=True)

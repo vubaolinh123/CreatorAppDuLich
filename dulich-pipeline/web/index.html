@@ -1192,11 +1192,13 @@ function renderReview(){
       : (it.cover?`<div style="position:relative;cursor:pointer" onclick="openAlbumImages('${it.key}')"><img src="${API+it.cover}?w=220" style="width:100%;aspect-ratio:4/5;object-fit:cover;border-radius:10px"><span style="position:absolute;bottom:6px;right:6px;background:rgba(0,0,0,.65);color:#fff;font-size:11px;padding:2px 7px;border-radius:8px">🖼 ${it.count} ảnh</span></div>`:"<div class='muted'>—</div>");
     const btns = it.status==="posted"
       ? `<button class="btn-ghost chip" onclick="setStatus('${it.kind}','${it.key}','pending')">↩ Chưa đăng</button>`
-      : `<button class="btn chip" style="background:#1976d2;border-color:#1976d2" onclick="publishItem('${it.kind}','${it.key}','${it.user||""}',this)">Đăng</button><button class="btn-ghost chip" onclick="setStatus('${it.kind}','${it.key}','failed',this)">⚠ Lỗi</button><button class="btn-ghost chip" onclick="setStatus('${it.kind}','${it.key}','cancelled',this)">✕ Hủy</button>`;
+      : `<button class="btn chip" style="background:#1976d2;border-color:#1976d2" onclick="publishItem('${it.kind}','${it.key}','${it.user||""}',this)">Đăng</button><button class="btn-ghost chip" onclick="setStatus('${it.kind}','${it.key}','cancelled',this)">✕ Hủy</button>`;
+    const dd=it.time?new Date(it.time*1000).toLocaleDateString("vi"):"";
     return `<div class="lib-card" style="padding:8px">${media}
-      <div class="cap" style="flex-direction:column;align-items:stretch;gap:6px">
-        <span style="font-size:12px">${(it.title||"").replace(/</g,"&lt;")} · <b>${makerName(it.user)}</b> · ${statusLabel(it.status)}${it.kind==="album"?` · ${it.count} ảnh`:""}</span>
-        <div style="display:flex;gap:5px;flex-wrap:wrap">${btns}</div>
+      <div class="cap" style="flex-direction:column;align-items:stretch;gap:4px">
+        <span style="font-size:12px;font-weight:600">${(it.title||"").replace(/</g,"&lt;")} - ${makerName(it.user)}</span>
+        <div style="display:flex;justify-content:space-between;align-items:center">${statusChip(it.status)}<span class="muted" style="font-size:11px">${dd}</span></div>
+        <div style="display:flex;gap:5px;flex-wrap:wrap;margin-top:2px">${btns}</div>
       </div></div>`;
   }).join("")+`</div>`;
 }
@@ -1288,8 +1290,8 @@ function renderSavedAlbums(){
     const gi=SAVED_ALBUMS.indexOf(a);
     const cover=(a.images&&a.images[0])?`<img src="${API+a.images[0].url}?w=220" loading="lazy" style="width:100%;aspect-ratio:4/5;object-fit:cover;border-radius:10px;background:var(--surface2)">`:"";
     return `<div class="alb-card" style="cursor:pointer" onclick="openSavedAlbum(${gi})">${cover}
-      <div><div class="nm">${a.label||a.album}</div><div class="id">${(a.images||[]).length} ảnh${(SESSION.role==="admin"&&a.user)?" · "+makerName(a.user):""}${a.time?" · "+new Date(a.time*1000).toLocaleDateString("vi"):""}</div>
-      ${a.status?statusChip(a.status):""}</div></div>`;
+      <div><div class="nm">${(a.label||a.album)} - ${makerName(a.user)}</div>
+      <div style="display:flex;justify-content:space-between;align-items:center">${a.status?statusChip(a.status):""}<span class="muted" style="font-size:11px">${a.time?new Date(a.time*1000).toLocaleDateString("vi"):""}</span></div></div></div>`;
   }).join("")}</div>`;
 }
 function openSavedAlbum(i){ const a=SAVED_ALBUMS[i]; if(a) renderAlbumView(a); }
@@ -1356,7 +1358,7 @@ function openAlbumImages(key){
 function closeGal(){document.getElementById("galview").classList.add("hidden");document.getElementById("galInner").innerHTML="";}
 
 // ---------- Prompt viết kịch bản (nv1-5 + tin tức) ----------
-let PP_DEFAULT = "";
+let PP_DEFAULT = "", PP_LINK_DEFAULT = "";
 async function renderPromptEditor(){
   resetEditor && resetEditor();
   const emp=SESSION.username;
@@ -1372,6 +1374,10 @@ async function renderPromptEditor(){
       <div class="muted" id="pp-def" style="margin-top:4px"></div>
       <label>Ví dụ tham khảo (tùy chọn — AI học giọng, không chép)</label>
       <textarea id="pp-ex" rows="6" placeholder="Dán 1 vài kịch bản mẫu để AI bắt chước giọng…"></textarea>
+      <label>Prompt viết lại kịch bản từ link TikTok</label>
+      <div class="muted" style="font-size:12px;margin-bottom:4px">Chỉ thị khi bạn dán link clip → AI đọc + viết lại kịch bản (giữ trống = mặc định).</div>
+      <textarea id="pp-link" rows="4" placeholder="Đang tải…"></textarea>
+      <div class="muted" id="pp-linkdef" style="margin-top:4px"></div>
       <div style="display:flex;gap:10px;margin-top:14px">
         <button class="btn" style="flex:1" onclick="savePrompt()">💾 Lưu prompt</button>
         <button class="btn-ghost" onclick="resetPromptDefault()">↺ Dùng mặc định</button>
@@ -1381,20 +1387,23 @@ async function renderPromptEditor(){
   try{
     const r=await fetch(API+`/script-prompt?employee=${emp}`,{cache:"no-store"});
     const j=await r.json(); if(!j.success) throw new Error(j.error||"lỗi");
-    PP_DEFAULT=j.default_prompt||"";
+    PP_DEFAULT=j.default_prompt||""; PP_LINK_DEFAULT=j.default_link_prompt||"";
     document.getElementById("pp-prompt").value=j.prompt||j.default_prompt||"";
     document.getElementById("pp-ex").value=j.examples||"";
+    document.getElementById("pp-link").value=j.link_prompt||j.default_link_prompt||"";
     document.getElementById("pp-def").textContent=j.prompt?"Đang dùng prompt tùy chỉnh.":"Đang dùng prompt mặc định.";
+    document.getElementById("pp-linkdef").textContent=j.link_prompt?"Đang dùng prompt link tùy chỉnh.":"Đang dùng prompt link mặc định.";
   }catch(e){ const t=document.getElementById("pp-prompt"); if(t)t.placeholder="Lỗi tải: "+e.message; }
 }
-function resetPromptDefault(){ const t=document.getElementById("pp-prompt"); if(t&&PP_DEFAULT)t.value=PP_DEFAULT; }
+function resetPromptDefault(){ const t=document.getElementById("pp-prompt"); if(t&&PP_DEFAULT)t.value=PP_DEFAULT; const l=document.getElementById("pp-link"); if(l&&PP_LINK_DEFAULT)l.value=PP_LINK_DEFAULT; }
 async function savePrompt(){
   const emp=SESSION.username;
   const prompt=document.getElementById("pp-prompt").value.trim();
   const examples=document.getElementById("pp-ex").value.trim();
+  const link_prompt=document.getElementById("pp-link").value.trim();
   const st=document.getElementById("pp-status"); st.textContent="⏳ Đang lưu…";
   try{
-    const r=await fetch(API+"/script-prompt",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({employee:emp,prompt,examples})});
+    const r=await fetch(API+"/script-prompt",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({employee:emp,prompt,examples,link_prompt})});
     const j=await r.json(); if(!j.success) throw new Error(j.error||"lỗi");
     st.textContent="✓ Đã lưu. Lần Tạo nội dung tới sẽ dùng prompt này."; toast("Đã lưu prompt");
   }catch(e){ st.textContent="⚠ "+e.message; toast("Lỗi lưu: "+e.message); }
