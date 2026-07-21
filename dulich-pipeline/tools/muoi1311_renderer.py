@@ -60,7 +60,7 @@ def render_cover(bg_path: str, out_path: str) -> str:
     font_hay = dancing(96)
     hay = "hay "
     local = "Local "
-    hohit = "hohit"
+    hohit = "hot hit"
     lw = int(draw.textlength(local, font=font_sub))
     hw = int(draw.textlength(hay, font=font_hay))
     hiw = int(draw.textlength(hohit, font=font_sub))
