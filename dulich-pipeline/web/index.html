@@ -865,7 +865,15 @@ function sceneTotal(i){return currentScenes[i].files.reduce((a,c)=>a+(c.dur||0),
 function renderClipList(i){const sc=currentScenes[i],box=document.getElementById("clips-"+i);if(!box)return;box.innerHTML="";sc.files.forEach((c,k)=>{const row=document.createElement("div");row.className="clip-row";row.innerHTML=`${c.thumb?`<img src="${c.thumb}">`:`<img>`}<span class="nm">${k+1}. ${c.file.name}</span><span class="du">${c.dur?c.dur.toFixed(1)+"s":"—"}</span><button class="x">✕</button>`;row.querySelector(".x").onclick=()=>removeClip(i,k);box.appendChild(row);});const tot=sceneTotal(i),tg=sc.min_duration_sec,el=document.getElementById("total-"+i);if(!el)return;if(!sc.files.length){el.textContent="";return;}const ok=tot>=tg;el.className="scene-total "+(ok?"ok":"low");el.textContent=ok?`✓ ${tot.toFixed(1)}s (mục tiêu ~${tg}s)`+(tot>tg+1?" — dư sẽ cắt":""):`⚠ ${tot.toFixed(1)}s / ~${tg}s — nên thêm clip`;}
 
 async function createVideo(){
-  const empty=currentScenes.filter(s=>s.files.length===0); if(empty.length){toast("Còn "+empty.length+" scene chưa có clip");return;}
+  // Guard: mọi scene phải có clip (không thì render ra nền navy). Chỉ RÕ scene thiếu + nhảy tới đó cho dễ tìm.
+  const emptyIdxs=currentScenes.map((s,i)=>s.files.length===0?i:-1).filter(i=>i>=0);
+  if(emptyIdxs.length){
+    const names=emptyIdxs.map(i=>currentScenes[i].label||("Scene "+(i+1))).join(", ");
+    toast("⚠ Thiếu clip ở: "+names+" — thả source vào scene đang sáng nha");
+    const first=emptyIdxs[0]; scenePage=Math.floor(first/PAGE); renderSceneInputs();
+    setTimeout(()=>{const d=document.getElementById("drop-"+first);if(d){d.scrollIntoView({behavior:"smooth",block:"center"});d.classList.add("over");setTimeout(()=>d.classList.remove("over"),2600);}},80);
+    return;
+  }
   if(SESSION.role==="staff") return createVideoLR();
   const isNews=SESSION.role==="news";
   const sub=isNews?"":(currentScenes[0].caption||"").trim();
