@@ -212,7 +212,7 @@ def spec_from_reference_images(image_paths: list[str]) -> dict | None:
         "Đọc bộ ảnh infographic du lịch Đà Lạt này và trích xuất nội dung. Trả về JSON:\n"
         '{"title":"headline chính","subtitle":"dòng phụ/ribbon","tagline":"câu mô tả ngắn",'
         '"palette":"mô tả tông màu chủ đạo của bài (để tạo lại giống)",'
-        '"category":"quán ăn"|"quán cà phê"|"khách sạn"|"tham quan",'
+        '"category":"quán ăn"|"quán cà phê"|"khách sạn"|"điểm checkin"|"điểm checkin free"|"điểm săn mây",'
         '"items":[{"name":"tên địa điểm","sub":"địa chỉ/sđt nếu có","desc":"mô tả 1 câu"}...]}\n'
         "Lấy TẤT CẢ các mục trong bài. Chỉ trả JSON."}]
     for p in image_paths[:3]:

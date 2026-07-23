@@ -58,7 +58,7 @@ GUIDE_SECTIONS = [
     },
     {
         "title":         "ĐỪNG QUÁ TIN VÀO ẢNH TRÊN MẠNG",
-        "category":      "tham quan",
+        "category":      "điểm checkin",
         "section_label": "3 ĐIỂM CHECK-IN DỄ VỠ MỘNG",
         "bullets": [
             "• Thực tế nhiều khi không giống trên ảnh — nên xem thêm nhiều nguồn",

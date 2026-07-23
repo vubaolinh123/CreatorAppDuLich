@@ -38,7 +38,7 @@ def main():
     # RANDOM hoá từ thư viện: cả DANH SÁCH QUÁN lẫn ảnh nền mỗi slide
     # (spec cũ cố định quán + chứa path ảnh D:\ đã chết → lần nào cũng y hệt).
     from tools.venues_db import get_all
-    from tools.venue_picker import VenuePicker
+    from tools.venue_picker import VenuePicker, CHOI_CATS
     allv = get_all()
 
     def _sample(cats: list[str], n: int) -> list[dict]:
@@ -51,7 +51,7 @@ def main():
 
     _CATS = {"quan_an": (["quán ăn"], 8),
              "khach_san": (["khách sạn"], 8),
-             "checkin": (["tham quan", "quán cà phê"], 5)}
+             "checkin": (list(CHOI_CATS), 5)}   # check-in + cà phê (khớp pill "& CÀ PHÊ")
     slides = spec.get("slides") or {}
     for key, s in slides.items():
         if not isinstance(s, dict):

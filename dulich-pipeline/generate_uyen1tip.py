@@ -9,7 +9,7 @@ import sys, argparse
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
-from tools.venue_picker import VenuePicker
+from tools.venue_picker import VenuePicker, CHECKIN_CATS
 from tools.uyen1tip_renderer import render_cover, render_intro, render_tip
 
 SLIDE_DEFS = [
@@ -20,7 +20,8 @@ SLIDE_DEFS = [
             "NÊN XEM REVIEW THỰC TẾ TỪ NHIỀU NGUỒN, CÓ VID CÀNG TỐT",
         ],
         "section": "ĐỊA ĐIỂM CHECK-IN HOT HIT DẠO NÀY",
-        "loai_quan": None, "n_venues": 10, "n_cols": 2,
+        "loai_quan": ("điểm checkin", "điểm checkin free"),
+        "seeding_first": False, "n_venues": 10, "n_cols": 2,
     },
     {
         "title": "KO PHẢI LÚC NÀO CŨNG SĂN DC MÂY",
@@ -29,7 +30,7 @@ SLIDE_DEFS = [
             "XEM KĨ THỜI TIẾT, CHỌN NGÀY NẮNG SAU MƯA MÂY SẼ DÀY HƠN. ĐI MẤY QUÁN SĂN MÂY GẦN TRUNG TÂM LÀ OKI",
         ],
         "section": "ĐỊA ĐIỂM SĂN MÂY ĐẸP, GẦN TRUNG TÂM",
-        "loai_quan": "tham quan", "n_venues": 4, "n_cols": 1,
+        "loai_quan": "điểm săn mây", "n_venues": 4, "n_cols": 1,
     },
     {
         "title": "KO DC QUÊN MẤY DỊCH VỤ NÀY",
@@ -100,42 +101,35 @@ def main():
 
     paths = []
 
-    # 0 — Cover
-    cover_v = picker.pick_one(co_nguoi="có") or picker.pick_one()
-    paths.append(render_cover(
-        picker.image(cover_v),
-        str(p / "uyen1tip_00_cover.png"),
-    ))
-    print(f"[0] Cover  -> {cover_v['name']}")
-
-    # 1 — Intro
-    intro_v = picker.pick_one(loai_quan="tham quan") or picker.pick_one()
+    # 0 — Intro (bỏ slide cover không tiêu đề theo feedback NV)
+    intro_v = picker.pick_one(loai_quan=CHECKIN_CATS) or picker.pick_one()
     paths.append(render_intro(
         picker.image(intro_v),
-        str(p / "uyen1tip_01_intro.png"),
+        str(p / "uyen1tip_00_intro.png"),
         text=_t["intro"],
     ))
-    print(f"[1] Intro")
+    print(f"[0] Intro")
 
-    # 2-6 — Tip slides
+    # 1-5 — Tip slides
     for i, sdef in enumerate(SLIDE_DEFS):
         # bg: any available venue (will be heavily overlaid, track=False to preserve pool)
-        bg_v = picker.pick_one(track=False) or cover_v
+        bg_v = picker.pick_one(track=False) or intro_v
 
         # Pick venues first to avoid depleting pool before frame pick
         venues = []
         n = sdef.get("n_venues", 0)
         if n > 0 and not sdef.get("static_items"):
-            venues = picker.pick_n(n, loai_quan=sdef.get("loai_quan"))
+            venues = picker.pick_n(n, loai_quan=sdef.get("loai_quan"),
+                                   seeding_first=sdef.get("seeding_first", True))
 
         # Frame photo: use first venue's image if available, else pick separately
         if venues:
             frame_v = venues[0]
         else:
-            frame_lq = sdef.get("loai_quan") or "tham quan"
+            frame_lq = sdef.get("loai_quan") or CHECKIN_CATS
             frame_v = picker.pick_one(loai_quan=frame_lq, track=False) or bg_v
 
-        out_name = f"uyen1tip_0{i + 2}_tip{i}.png"
+        out_name = f"uyen1tip_0{i + 1}_tip{i}.png"
         paths.append(render_tip(
             picker.image(bg_v),
             picker.image(frame_v),
@@ -143,7 +137,7 @@ def main():
             venues,
             str(p / out_name),
         ))
-        print(f"[{i + 2}] Tip: {sdef['title'][:42]}")
+        print(f"[{i + 1}] Tip: {sdef['title'][:42]}")
         if venues:
             print(f"     venues: {', '.join(v['name'] for v in venues[:4])}{'...' if len(venues) > 4 else ''}")
 

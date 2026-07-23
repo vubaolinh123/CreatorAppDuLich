@@ -5,7 +5,41 @@ venue_picker.py — Shared venue selection helpers cho tất cả generate scrip
 from __future__ import annotations
 
 import random
+from pathlib import Path
 from tools.venues_db import get_all, resolve_image
+
+# Nhóm loại "chỗ chơi / check-in" dùng chung cho các slide không phải quán ăn/khách sạn.
+CHECKIN_CATS = ("điểm checkin", "điểm checkin free", "điểm săn mây")
+CHOI_CATS    = CHECKIN_CATS + ("quán cà phê",)
+
+# ── Ảnh chung (data/album): dùng cho ảnh nền KHÔNG phải của quán, hoặc quán chưa có ảnh ──
+_ALBUM_USED: set = set()
+
+
+def _album_candidates() -> list:
+    from tools import album_db
+    root = Path(__file__).resolve().parent.parent
+    out = []
+    for im in album_db.get_all():
+        p = root / im.get("file", "")
+        if p.exists():
+            out.append(str(p))
+    return out
+
+
+def album_bg() -> str:
+    """Random 1 ảnh từ kho ảnh chung, KHÔNG trùng ảnh đã dùng trong lần chạy này
+    (mỗi album chạy 1 process riêng nên set reset theo từng album)."""
+    cands = _album_candidates()
+    if not cands:
+        return ""
+    fresh = [p for p in cands if p not in _ALBUM_USED]
+    if not fresh:
+        _ALBUM_USED.clear()
+        fresh = cands
+    p = random.choice(fresh)
+    _ALBUM_USED.add(p)
+    return p
 
 
 class VenuePicker:
@@ -80,7 +114,7 @@ class VenuePicker:
                                 categories: list | None = None,
                                 co_nguoi: str | None = None) -> list:
         """Pick n venues rotating through loai_quan categories."""
-        cats = categories or ["quán ăn", "quán cà phê", "khách sạn", "tham quan"]
+        cats = categories or ["quán ăn", "quán cà phê", "khách sạn", "điểm checkin"]
         result = []
         for i in range(n):
             cat = cats[i % len(cats)]
@@ -90,11 +124,15 @@ class VenuePicker:
         return result
 
     @staticmethod
+    def album_bg() -> str:
+        """Ảnh nền chung không trùng — dùng cho ảnh KHÔNG phải của quán."""
+        return album_bg()
+
+    @staticmethod
     def image(venue: dict) -> str:
         """Ảnh của venue — chọn NGẪU NHIÊN trong bộ ảnh (theo seed của script) để
-        mỗi lần tạo album ảnh nền khác nhau, thay vì luôn lấy ảnh đầu."""
-        import random
-        from pathlib import Path
+        mỗi lần tạo album ảnh nền khác nhau, thay vì luôn lấy ảnh đầu.
+        Quán chưa có ảnh (status none) → lấy ảnh chung."""
         root = Path(__file__).resolve().parent.parent
         cands = []
         for i in (venue.get("images") or []):
@@ -108,4 +146,4 @@ class VenuePicker:
                 cands.append(str(p))
         if cands:
             return random.choice(cands)
-        return resolve_image(venue)
+        return resolve_image(venue) or album_bg()

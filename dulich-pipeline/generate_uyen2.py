@@ -28,34 +28,26 @@ def main():
 
     paths = []
 
-    # 0 — Cover
-    cover_v = picker.pick_one(co_nguoi="có") or picker.pick_one()
-    paths.append(render_cover(
-        picker.image(cover_v),
-        str(p / "uyen2_00_cover.png"),
-    ))
-    print(f"[0] Cover  -> {cover_v['name']}")
-
-    # 1 — Intro
+    # 0 — Intro (bỏ slide cover không tiêu đề theo feedback NV)
     intro_v = picker.pick_one(loai_quan="quán ăn") or picker.pick_one()
     from tools.album_titles import ai_cover_texts
     from tools.uyen2_renderer import INTRO_TEXT
     _t = ai_cover_texts("uyen2", {"intro": INTRO_TEXT})
     paths.append(render_intro(
         picker.image(intro_v),
-        str(p / "uyen2_01_intro.png"),
+        str(p / "uyen2_00_intro.png"),
         text=_t["intro"],
     ))
-    print(f"[1] Intro")
+    print(f"[0] Intro")
 
-    # 2-4 — Review slides (3 quán ăn)
-    review_venues = picker.pick_n(3, loai_quan="quán ăn")
+    # 1-6 — Review slides (6 quán ăn: 3 review + 3 option thêm)
+    review_venues = picker.pick_n(6, loai_quan="quán ăn")
     for i, v in enumerate(review_venues):
         paths.append(render_review(
             picker.image(v),
             v,
             i,
-            str(p / f"uyen2_0{i + 2}_review{i}.png"),
+            str(p / f"uyen2_{i + 1:02d}_review{i}.png"),
         ))
         sig = (v.get("signature") or "")[:55]
         print(f"[{i + 2}] Review -> {v['name']}")

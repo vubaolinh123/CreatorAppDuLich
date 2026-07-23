@@ -21,19 +21,16 @@ from __future__ import annotations
 import sys, random, argparse, json
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent))
-from tools.venue_picker import VenuePicker
+from tools.venue_picker import VenuePicker, album_bg
 from tools.venues_db import get_venues, resolve_image, get_all
 from tools.vy1_renderer import (
     render_cover, render_grid_slide, render_food_list_slide, HOOK_HEADLINES,
 )
 
-ANH_DIR = Path(__file__).parent.parent / "anh video du lich"
-
 
 def _pick_bg() -> str:
-    imgs = list(ANH_DIR.glob("*.JPG")) + list(ANH_DIR.glob("*.jpg"))
-    imgs = [p for p in imgs if p.stat().st_size > 50_000]
-    return str(random.choice(imgs)) if imgs else ""
+    # Ảnh nền không phải của quán → lấy random từ kho ảnh chung (không trùng).
+    return album_bg()
 
 
 def _add_resolved(venues: list) -> list:
@@ -154,13 +151,13 @@ def main():
                                    str(p / "vy1_01_cafe.png")))
     grid_specs.append({"label": "cà phê chillchill", "venues": [v["name"] for v in cafes]})
 
-    checkin = _fill_to_4(picker, "tham quan", ["khách sạn"])
+    checkin = _fill_to_4(picker, "điểm checkin free", ["điểm checkin"])
     print(f"[3/7] Check-in grid: {[v['name'] for v in checkin]}")
     paths.append(render_grid_slide(_add_resolved(checkin), "Check-in free",
                                    str(p / "vy1_02_checkin.png")))
     grid_specs.append({"label": "Check-in free", "venues": [v["name"] for v in checkin]})
 
-    hotels = _fill_to_4(picker, "khách sạn", ["tham quan"])
+    hotels = _fill_to_4(picker, "khách sạn", ["điểm checkin free"])
     print(f"[4/7] Hotel grid: {[v['name'] for v in hotels]}")
     paths.append(render_grid_slide(_add_resolved(hotels), "Lưu trú xịn",
                                    str(p / "vy1_03_hotel.png")))

@@ -8,7 +8,7 @@ from __future__ import annotations
 import sys, random, argparse
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent))
-from tools.venue_picker import VenuePicker
+from tools.venue_picker import VenuePicker, CHECKIN_CATS
 from tools.muoi1912_renderer import (
     render_cover, render_guide_slide, render_cta_slide,
     HOOK_LINES, GUIDE_SECTIONS,
@@ -44,8 +44,8 @@ def main():
 
         venue_imgs = [picker.image(v) for v in venues]
 
-        # Pick a separate bg photo for the slide (tham quan for scenic bg)
-        bg_v = picker.pick_one(loai_quan="tham quan") or picker.pick_one()
+        # Pick a separate bg photo for the slide (điểm check-in cho cảnh đẹp)
+        bg_v = picker.pick_one(loai_quan=CHECKIN_CATS) or picker.pick_one()
         bg_path = picker.image(bg_v) if bg_v else (venue_imgs[0] if venue_imgs else "")
 
         out_f = str(p / f"muoi1912_{i:02d}_guide.png")

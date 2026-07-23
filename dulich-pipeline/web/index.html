@@ -385,7 +385,7 @@ async function saveSettings(){
 }
 
 // ---------- THƯ VIỆN ĐỊA ĐIỂM (admin, DB) ----------
-let VOPTS={loai_quan:["quán ăn","quán cà phê","khách sạn","tham quan"],loai:["cần seeding","không seeding"],co_nguoi:["có","không"]};
+let VOPTS={loai_quan:["quán ăn","quán cà phê","khách sạn","điểm checkin","điểm checkin free","điểm săn mây"],loai:["cần seeding","không seeding"],co_nguoi:["có","không"]};
 let VENUE_CACHE=[], VFORM=null;
 function editVenueById(id){const v=VENUE_CACHE.find(x=>x.id===id);if(v)venueForm(v);else toast("Không thấy địa điểm");}
 function deleteVenueById(id){const v=VENUE_CACHE.find(x=>x.id===id);if(v)deleteVenue(id,v.name||"");}

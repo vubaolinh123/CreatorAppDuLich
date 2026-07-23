@@ -7,13 +7,13 @@ from __future__ import annotations
 import sys, argparse
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent))
-from tools.venue_picker import VenuePicker
+from tools.venue_picker import VenuePicker, CHECKIN_CATS
 from tools.muoi1311_renderer import render_cover, render_list_slide, render_cta_slide
 
 SLIDE_CATEGORIES = [
-    ("quán ăn",     "Ăn sáng tại Đà Lạt"),
-    ("tham quan",   "Dalat check-in theo hệ"),
-    ("quán cà phê", "Dalat ăn uống theo hệ"),
+    ("quán ăn",                   "Ăn sáng tại Đà Lạt"),
+    (list(CHECKIN_CATS),          "Dalat check-in theo hệ"),
+    (["quán ăn", "quán cà phê"],  "Dalat ăn uống theo hệ"),
 ]
 
 

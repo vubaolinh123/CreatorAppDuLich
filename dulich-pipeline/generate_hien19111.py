@@ -16,7 +16,7 @@ from __future__ import annotations
 import sys, random, argparse
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent))
-from tools.venue_picker import VenuePicker
+from tools.venue_picker import VenuePicker, album_bg
 from tools.venues_db import resolve_image
 from tools.hien19111_renderer import (
     render_cover, render_music_slide,
@@ -24,13 +24,10 @@ from tools.hien19111_renderer import (
     HOOK, SONGS,
 )
 
-ANH_DIR = Path(__file__).parent.parent / "anh video du lich"
-
 
 def _pick_bg() -> str:
-    imgs = list(ANH_DIR.glob("*.JPG")) + list(ANH_DIR.glob("*.jpg"))
-    imgs = [p for p in imgs if p.stat().st_size > 50_000]
-    return str(random.choice(imgs)) if imgs else ""
+    # Ảnh nền không phải của quán → lấy random từ kho ảnh chung (không trùng).
+    return album_bg()
 
 
 def _venue_bg(venues: list) -> str:
@@ -64,7 +61,7 @@ VENUE_SLIDES = [
     ("hotel",        "Chỗ ngủ sạch sẽ, tiện nghi mà rẻ nữa\nthì chỉ có mấy chỗ này",
      "150k - 200k/đêm/người", "khách sạn", None, 10, True),
     ("sight",        "Check in mấy chỗ đậm vibe Đà Lạt nè",
-     "", "tham quan", None, 14, False),
+     "", "điểm checkin", "điểm checkin free", 14, False),
 ]
 
 

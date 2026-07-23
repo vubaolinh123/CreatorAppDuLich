@@ -30,13 +30,20 @@ def _locked(fn):
 
 LOAI_OPTIONS      = ("cần seeding", "không seeding")
 CO_NGUOI_OPTIONS  = ("có", "không")
-LOAI_QUAN_OPTIONS = ("quán ăn", "quán cà phê", "khách sạn", "tham quan")
+LOAI_QUAN_OPTIONS = ("quán ăn", "quán cà phê", "khách sạn",
+                     "điểm checkin", "điểm checkin free", "điểm săn mây")
 
 
 # ── Internal ──────────────────────────────────────────────────────────────────
 
 def _normalize(v: dict) -> dict:
-    """Đảm bảo venue có đủ field mới: feature (str), images (list). Migrate image_path → images."""
+    """Đảm bảo venue có đủ field mới: feature (str), images (list). Migrate image_path → images.
+    Migrate loại cũ 'tham quan' → 'điểm checkin'; chuẩn hoá 'loai' về chữ thường."""
+    if (v.get("loai_quan") or "").strip() == "tham quan":
+        v["loai_quan"] = "điểm checkin"
+    lo = (v.get("loai") or "").strip().lower()
+    if lo:
+        v["loai"] = lo
     v.setdefault("feature", "")
     imgs = v.get("images")
     if not isinstance(imgs, list):
@@ -296,7 +303,7 @@ if __name__ == "__main__":
     elif cmd == "add":
         name    = input("Tên quán: ")
         address = input("Địa chỉ: ")
-        lq      = input("Loại quán (quán ăn/quán cà phê/khách sạn/tham quan): ") or "quán ăn"
+        lq      = input("Loại quán (quán ăn/quán cà phê/khách sạn/điểm checkin/điểm checkin free/điểm săn mây): ") or "quán ăn"
         loai    = input("Cần seeding? (cần seeding/không seeding): ") or "cần seeding"
         co_ng   = input("Có người? (có/không): ") or "không"
         sig     = input("Món đặc trưng/ghi chú: ")

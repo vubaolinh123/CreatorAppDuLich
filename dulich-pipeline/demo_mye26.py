@@ -53,8 +53,6 @@ def _catpool(category: str) -> dict:
     p = _POOLS.get(category)
     if not p:
         cands = [v for v in get_all() if (v.get("loai_quan") or "").strip() == category]
-        if category == "tham quan":   # gộp thêm cà phê cho phong phú điểm chơi
-            cands += [v for v in get_all() if (v.get("loai_quan") or "").strip() == "quán cà phê"]
         _rnd.shuffle(cands)
         p = _POOLS[category] = {"seed": [v for v in cands if VenuePicker.is_seeding(v)],
                                 "rest": [v for v in cands if not VenuePicker.is_seeding(v)]}
@@ -62,35 +60,46 @@ def _catpool(category: str) -> dict:
 
 def _pick(category: str, prefer_seeding: bool = False) -> dict:
     """Bốc 1 venue. prefer_seeding=True → ưu tiên quán seeding trước (dành cho bữa tối / check-in);
-    False → lấy quán thường trước, để dành seeding cho slot phù hợp."""
-    p = _catpool(category)
-    for key in (("seed", "rest") if prefer_seeding else ("rest", "seed")):
-        if p[key]:
-            return p[key].pop()
+    False → lấy quán thường trước, để dành seeding cho slot phù hợp.
+    Cạn pool → nạp lại cho lặp (KHÔNG in placeholder 'Đà Lạt' lên slide)."""
+    for _try in range(2):
+        p = _catpool(category)
+        for key in (("seed", "rest") if prefer_seeding else ("rest", "seed")):
+            if p[key]:
+                return p[key].pop()
+        _POOLS.pop(category, None)   # cạn → reset pool, thử lại
     return {"name": "Đà Lạt", "address": "Đà Lạt", "images": []}
 
 # ── Lịch trình 3 ngày: khung giờ giữ nguyên, QUÁN random từ thư viện ──────────
+# Loại chuẩn 6 nhóm: điểm checkin (tham quan có phí) · điểm checkin free (vào tự do,
+# mở buổi tối) · quán cà phê. Slot buổi tối lấy điểm checkin free cho hợp lý.
 _DAY_SLOTS = [
     [("7:30", "Ăn sáng", "quán ăn"), ("9:00", "Check-in", "khách sạn"),
-     ("11:30", "Ăn trưa", "quán ăn"), ("14:00", "Tham quan", "tham quan"),
-     ("17:00", "Chill chiều", "tham quan"), ("19:00", "Ăn tối", "quán ăn"),
-     ("20:30", "Dạo phố đêm", "tham quan")],
+     ("11:30", "Ăn trưa", "quán ăn"), ("14:00", "Tham quan", "điểm checkin"),
+     ("17:00", "Chill chiều", "điểm checkin free"), ("19:00", "Ăn tối", "quán ăn"),
+     ("20:30", "Dạo phố đêm", "điểm checkin free")],
     [("7:00", "Ăn sáng sớm", "quán ăn"), ("8:30", "Check-in view đẹp", "khách sạn"),
-     ("10:00", "Cà phê", "tham quan"), ("12:00", "Ăn trưa", "quán ăn"),
-     ("14:30", "Tham quan", "tham quan"), ("17:30", "Mua đặc sản", "tham quan"),
+     ("10:00", "Cà phê", "quán cà phê"), ("12:00", "Ăn trưa", "quán ăn"),
+     ("14:30", "Tham quan", "điểm checkin"), ("17:30", "Mua đặc sản", "điểm checkin free"),
      ("19:00", "Ăn tối", "quán ăn")],
-    [("7:00", "Ăn sáng", "quán ăn"), ("8:30", "Tham quan", "tham quan"),
+    [("7:00", "Ăn sáng", "quán ăn"), ("8:30", "Tham quan", "điểm checkin"),
      ("10:30", "Check out", "khách sạn"), ("12:00", "Ăn trưa", "quán ăn"),
-     ("14:00", "Cà phê chill", "tham quan"), ("16:00", "Mua quà đặc sản", "tham quan"),
+     ("14:00", "Cà phê chill", "quán cà phê"), ("16:00", "Mua quà đặc sản", "điểm checkin free"),
      ("18:00", "Ăn tối chia tay", "quán ăn")],
 ]
 
+# 1 khách sạn CỐ ĐỊNH cho cả 3 ngày (ưu tiên khách sạn seeding).
+_HOTEL = _pick("khách sạn", prefer_seeding=True)
+
 def _build_day(slots):
-    # Seeding vào bữa hợp lý: khách sạn → check-in; quán ăn 'tối' → bữa tối. Sáng/trưa/tham quan: quán thường.
+    # KS: dùng chung 1 quán cả 3 ngày. Quán ăn 'tối' → quán seeding. Còn lại: quán thường.
     out = []
     for t, act, cat in slots:
-        prefer = (cat == "khách sạn") or (cat == "quán ăn" and "tối" in act.lower())
-        out.append(_act_v(t, act, _pick(cat, prefer)))
+        if cat == "khách sạn":
+            v = _HOTEL
+        else:
+            v = _pick(cat, prefer_seeding=(cat == "quán ăn" and "tối" in act.lower()))
+        out.append(_act_v(t, act, v))
     return out
 
 NGAY_1_ACTIVITIES = _build_day(_DAY_SLOTS[0])
