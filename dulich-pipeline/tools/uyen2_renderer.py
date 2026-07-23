@@ -14,7 +14,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 from PIL import Image, ImageDraw
-from tools.render_utils import load_font, load_bg, save_slide, draw_pin_icon
+from tools.render_utils import load_font, load_bg, save_slide, draw_pin_icon, safe_hand_text
 
 W, H = 1080, 1390
 
@@ -61,7 +61,7 @@ def render_intro(bg_path, out_path, text=None):
     draw = ImageDraw.Draw(layer)
 
     font = _ufont(52)
-    lines = (text or INTRO_TEXT).split("\n")
+    lines = safe_hand_text(text or INTRO_TEXT).split("\n")
     lh = font.size + 14
     y = 58
     for line in lines:
@@ -93,9 +93,8 @@ def render_review(bg_path, venue, bubble_idx, out_path):
     name_font = _ufont(30)
     review_font = _ufont(26)
 
-    name = (venue.get("name") or "")[:40]
-    review_raw = venue.get("signature") or venue.get("address") or ""
-    review_raw = review_raw[:120]
+    name = safe_hand_text(venue.get("name") or "")[:40]
+    review_raw = safe_hand_text(venue.get("signature") or venue.get("address") or "")[:120]
 
     # Word-wrap review text
     max_line_w = bw - pad * 2 - 32

@@ -45,6 +45,25 @@ def load_font(name: str, size: int) -> ImageFont.FreeTypeFont | ImageFont.ImageF
     return ImageFont.load_default()
 
 
+# Map ký tự typographic → ASCII cho các font handwriting thiếu glyph (vd FCDKCoolCrayon thiếu '%').
+_HAND_MAP = {"%": "", "…": "...", "“": '"', "”": '"', "‘": "'", "’": "'",
+             "–": "-", "—": "-", "•": "-", "→": "-", "×": "x"}
+
+
+def safe_hand_text(s: str) -> str:
+    """Bỏ/thay ký tự font handwriting không vẽ được (%, emoji, ký hiệu lạ) để không ra ô vuông.
+    Giữ nguyên chữ tiếng Việt (≤ U+1EFF) và dấu câu ASCII."""
+    out = []
+    for c in (s or ""):
+        if c in _HAND_MAP:
+            out.append(_HAND_MAP[c])
+        elif ord(c) >= 0x2100:      # emoji / pictograph / mũi tên / ký hiệu → bỏ
+            continue
+        else:
+            out.append(c)
+    return "".join(out)
+
+
 def anton(size: int):
     return load_font("Anton-Regular.ttf", size)
 

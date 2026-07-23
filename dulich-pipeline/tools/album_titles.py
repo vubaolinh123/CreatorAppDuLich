@@ -89,10 +89,14 @@ _KIND_DESC = {
               "intro: 1 dòng duy nhất (KHÔNG xuống dòng), tối đa 16 từ, giọng tâm sự rút kinh nghiệm, "
               "có thể kèm ':))))'. "
               "t1..t5: 5 title tip IN HOA bắt đầu bằng 'KO' hoặc từ phủ định/nhấn mạnh, mỗi cái tối đa 8 từ, "
-              "giữ đúng chủ đề lần lượt: ảnh mạng ảo, săn mây, book phòng/dịch vụ, đồ dùng cần thiết, hỏi giá khi ăn."),
+              "giữ đúng chủ đề lần lượt: ảnh mạng ảo, săn mây, book phòng/dịch vụ, đồ dùng cần thiết, hỏi giá khi ăn. "
+              "CHỈ dùng chữ tiếng Việt + số + dấu câu cơ bản (. , ! ? : ) ( ). TUYỆT ĐỐI KHÔNG dùng "
+              "dấu %, ký hiệu đặc biệt, emoji, icon."),
     "uyen2": ("Cover album nhật ký review quán ăn Đà Lạt giọng teen. "
               "intro: đúng 3 dòng ngăn bằng \\n, dòng 1 nêu chuyến đi (vd 'Đà Lạt 3n2d'), "
-              "dòng 2-3 kể việc ăn theo review + cái kết, mỗi dòng tối đa 6 từ, có thể kèm ':))))'."),
+              "dòng 2-3 kể việc ăn theo review + cái kết, mỗi dòng tối đa 6 từ, có thể kèm ':))))'. "
+              "CHỈ dùng chữ tiếng Việt + số + dấu câu cơ bản (. , ! ? : ) ( ). TUYỆT ĐỐI KHÔNG dùng "
+              "dấu %, ký hiệu đặc biệt, emoji, icon."),
 }
 
 

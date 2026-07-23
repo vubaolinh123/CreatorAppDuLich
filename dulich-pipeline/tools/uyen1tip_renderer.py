@@ -16,7 +16,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from PIL import Image, ImageDraw
 from tools.render_utils import (
     load_font, load_bg, load_thumb, save_slide,
-    draw_pin_icon, rounded_thumb, beviet_bold,
+    draw_pin_icon, rounded_thumb, beviet_bold, safe_hand_text,
 )
 
 W, H = 1080, 1390
@@ -40,13 +40,14 @@ def _photo_bg(photo_path):
 
 
 def _stroke_text(draw, pos, text, font, fill=(20, 20, 20), stroke_w=3):
-    draw.text(pos, text, font=font, fill=fill,
+    draw.text(pos, safe_hand_text(text), font=font, fill=fill,
               stroke_width=stroke_w, stroke_fill=(255, 255, 255))
 
 
 def _wrapped_stroke(draw, x, y, text, font, max_w,
                     fill=(20, 20, 20), stroke_w=3):
     """Word-wrap + stroke-draw. Returns y below last line."""
+    text = safe_hand_text(text)
     words = text.split()
     lines, cur = [], ""
     for word in words:
@@ -109,7 +110,7 @@ INTRO_TEXT_VN = "Đi Đà Lạt nhiều r nhưng giờ ce tụi mới nhận ra 
 
 
 def render_intro(bg_path, out_path, text=None):
-    intro = (text or INTRO_TEXT_VN).replace("\n", " ")
+    intro = safe_hand_text((text or INTRO_TEXT_VN).replace("\n", " "))
     img = load_bg(bg_path, W, H)
     canvas = img.convert("RGBA")
     layer = Image.new("RGBA", (W, H), (0, 0, 0, 0))
