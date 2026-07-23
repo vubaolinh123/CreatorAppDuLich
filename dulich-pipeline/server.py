@@ -2692,6 +2692,7 @@ def _start_news_scheduler():
 
 
 # ── Tự động mỗi ngày 7h: 5 kịch bản video + 5 album ảnh cho mỗi nv ────────────
+DAILY_AUTO_ENABLED = False   # TẮT TẠM: không tự tạo album + kịch bản. Bật lại = True.
 DAILY_SLOT_HOUR = 7
 DAILY_N_ALBUMS = 5
 DAILY_N_SCRIPTS = 5
@@ -2787,6 +2788,9 @@ def _daily_scheduler():
 
 
 def _start_daily_scheduler():
+    if not DAILY_AUTO_ENABLED:
+        print("[Server] Daily auto TẮT (DAILY_AUTO_ENABLED=False) — không tự tạo album/kịch bản.", file=sys.stderr)
+        return
     threading.Thread(target=_daily_scheduler, daemon=True).start()
     print(f"[Server] Daily auto scheduler bật ({DAILY_SLOT_HOUR}h).", file=sys.stderr)
 

@@ -7,7 +7,7 @@ from __future__ import annotations
 import sys, random, argparse
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent))
-from tools.venue_picker import VenuePicker
+from tools.venue_picker import VenuePicker, CHECKIN_CATS
 from tools.hien21113_renderer import render_cover, render_venue_slide, HOOK_TEXTS, VENUE_POSITIONS
 
 
@@ -18,7 +18,8 @@ def main():
     args = parser.parse_args()
 
     picker = VenuePicker(seed=args.seed)
-    venues = picker.pick_n(5)
+    # 5 venue gốc (cover + 4 slide) + 3 slide check-in MỚI ở cuối
+    venues = picker.pick_n(5) + picker.pick_n(3, loai_quan=CHECKIN_CATS)
 
     out_dir = args.out or str(Path(__file__).parent / "output" / "albums" / "hien21113_demo")
     p = Path(out_dir)

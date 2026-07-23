@@ -63,11 +63,14 @@ def main():
             if picked:
                 s["venues"] = [{"name": v["name"], "signature": _sig(v),
                                 "address": (v.get("address") or "").strip()} for v in picked]
-        # ảnh nền: random từ 1 quán trong danh sách slide (cover: quán ăn bất kỳ)
-        bgv = random.choice(picked) if picked else random.choice(
-            [v for v in allv if (v.get("loai_quan") or "") == "quán ăn"] or allv)
-        s["bg_venue"] = bgv["name"]
-        s["bg_image"] = VenuePicker.image(bgv) or ""
+        # nền: slide có list quán → ảnh 1 quán trong slide; slide cover (không quán) → ảnh chung
+        if picked:
+            bgv = random.choice(picked)
+            s["bg_venue"] = bgv["name"]
+            s["bg_image"] = VenuePicker.image(bgv) or ""
+        else:
+            s["bg_venue"] = ""
+            s["bg_image"] = VenuePicker.album_bg()
 
     out_dir = Path(args.out) if args.out else spec_path.parent
     out_dir.mkdir(parents=True, exist_ok=True)

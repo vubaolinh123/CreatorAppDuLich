@@ -28,13 +28,12 @@ def main():
 
     paths = []
 
-    # 0 — Intro (bỏ slide cover không tiêu đề theo feedback NV)
-    intro_v = picker.pick_one(loai_quan="quán ăn") or picker.pick_one()
+    # 0 — Intro (bỏ slide cover không tiêu đề theo feedback NV). Nền: ảnh chung (không phải quán).
     from tools.album_titles import ai_cover_texts
     from tools.uyen2_renderer import INTRO_TEXT
     _t = ai_cover_texts("uyen2", {"intro": INTRO_TEXT})
     paths.append(render_intro(
-        picker.image(intro_v),
+        picker.album_bg(),
         str(p / "uyen2_00_intro.png"),
         text=_t["intro"],
     ))

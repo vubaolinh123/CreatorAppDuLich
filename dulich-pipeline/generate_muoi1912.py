@@ -31,9 +31,8 @@ def main():
     p = Path(out_dir)
     p.mkdir(parents=True, exist_ok=True)
 
-    cover_v = picker.pick_one(co_nguoi="có") or picker.pick_one()
-    cover_bg = picker.image(cover_v)
-    print(f"[COVER] hook: {hook[0]}, bg: {cover_v['name']}")
+    cover_bg = picker.album_bg()   # cover không nói về 1 quán → ảnh chung
+    print(f"[COVER] hook: {hook[0]}")
     paths = [render_cover(hook, cover_bg, str(p / "muoi1912_00_cover.png"))]
 
     for i, sec in enumerate(GUIDE_SECTIONS, 1):

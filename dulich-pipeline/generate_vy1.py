@@ -94,8 +94,8 @@ def _render_from_spec(spec: dict, p: Path) -> list:
         print(f"[{i}/7] {label} ({len(venues)} venues) → {out}")
         paths.append(render_grid_slide(venues, label, out))
 
-    # Slide 6: Food list
-    all_food = _add_resolved(get_venues(loai_quan="quán ăn"))
+    # Slide 6: Food list — quán seeding (Sườn cay/Trạm Nắng/Yod Thong) lên đầu
+    all_food = _add_resolved(VenuePicker.seeding_first(get_venues(loai_quan="quán ăn")))
     out6 = str(p / "vy1_06_list.png")
     print(f"[7/7] Food list ({len(all_food)} venues) → {out6}")
     paths.append(render_food_list_slide(list_bg, all_food, all_food[:4], out6))

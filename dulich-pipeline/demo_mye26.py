@@ -121,7 +121,7 @@ def main():
         "month_tag": "Tháng 6",
     })
     cover = CoverData(
-        background_path=_day_bg(NGAY_1_ACTIVITIES),
+        background_path=VenuePicker.album_bg(),   # cover không nói về 1 quán → ảnh chung
         month_tag=texts["month_tag"],
         handle_tag="@thamhiemdalat",
         location_tag="Đà Lạt",

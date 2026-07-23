@@ -35,18 +35,22 @@ def main():
     p = Path(out_dir)
     p.mkdir(parents=True, exist_ok=True)
 
-    cover_v = picker.pick_one(co_nguoi="có") or picker.pick_one()
-    cover_bg = picker.image(cover_v)
+    cover_bg = picker.album_bg()   # cover không nói về 1 quán → ảnh chung
     paths = [render_cover(cover_bg, str(p / "muoi1311_00_cover.png"))]
-    print(f"[COVER] bg: {cover_v['name']}")
+    print(f"[COVER] album_bg")
 
     for i, (cat, title) in enumerate(slide_cats, 1):
-        raw = picker.pick_n(12, loai_quan=cat)
-        seen = set()
-        unique = [v for v in raw if v["name"] not in seen and not seen.add(v["name"])]
-        mid = len(unique) // 2
-        local = unique[:max(mid, 1)]
-        hothit = unique[mid:] if len(unique) > 1 else []
+        if isinstance(cat, list) and set(cat) == {"quán ăn", "quán cà phê"}:
+            # slide "ăn uống": cột trái = quán ăn, cột hot-hit = quán cà phê
+            local  = picker.pick_n(6, loai_quan="quán ăn")
+            hothit = picker.pick_n(6, loai_quan="quán cà phê")
+        else:
+            raw = picker.pick_n(12, loai_quan=cat)
+            seen = set()
+            unique = [v for v in raw if v["name"] not in seen and not seen.add(v["name"])]
+            mid = len(unique) // 2
+            local = unique[:max(mid, 1)]
+            hothit = unique[mid:] if len(unique) > 1 else []
 
         # Use first local venue photo as slide background
         bg = picker.image(local[0]) if local else picker.image(picker.pick_one())

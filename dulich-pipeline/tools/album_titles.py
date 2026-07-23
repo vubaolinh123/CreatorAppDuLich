@@ -66,10 +66,9 @@ _KIND_DESC = {
             "title: đối tượng, tối đa 3 từ, chữ thường (vd 'khách du lịch', 'dân sành ăn', 'phượt thủ'). "
             "line1: tối đa 6 từ, bắt đầu bằng '/'. line2: tối đa 6 từ, kết thúc bằng '/'. "
             "line1+line2 đọc liền thành 1 câu có nghĩa."),
-    "hien1": ("Album cập nhật tình hình đèo + quán ăn Đà Lạt. "
-              "line1: dòng 1 title cover, 3-4 từ (vd 'Cập nhật tình hình'). "
-              "line2: dòng 2 title cover, 4-6 từ, KHÔNG kèm ngày tháng (hệ thống tự thêm ngày). "
-              "grid1/grid2/grid3: 3 title cho 3 trang danh sách quán ăn, mỗi cái 6-9 từ, khác nhau rõ."),
+    "hien1": ("Album BẢN ĐỒ MÓN NGON / quán ăn nhất định phải thử ở Đà Lạt (KHÔNG nói về đèo). "
+              "line1: dòng 1 title cover, 3-4 từ, chủ đề món ngon/quán ăn Đà Lạt (vd 'Bản đồ món ngon'). "
+              "line2: dòng 2 title cover, 3-6 từ, KHÔNG kèm ngày tháng (vd 'Đà Lạt phải thử')."),
     "hien2": ("Cover album spotlight địa điểm Đà Lạt, hook kiểu POV tâm trạng giới trẻ. "
               "pov: đúng 3 dòng ngăn bằng \\n, dòng 1 là 'POV:', 2 dòng sau kể 1 tình huống "
               "đời thường dẫn tới việc đi Đà Lạt (thất tình, tăng lương, stress, hứng lên lúc nửa đêm...), "

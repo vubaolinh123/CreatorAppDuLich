@@ -51,11 +51,11 @@ def _pick_n(picker: VenuePicker, cat: str, n: int = 10,
 
 VENUE_SLIDES = [
     ("cafe_sang",    "Chữa lành thì sáng đi\ncà phê rẻ rẻ thui",
-     "", "quán cà phê", "quán ăn", 10, True),
+     "", "quán cà phê", None, 10, True),
     ("cafe_checkin", "Còn đây là mấy quán\ncafe check-in đẹp đẹp",
      "Nước từ 80k - 120k/người", "quán cà phê", None, 10, True),
     ("food",         "Mấy quán ăn vừa ngon\nrẻ mà vẫn đảm bảo view",
-     "Từ 30k - 200k/người", "quán ăn", "quán cà phê", 10, True),
+     "Từ 30k - 200k/người", "quán ăn", None, 10, True),
     ("snack",        "Ăn hàng Đà Lạt\ncũng khác nữa",
      "Đặc sản vỉa hè không thể bỏ qua", "quán ăn", None, 10, True),
     ("hotel",        "Chỗ ngủ sạch sẽ, tiện nghi mà rẻ nữa\nthì chỉ có mấy chỗ này",

@@ -101,10 +101,9 @@ def main():
 
     paths = []
 
-    # 0 — Intro (bỏ slide cover không tiêu đề theo feedback NV)
-    intro_v = picker.pick_one(loai_quan=CHECKIN_CATS) or picker.pick_one()
+    # 0 — Intro (bỏ slide cover không tiêu đề theo feedback NV). Nền: ảnh chung (không phải quán).
     paths.append(render_intro(
-        picker.image(intro_v),
+        picker.album_bg(),
         str(p / "uyen1tip_00_intro.png"),
         text=_t["intro"],
     ))

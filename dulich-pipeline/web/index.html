@@ -336,6 +336,9 @@ async function renderSettings(){
         }
       });
     }catch(e){}
+    html+=`<div style="margin:22px 0 8px;font-weight:800;color:var(--pine)">Công cụ APIFY</div>
+      <div class="muted" style="font-size:12px;margin-bottom:8px">Cào ảnh Google Maps cho các quán trong Thư viện còn thiếu ảnh (&lt;8 ảnh). Có thể mất vài phút, tốn credit APIFY.</div>
+      <button class="btn-ghost" onclick="scrapeAllVenues()">⬇ Cào ảnh APIFY (quán thiếu ảnh)</button>`;
     html+=`<div style="display:flex;gap:8px;margin-top:18px">
       <button class="btn" style="flex:1" onclick="saveSettings()">💾 Lưu</button>
       <button class="btn-ghost" onclick="renderHome()">← Quay lại</button></div>`;
