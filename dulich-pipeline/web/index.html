@@ -212,7 +212,7 @@
 </div>
 
 <!-- overlays -->
-<div class="viewer hidden" id="viewer"><button class="close" onclick="closeViewer()">✕</button><video id="viewerVid" controls playsinline preload="auto"></video></div>
+<div class="viewer hidden" id="viewer"><button class="close" onclick="closeViewer()">✕</button><video id="viewerVid" controls playsinline preload="metadata"></video></div>
 <div class="imgview hidden" id="imgview" onclick="if(event.target.id==='imgview')closeImg()"><button class="close" onclick="closeImg()">✕</button><button class="lb-nav lb-prev" onclick="event.stopPropagation();lbNav(-1)">‹</button><img id="imgviewImg"><button class="lb-nav lb-next" onclick="event.stopPropagation();lbNav(1)">›</button><div class="lb-count" id="lbCount"></div></div>
 <div class="imgview hidden" id="galview" onclick="if(event.target.id==='galview')closeGal()" style="align-items:flex-start;overflow-y:auto;padding:24px 0"><button class="close" onclick="closeGal()" style="position:fixed">✕</button><div id="galInner" style="display:flex;flex-direction:column;gap:14px;align-items:center;width:100%"></div></div>
 <div class="created hidden" id="created"><div class="box"><div class="ok">✅</div><div style="font-weight:700;font-size:18px;margin-top:6px">Đã tạo video!</div><div class="muted">Đang render ở nền — bạn cứ tạo clip mới.</div></div></div>
@@ -1095,7 +1095,8 @@ async function deleteDraft(i){
   try{ await fetch(API+"/script-drafts-delete",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({id:d.id})}); }catch{}
   VIDEO_DRAFTS.splice(i,1); renderDrafts(); toast("Đã xoá");
 }
-function openViewer(url,thumb){const v=document.getElementById("viewerVid");v.poster=thumb?API+thumb:"";v.src=API+url;document.getElementById("viewer").classList.remove("hidden");v.play().catch(()=>{});}
+// Ưu tiên bản preview 480p (~1/10 dung lượng) → bấm là phát ngay. Bản gốc vẫn dùng để đăng.
+function openViewer(url,thumb,preview){const v=document.getElementById("viewerVid");v.poster=thumb?API+thumb:"";v.src=API+(preview||url);document.getElementById("viewer").classList.remove("hidden");v.play().catch(()=>{});}
 function closeViewer(){const v=document.getElementById("viewerVid");v.pause();v.removeAttribute("src");document.getElementById("viewer").classList.add("hidden");}
 let LIB_FILTER="";
 function setLibFilter(m){ LIB_FILTER=m; renderLibrary(); }
@@ -1137,19 +1138,22 @@ function statusChip(s){
 }
 // Thẻ media cho video: ưu tiên ảnh thumbnail JPG (nhẹ, hết lag) — bấm ▶ mới load video.
 // Không có thumb (video cũ) → fallback <video preload=metadata>.
-function videoMedia(url,thumb,ratio){
+function videoMedia(url,thumb,ratio,preview){
   const r=ratio||"9/16";
-  if(thumb) return `<div style="position:relative;cursor:pointer;aspect-ratio:${r}" onclick="openViewer('${url}','${thumb}')">
-    <img src="${API+thumb}" loading="lazy" style="width:100%;height:100%;object-fit:cover;background:#000;border-radius:10px">
+  const open=`openViewer('${url}','${thumb||""}','${preview||""}')`;
+  if(thumb) return `<div style="position:relative;cursor:pointer;aspect-ratio:${r}" onclick="${open}">
+    <img src="${API+thumb}" loading="lazy" decoding="async" style="width:100%;height:100%;object-fit:cover;background:#000;border-radius:10px">
     <span style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:38px;color:#fff;text-shadow:0 2px 8px rgba(0,0,0,.6)">▶</span></div>`;
-  return `<video src="${API+url}" preload="metadata" muted playsinline onclick="openViewer('${url}')" style="cursor:pointer;aspect-ratio:${r};width:100%;object-fit:cover;background:#000;border-radius:10px"></video>`;
+  // Không có thumb: đừng nhúng <video> (mỗi thẻ mở 1 kết nối kéo đầu mp4) — hiện placeholder, bấm mới tải.
+  return `<div style="position:relative;cursor:pointer;aspect-ratio:${r};background:#111;border-radius:10px;display:flex;align-items:center;justify-content:center" onclick="${open}">
+    <span style="font-size:38px;color:#fff;opacity:.85">▶</span></div>`;
 }
 function libCard(url,topic,user,status,time,rec){
   const d=time?new Date(time*1000).toLocaleDateString("vi"):"";
   const media=(rec&&rec.archived)
     ? `<a href="${rec.drive_link||"#"}" target="_blank" style="display:flex;flex-direction:column;align-items:center;justify-content:center;aspect-ratio:9/16;background:var(--surface2);border-radius:10px;text-decoration:none;gap:8px"><span style="font-size:34px">📁</span><span style="font-size:12px;font-weight:700">Đã lưu trên Drive</span><span class="muted" style="font-size:11px">bấm để mở</span></a>`
-    : videoMedia(url,(rec&&rec.thumb_url)||"");
-  return `<div class="lib-card">${media}<div class="cap" style="flex-direction:column;align-items:stretch;gap:2px"><span>${topic||""}${user?" · "+makerName(user):""}</span><div style="display:flex;justify-content:space-between;align-items:center">${status?statusChip(status):""}<span class="muted" style="font-size:11px">${d}</span>${(rec&&rec.archived)?"":`<button class="expand" onclick="openViewer('${url}','${(rec&&rec.thumb_url)||""}')">⤢</button>`}</div></div></div>`;
+    : videoMedia(url,(rec&&rec.thumb_url)||"","",(rec&&rec.preview_url)||"");
+  return `<div class="lib-card">${media}<div class="cap" style="flex-direction:column;align-items:stretch;gap:2px"><span>${topic||""}${user?" · "+makerName(user):""}</span><div style="display:flex;justify-content:space-between;align-items:center">${status?statusChip(status):""}<span class="muted" style="font-size:11px">${d}</span>${(rec&&rec.archived)?"":`<button class="expand" onclick="openViewer('${url}','${(rec&&rec.thumb_url)||""}','${(rec&&rec.preview_url)||""}')">⤢</button>`}</div></div></div>`;
 }
 
 // ---------- ADMIN: duyệt bài + KPI ----------
@@ -1183,13 +1187,24 @@ function setAdminTab(t){ ADMIN_TAB=t;
   if(p)p.className="chip "+(t==="pending"?"btn":"btn-ghost"); if(q)q.className="chip "+(t==="posted"?"btn":"btn-ghost");
   renderReview();
 }
+// Lọc theo ngày ngay từ server — trước đây tải hết 473 album + cover PNG 1-3MB nên trang duyệt rất lâu.
+let REV_RANGE="today", REV_SHOWN=24, REV_TOTAL=0;
+function revSince(){
+  if(REV_RANGE==="all")return 0;
+  const d=new Date(); d.setHours(0,0,0,0);
+  if(REV_RANGE==="7d") d.setDate(d.getDate()-6);
+  return Math.floor(d.getTime()/1000);
+}
+function setRevRange(r){ REV_RANGE=r; REV_SHOWN=24; adminReviewLoad(); }
 async function adminReviewLoad(){
+  const box=document.getElementById("reviewBox"); if(box){box.classList.add("muted");box.textContent="Đang tải…";}
   try{
+    const s=revSince();
     const [lv,la]=await Promise.all([
-      fetch(API+`/library?role=admin`,{cache:"no-store"}).then(r=>r.json()),
-      fetch(API+`/album-library?role=admin`,{cache:"no-store"}).then(r=>r.json())
+      fetch(API+`/library?role=admin&since=${s}`,{cache:"no-store"}).then(r=>r.json()),
+      fetch(API+`/album-library?role=admin&since=${s}`,{cache:"no-store"}).then(r=>r.json())
     ]);
-    const vids=(lv.videos||[]).map(v=>({kind:"video",key:v.video_url,url:v.video_url,thumb_url:v.thumb_url||"",user:v.user,title:v.topic||"video",status:v.status||"pending",time:v.time||0,archived:!!v.archived,drive_link:v.drive_link||""}));
+    const vids=(lv.videos||[]).map(v=>({kind:"video",key:v.video_url,url:v.video_url,thumb_url:v.thumb_url||"",preview_url:v.preview_url||"",user:v.user,title:v.topic||"video",status:v.status||"pending",time:v.time||0,archived:!!v.archived,drive_link:v.drive_link||""}));
     const albs=(la.albums||[]).map(a=>({kind:"album",key:a.dir,cover:(a.images&&a.images[0])?a.images[0].url:"",images:(a.images||[]).map(im=>im.url),user:a.user,title:a.label||a.album,status:a.status||"pending",time:a.time||0,count:(a.images||[]).length}));
     REVIEW_ITEMS=[...vids,...albs].sort((x,y)=>y.time-x.time);
     renderReview();
@@ -1206,6 +1221,8 @@ function renderReview(){
     const users=["",...Array.from(new Set(REVIEW_ITEMS.map(x=>x.user).filter(Boolean)))];
     fb.innerHTML=
       `<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:6px">`+
+      [["today","📅 Hôm nay"],["7d","🗓 7 ngày"],["all","📦 Tất cả"]].map(([k,l])=>`<button class="${REV_RANGE===k?'btn':'btn-ghost'} chip" onclick="setRevRange('${k}')">${l}</button>`).join("")+`</div>`+
+      `<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:6px">`+
       users.map(u=>`<button class="${REV_USER===u?'btn':'btn-ghost'} chip" onclick="setRevUser('${u}')">${u?makerName(u):'👥 Tất cả'}</button>`).join("")+`</div>`+
       `<div style="display:flex;gap:6px;flex-wrap:wrap">`+
       [["","Loại: tất cả"],["video","📹 Video"],["album","🖼 Ảnh"]].map(([k,l])=>`<button class="${REV_KIND===k?'btn':'btn-ghost'} chip" onclick="setRevKind('${k}')">${l}</button>`).join("")+`</div>`;
@@ -1213,13 +1230,15 @@ function renderReview(){
   let list=REVIEW_ITEMS.filter(it=> ADMIN_TAB==="posted" ? it.status==="posted" : it.status!=="posted");
   if(REV_USER) list=list.filter(it=>it.user===REV_USER);
   if(REV_KIND) list=list.filter(it=>it.kind===REV_KIND);
-  if(!list.length){ box.innerHTML="<div class='muted'>Không có mục nào.</div>"; return; }
+  if(!list.length){ box.innerHTML=`<div class='muted'>Không có mục nào${REV_RANGE==="today"?" hôm nay — bấm <b>7 ngày</b> hoặc <b>Tất cả</b> để xem mục cũ.":"."}</div>`; return; }
+  const hidden=Math.max(0,list.length-REV_SHOWN);
+  list=list.slice(0,REV_SHOWN);
   box.innerHTML=`<div class="lib-grid">`+list.map(it=>{
     const media = it.kind==="video"
       ? (it.archived
         ? `<a href="${it.drive_link||"#"}" target="_blank" style="display:flex;flex-direction:column;align-items:center;justify-content:center;aspect-ratio:9/16;background:var(--surface2);border-radius:10px;text-decoration:none;gap:8px"><span style="font-size:34px">📁</span><span style="font-size:12px;font-weight:700">Đã lưu trên Drive</span></a>`
-        : videoMedia(it.url,it.thumb_url||""))
-      : (it.cover?`<div style="position:relative;cursor:pointer" onclick="openAlbumImages('${it.key}')"><img src="${API+it.cover}?w=220" style="width:100%;aspect-ratio:4/5;object-fit:cover;border-radius:10px"><span style="position:absolute;bottom:6px;right:6px;background:rgba(0,0,0,.65);color:#fff;font-size:11px;padding:2px 7px;border-radius:8px">🖼 ${it.count} ảnh</span></div>`:"<div class='muted'>—</div>");
+        : videoMedia(it.url,it.thumb_url||"","",it.preview_url||""))
+      : (it.cover?`<div style="position:relative;cursor:pointer" onclick="openAlbumImages('${it.key}')"><img src="${API+it.cover}?w=220" loading="lazy" decoding="async" style="width:100%;aspect-ratio:4/5;object-fit:cover;border-radius:10px"><span style="position:absolute;bottom:6px;right:6px;background:rgba(0,0,0,.65);color:#fff;font-size:11px;padding:2px 7px;border-radius:8px">🖼 ${it.count} ảnh</span></div>`:"<div class='muted'>—</div>");
     const btns = it.status==="posted"
       ? `<button class="btn-ghost chip" onclick="setStatus('${it.kind}','${it.key}','pending')">↩ Chưa đăng</button>`
       : `<button class="btn chip" style="background:#1976d2;border-color:#1976d2" onclick="publishItem('${it.kind}','${it.key}','${it.user||""}',this)">Đăng</button><button class="btn-ghost chip" onclick="setStatus('${it.kind}','${it.key}','cancelled',this)">✕ Hủy</button>`;
@@ -1230,7 +1249,8 @@ function renderReview(){
         <div style="display:flex;justify-content:space-between;align-items:center">${statusChip(it.status)}<span class="muted" style="font-size:11px">${dd}</span></div>
         <div style="display:flex;gap:5px;flex-wrap:wrap;margin-top:2px">${btns}</div>
       </div></div>`;
-  }).join("")+`</div>`;
+  }).join("")+`</div>`+
+  (hidden?`<div style="text-align:center;margin-top:12px"><button class="btn-ghost" onclick="REV_SHOWN+=24;renderReview()">⌄ Xem thêm (${hidden})</button></div>`:"");
 }
 // Đăng: nếu nv có >1 tài khoản TikTok → cho admin chọn account trước khi đăng.
 async function publishItem(kind,key,user,btn){

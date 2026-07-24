@@ -487,6 +487,20 @@ def _run(cmd, cwd=None, timeout=240):
     return r
 
 
+def make_preview(out_path: Path) -> Path | None:
+    """Bản 480p nhẹ (~1-3MB) cho trang duyệt: bấm là phát ngay thay vì kéo 25MB bản gốc.
+    Trả Path bản preview, hoặc None nếu ffmpeg lỗi."""
+    prev = out_path.with_name(out_path.stem + "_preview.mp4")
+    try:
+        _run(["ffmpeg", "-y", "-i", str(out_path), "-vf", "scale=-2:854",
+              "-c:v", "libx264", "-preset", "veryfast", "-crf", "30", "-pix_fmt", "yuv420p",
+              "-c:a", "aac", "-b:a", "64k", "-movflags", "+faststart", str(prev)], timeout=600)
+        return prev if prev.exists() else None
+    except Exception as e:
+        print(f"[list_review] preview lỗi: {e}", file=sys.stderr)
+        return None
+
+
 def _normalize(src: str, dst: str, max_dur: float | None = None):
     """Scale-cover về 1080x1920, 30fps, bỏ audio. max_dur: chỉ encode tối đa n giây
     (source nặng/dài không bị transcode toàn bộ khi chỉ dùng vài giây).
@@ -705,8 +719,12 @@ def render_list_review(spec: dict) -> dict:
             print(f"[list_review] thumb lỗi: {_e}", file=sys.stderr)
             thumb_path = None
 
+        # Bản preview 480p nhẹ (~1/10 dung lượng) — admin duyệt phát bản này, đăng vẫn dùng bản gốc
+        prev_path = make_preview(out_path)
+
         return {"success": True, "video_path": str(out_path.resolve()),
                 "thumb_path": str(thumb_path.resolve()) if thumb_path and thumb_path.exists() else "",
+                "preview_path": str(prev_path.resolve()) if prev_path else "",
                 "segments": len(segs), "duration": _ffprobe_dur(str(out_path))}
     finally:
         # giữ work dir nếu debug; xoá để gọn

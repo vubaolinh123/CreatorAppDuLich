@@ -134,6 +134,8 @@ def archive_posted_now(dry_run: bool = False) -> dict:
         p["drive_link"] = res.get("webViewLink", "")
         p["archived"] = True
         local.unlink(missing_ok=True)
+        # bản preview 480p đi kèm — cùng vòng đời với bản gốc
+        local.with_name(local.stem + "_preview.mp4").unlink(missing_ok=True)
         ok += 1
         print(f"[cleanup] ✓ Drive + xóa: {p['video_url']}")
     prod_file.write_text(json.dumps(items, ensure_ascii=False, indent=2), encoding="utf-8")

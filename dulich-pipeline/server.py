@@ -262,12 +262,14 @@ def _render_worker():
             if result.get("success"):
                 video_url = _to_output_url(result.get("video_path", ""))
                 thumb_url = _to_output_url(result.get("thumb_path", ""))
+                preview_url = _to_output_url(result.get("preview_path", ""))
                 _job_update(jid, status="done", video_url=video_url, thumb_url=thumb_url)
                 try:
                     import time as _t
                     _append_product({"user": job["user"], "topic": job["topic"],
                                      "hook_style": job.get("hook_style", ""),
                                      "video_url": video_url, "thumb_url": thumb_url,
+                                     "preview_url": preview_url,
                                      "time": _t.time()})
                     _notify_publish(job["user"], job["topic"], video_url)
                 except Exception as _e:
@@ -1054,6 +1056,12 @@ class AssembleHandler(BaseHTTPRequestHandler):
         elif self.path.startswith("/news-pool"):
             self.handle_news_pool()
         elif self.path.startswith("/output/"):
+            # Ảnh + ?w=<px> → resize/cache (cover album là PNG 1-3MB, lưới duyệt bài không kham nổi)
+            raw = self.path[len("/output/"):]
+            if "?w=" in raw and Path(raw.split("?", 1)[0]).suffix.lower() in (
+                    ".png", ".jpg", ".jpeg", ".webp"):
+                self._serve_image(Path(__file__).parent / "output", raw)
+                return
             # Serve output files statically for preview/playback (bỏ query ?w=… nếu có)
             rel = self.path.split("?", 1)[0].lstrip("/")
             file_path = Path(__file__).parent / rel
@@ -1154,11 +1162,18 @@ class AssembleHandler(BaseHTTPRequestHandler):
         q = parse_qs(urlparse(self.path).query)
         user = (q.get("user") or [""])[0]
         role = (q.get("role") or [""])[0]
+        since = float((q.get("since") or ["0"])[0] or 0)
+        limit = int((q.get("limit") or ["0"])[0] or 0)
         items = _load_products()
         if user and role not in ("admin",):
             items = [p for p in items if p.get("user") == user]
+        if since:
+            items = [p for p in items if p.get("time", 0) >= since]
         items.sort(key=lambda x: x.get("time", 0), reverse=True)
-        self._json_response({"videos": items})
+        total = len(items)
+        if limit > 0:
+            items = items[:limit]
+        self._json_response({"videos": items, "total": total})
 
     def _serve_stats(self):
         """Admin: count products per user."""
@@ -1967,10 +1982,17 @@ class AssembleHandler(BaseHTTPRequestHandler):
             q = parse_qs(urlparse(self.path).query)
             user = (q.get("user", [""])[0] or "").strip()
             role = (q.get("role", [""])[0] or "").strip()
+            since = float((q.get("since") or ["0"])[0] or 0)
+            limit = int((q.get("limit") or ["0"])[0] or 0)
             items = sorted(_load_albums(), key=lambda a: a.get("time", 0), reverse=True)
             if role != "admin" and user:
                 items = [a for a in items if a.get("user") == user]
-            self._json_response({"success": True, "albums": items})
+            if since:
+                items = [a for a in items if a.get("time", 0) >= since]
+            total = len(items)
+            if limit > 0:
+                items = items[:limit]
+            self._json_response({"success": True, "albums": items, "total": total})
         except Exception as e:
             self._json_response({"success": False, "error": str(e)}, 500)
 
@@ -2400,8 +2422,11 @@ class AssembleHandler(BaseHTTPRequestHandler):
         serve = fp
         if 0 < w <= 1600:
             try:
+                import hashlib
                 cache = base_dir / "_cache"; cache.mkdir(parents=True, exist_ok=True)
-                cp = cache / f"{w}_{fp.stem}.jpg"
+                # key theo đường dẫn tương đối — nhiều album dùng chung tên file (aiimg_00.png)
+                rel = fp.relative_to(base_dir).as_posix()
+                cp = cache / f"{w}_{hashlib.md5(rel.encode('utf-8')).hexdigest()[:12]}.jpg"
                 if (not cp.exists()) or cp.stat().st_mtime < fp.stat().st_mtime:
                     from PIL import Image
                     im = Image.open(fp)
