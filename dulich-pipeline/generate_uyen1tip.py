@@ -103,7 +103,7 @@ def main():
 
     # 0 — Intro (bỏ slide cover không tiêu đề theo feedback NV). Nền: ảnh chung (không phải quán).
     paths.append(render_intro(
-        picker.album_bg(),
+        picker.album_cover_bg(),
         str(p / "uyen1tip_00_intro.png"),
         text=_t["intro"],
     ))

@@ -70,7 +70,7 @@ def main():
             s["bg_image"] = VenuePicker.image(bgv) or ""
         else:
             s["bg_venue"] = ""
-            s["bg_image"] = VenuePicker.album_bg()
+            s["bg_image"] = VenuePicker.album_cover_bg()
 
     out_dir = Path(args.out) if args.out else spec_path.parent
     out_dir.mkdir(parents=True, exist_ok=True)

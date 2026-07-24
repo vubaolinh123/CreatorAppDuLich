@@ -42,6 +42,38 @@ def album_bg() -> str:
     return p
 
 
+# Lịch sử ảnh cover đã dùng (xuyên các album, mỗi album 1 process) → slide đầu không trùng nhau.
+_COVER_HISTORY = Path(__file__).resolve().parent.parent / "data" / "album_cover_history.json"
+
+
+def album_cover_bg(keep: int = 15) -> str:
+    """Ảnh cho slide ĐẦU (cover/intro): lấy từ kho ảnh chung, tránh trùng ~keep cover gần nhất
+    của MỌI album (lưu lịch sử ra file). Mỗi album chạy process riêng nên cần file để nhớ."""
+    import json
+    cands = _album_candidates()
+    if not cands:
+        return ""
+    try:
+        hist = json.loads(_COVER_HISTORY.read_text(encoding="utf-8"))
+        if not isinstance(hist, list):
+            hist = []
+    except Exception:
+        hist = []
+    recent = set(hist[-keep:])
+    fresh = [p for p in cands if Path(p).name not in recent]
+    if not fresh:
+        fresh = cands
+    p = random.choice(fresh)
+    hist.append(Path(p).name)
+    try:
+        _COVER_HISTORY.parent.mkdir(parents=True, exist_ok=True)
+        _COVER_HISTORY.write_text(json.dumps(hist[-(keep * 3):], ensure_ascii=False),
+                                  encoding="utf-8")
+    except Exception:
+        pass
+    return p
+
+
 class VenuePicker:
     def __init__(self, seed: int | None = None):
         self._all = get_all()
@@ -127,6 +159,11 @@ class VenuePicker:
     def album_bg() -> str:
         """Ảnh nền chung không trùng — dùng cho ảnh KHÔNG phải của quán."""
         return album_bg()
+
+    @staticmethod
+    def album_cover_bg() -> str:
+        """Ảnh cho slide đầu (cover/intro), không trùng cover các album gần nhất."""
+        return album_cover_bg()
 
     @staticmethod
     def image(venue: dict) -> str:

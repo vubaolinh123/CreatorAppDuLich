@@ -31,7 +31,7 @@ def _locked(fn):
 LOAI_OPTIONS      = ("cần seeding", "không seeding")
 CO_NGUOI_OPTIONS  = ("có", "không")
 LOAI_QUAN_OPTIONS = ("quán ăn", "quán cà phê", "khách sạn",
-                     "điểm checkin", "điểm checkin free", "điểm săn mây")
+                     "điểm checkin", "điểm checkin free", "điểm săn mây", "đặc sản")
 
 
 # ── Internal ──────────────────────────────────────────────────────────────────

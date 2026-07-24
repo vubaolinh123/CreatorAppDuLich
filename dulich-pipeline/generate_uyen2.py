@@ -33,7 +33,7 @@ def main():
     from tools.uyen2_renderer import INTRO_TEXT
     _t = ai_cover_texts("uyen2", {"intro": INTRO_TEXT})
     paths.append(render_intro(
-        picker.album_bg(),
+        picker.album_cover_bg(),
         str(p / "uyen2_00_intro.png"),
         text=_t["intro"],
     ))

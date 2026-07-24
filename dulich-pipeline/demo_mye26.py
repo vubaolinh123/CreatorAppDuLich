@@ -80,11 +80,11 @@ _DAY_SLOTS = [
      ("20:30", "Dạo phố đêm", "điểm checkin free")],
     [("7:00", "Ăn sáng sớm", "quán ăn"), ("8:30", "Check-in view đẹp", "khách sạn"),
      ("10:00", "Cà phê", "quán cà phê"), ("12:00", "Ăn trưa", "quán ăn"),
-     ("14:30", "Tham quan", "điểm checkin"), ("17:30", "Mua đặc sản", "điểm checkin free"),
+     ("14:30", "Tham quan", "điểm checkin"), ("17:30", "Mua đặc sản", "đặc sản"),
      ("19:00", "Ăn tối", "quán ăn")],
     [("7:00", "Ăn sáng", "quán ăn"), ("8:30", "Tham quan", "điểm checkin"),
      ("10:30", "Check out", "khách sạn"), ("12:00", "Ăn trưa", "quán ăn"),
-     ("14:00", "Cà phê chill", "quán cà phê"), ("16:00", "Mua quà đặc sản", "điểm checkin free"),
+     ("14:00", "Cà phê chill", "quán cà phê"), ("16:00", "Mua quà đặc sản", "đặc sản"),
      ("18:00", "Ăn tối chia tay", "quán ăn")],
 ]
 
@@ -121,7 +121,7 @@ def main():
         "month_tag": "Tháng 6",
     })
     cover = CoverData(
-        background_path=VenuePicker.album_bg(),   # cover không nói về 1 quán → ảnh chung
+        background_path=VenuePicker.album_cover_bg(),   # cover: ảnh chung, không trùng album khác
         month_tag=texts["month_tag"],
         handle_tag="@thamhiemdalat",
         location_tag="Đà Lạt",

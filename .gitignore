@@ -75,6 +75,7 @@ Thumbs.db
 /dulich-pipeline/data/news_source/
 
 dulich-pipeline/data/user_keys.json
+dulich-pipeline/data/album_cover_history.json
 credentials.json
 token.json
 client_secret.json

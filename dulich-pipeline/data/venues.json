@@ -1,5 +1,5 @@
 {
-  "_next_id": 122,
+  "_next_id": 132,
   "venues": [
     {
       "id": 1,
@@ -2718,6 +2718,216 @@
       "tiktok_link": "",
       "google_map": "",
       "image_path": "data/thumbs/121_gm_0.jpg"
+    },
+    {
+      "id": 122,
+      "name": "Đặc Sản Phương Vy - Đặc Sản Đà Lạt",
+      "address": "82B Vạn Thành, Cam Ly - Đà Lạt, Lâm Đồng, Việt Nam",
+      "images": [
+        "data/thumbs/122_gm_0.jpg",
+        "data/thumbs/122_gm_1.jpg",
+        "data/thumbs/122_gm_2.jpg"
+      ],
+      "loai": "không seeding",
+      "co_nguoi": "không",
+      "loai_quan": "đặc sản",
+      "signature": "",
+      "feature": "",
+      "fb_link": "",
+      "tiktok_link": "",
+      "google_map": "",
+      "image_path": "data/thumbs/122_gm_0.jpg"
+    },
+    {
+      "id": 123,
+      "name": "Đặc Sản Đà Lạt",
+      "address": "100 Hai Mươi Tám Tháng Ba, B'Lao, Lâm Đồng, Việt Nam",
+      "images": [
+        "data/thumbs/123_gm_0.jpg",
+        "data/thumbs/123_gm_1.jpg"
+      ],
+      "loai": "không seeding",
+      "co_nguoi": "không",
+      "loai_quan": "đặc sản",
+      "signature": "",
+      "feature": "",
+      "fb_link": "",
+      "tiktok_link": "",
+      "google_map": "",
+      "image_path": "data/thumbs/123_gm_0.jpg"
+    },
+    {
+      "id": 124,
+      "name": "Út Mơ - Đặc Sản Đà Lạt",
+      "address": "403 Đường Hai Bà Trưng, Cam Ly - Đà Lạt, Lâm Đồng, Việt Nam",
+      "images": [
+        "data/thumbs/124_gm_0.jpg",
+        "data/thumbs/124_gm_1.jpg",
+        "data/thumbs/124_gm_2.jpg",
+        "data/thumbs/124_gm_3.jpg",
+        "data/thumbs/124_gm_4.jpg",
+        "data/thumbs/124_gm_5.jpg",
+        "data/thumbs/124_gm_6.jpg",
+        "data/thumbs/124_gm_7.jpg"
+      ],
+      "loai": "không seeding",
+      "co_nguoi": "không",
+      "loai_quan": "đặc sản",
+      "signature": "",
+      "feature": "",
+      "fb_link": "",
+      "tiktok_link": "",
+      "google_map": "",
+      "image_path": "data/thumbs/124_gm_0.jpg"
+    },
+    {
+      "id": 125,
+      "name": "Đặc Sản Đà Lạt Quỳnh Như",
+      "address": "28 Đường Bùi Thị Xuân, Xuân Hương - Đà Lạt, Lâm Đồng, Việt Nam",
+      "images": [
+        "data/thumbs/125_gm_0.jpg",
+        "data/thumbs/125_gm_1.jpg",
+        "data/thumbs/125_gm_2.jpg",
+        "data/thumbs/125_gm_3.jpg",
+        "data/thumbs/125_gm_4.jpg",
+        "data/thumbs/125_gm_5.jpg"
+      ],
+      "loai": "không seeding",
+      "co_nguoi": "không",
+      "loai_quan": "đặc sản",
+      "signature": "",
+      "feature": "",
+      "fb_link": "",
+      "tiktok_link": "",
+      "google_map": "",
+      "image_path": "data/thumbs/125_gm_0.jpg"
+    },
+    {
+      "id": 126,
+      "name": "Đặc sản đà lạt đà lạt xanh",
+      "address": "C37 Đường Nguyên Tử Lực, Lâm Viên - Đà Lạt, Lâm Đồng 66000, Việt Nam",
+      "images": [
+        "data/thumbs/126_gm_0.jpg",
+        "data/thumbs/126_gm_1.jpg"
+      ],
+      "loai": "không seeding",
+      "co_nguoi": "không",
+      "loai_quan": "đặc sản",
+      "signature": "",
+      "feature": "",
+      "fb_link": "",
+      "tiktok_link": "",
+      "google_map": "",
+      "image_path": "data/thumbs/126_gm_0.jpg"
+    },
+    {
+      "id": 127,
+      "name": "Đặc Sản Đà Lạt - Kim Anh Tuấn Huy Hoàng",
+      "address": "WCVP+3Q7, Xuân Hương - Đà Lạt, Xuân Hương - Đà Lạt, Lâm Đồng, Việt Nam",
+      "images": [
+        "data/thumbs/127_gm_0.jpg",
+        "data/thumbs/127_gm_1.jpg",
+        "data/thumbs/127_gm_2.jpg",
+        "data/thumbs/127_gm_3.jpg",
+        "data/thumbs/127_gm_4.jpg",
+        "data/thumbs/127_gm_5.jpg"
+      ],
+      "loai": "không seeding",
+      "co_nguoi": "không",
+      "loai_quan": "đặc sản",
+      "signature": "",
+      "feature": "",
+      "fb_link": "",
+      "tiktok_link": "",
+      "google_map": "",
+      "image_path": "data/thumbs/127_gm_0.jpg"
+    },
+    {
+      "id": 128,
+      "name": "Đặc Sản Đà Lạt Yuri Farm | Ăn Sáng & Cà Phê",
+      "address": "khu quy hoạch/H48 Đ. Phạm Hồng Thái, Xuân Hương - Đà Lạt, Lâm Đồng 66122, Việt Nam",
+      "images": [
+        "data/thumbs/128_gm_0.jpg",
+        "data/thumbs/128_gm_1.jpg",
+        "data/thumbs/128_gm_2.jpg",
+        "data/thumbs/128_gm_3.jpg",
+        "data/thumbs/128_gm_4.jpg",
+        "data/thumbs/128_gm_5.jpg",
+        "data/thumbs/128_gm_6.jpg",
+        "data/thumbs/128_gm_7.jpg"
+      ],
+      "loai": "không seeding",
+      "co_nguoi": "không",
+      "loai_quan": "đặc sản",
+      "signature": "",
+      "feature": "",
+      "fb_link": "",
+      "tiktok_link": "",
+      "google_map": "",
+      "image_path": "data/thumbs/128_gm_0.jpg"
+    },
+    {
+      "id": 129,
+      "name": "Tiệm An Hạ - Đặc sản Đà Lạt",
+      "address": "086/3 Tổ 3 Thôn, Trường Thọ, Xuân Trường - Đà Lạt, Lâm Đồng, Việt Nam",
+      "images": [],
+      "loai": "không seeding",
+      "co_nguoi": "không",
+      "loai_quan": "đặc sản",
+      "signature": "",
+      "feature": "",
+      "fb_link": "",
+      "tiktok_link": "",
+      "google_map": "",
+      "image_path": ""
+    },
+    {
+      "id": 130,
+      "name": "Đặc sản đà Lạt - Quà tặng Chin’s Đà Lạt",
+      "address": "XC5H+PXC, Lang Biang - Đà Lạt, Lâm Đồng, Việt Nam",
+      "images": [
+        "data/thumbs/130_gm_0.jpg",
+        "data/thumbs/130_gm_1.jpg",
+        "data/thumbs/130_gm_2.jpg",
+        "data/thumbs/130_gm_3.jpg",
+        "data/thumbs/130_gm_4.jpg",
+        "data/thumbs/130_gm_5.jpg",
+        "data/thumbs/130_gm_6.jpg",
+        "data/thumbs/130_gm_7.jpg"
+      ],
+      "loai": "không seeding",
+      "co_nguoi": "không",
+      "loai_quan": "đặc sản",
+      "signature": "",
+      "feature": "",
+      "fb_link": "",
+      "tiktok_link": "",
+      "google_map": "",
+      "image_path": "data/thumbs/130_gm_0.jpg"
+    },
+    {
+      "id": 131,
+      "name": "Đặc sản ngon Dalat Đặc sản Quỳnh Thoa Dalat",
+      "address": "82 Đường Nguyễn Thị Minh Khai, Xuân Hương - Đà Lạt, Lâm Đồng 66000, Việt Nam",
+      "images": [
+        "data/thumbs/131_gm_0.jpg",
+        "data/thumbs/131_gm_1.jpg",
+        "data/thumbs/131_gm_2.jpg",
+        "data/thumbs/131_gm_3.jpg",
+        "data/thumbs/131_gm_4.jpg",
+        "data/thumbs/131_gm_5.jpg",
+        "data/thumbs/131_gm_6.jpg",
+        "data/thumbs/131_gm_7.jpg"
+      ],
+      "loai": "không seeding",
+      "co_nguoi": "không",
+      "loai_quan": "đặc sản",
+      "signature": "",
+      "feature": "",
+      "fb_link": "",
+      "tiktok_link": "",
+      "google_map": "",
+      "image_path": "data/thumbs/131_gm_0.jpg"
     }
   ]
 }

@@ -48,7 +48,7 @@ def main():
     # ── Slide 0: Cover (nền ảnh chung, không phải quán) ─────────────────────────
     out0 = str(p / "hien25111_00_cover.png")
     paths.append(render_cover(
-        bg_path=picker.album_bg(),
+        bg_path=picker.album_cover_bg(),
         title_line1=texts["line1"],
         title_line2=texts["line2"],
         out_path=out0,

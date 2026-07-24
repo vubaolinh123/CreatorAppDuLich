@@ -266,10 +266,10 @@ HOOK_DESIGNS = {
         "frame": "serif.png", "region": (148, 458, 936, 548), "no_subtitle": True,
         "title": {"font": DEJAVU_FONT, "wght": None, "color": (15, 15, 15, 255), "max": 58, "min": 26},
     },
-    "hook_meo": {  # title only, black outline
+    "hook_meo": {  # title only — chữ TRẮNG + viền đen đậm để nổi trên nền video tối
         "frame": "meo.png", "region": (240, 648, 892, 858), "no_subtitle": True,
-        "title": {"font": SVNMANGO_FONT, "wght": 700, "color": (40, 40, 40, 255), "max": 70, "min": 30,
-                  "stroke_w": 5, "stroke_fill": (0, 0, 0, 255)},
+        "title": {"font": SVNMANGO_FONT, "wght": 700, "color": (255, 255, 255, 255), "max": 70, "min": 30,
+                  "stroke_w": 7, "stroke_fill": (20, 20, 20, 255)},
     },
 }
 

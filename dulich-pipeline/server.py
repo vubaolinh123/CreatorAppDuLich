@@ -54,16 +54,16 @@ ALBUM_DIR = Path(__file__).parent / "data" / "album"
 # ── Tạo ảnh (8 album template) — mỗi cái là 1 script CLI dựng slide PNG ────────
 # script: tên file CLI; seed: script có nhận --seed (random hoá) không; label: tên hiển thị.
 IMAGE_ALBUMS = {
-    "hien1": {"script": "generate_hien25111.py", "seed": True,  "label": "Hiền · Lưới quán"},
-    "hien2": {"script": "generate_hien21113.py", "seed": True,  "label": "Hiền · Bộ sưu tập"},
-    "le1":   {"script": "demo_mye26.py",          "seed": True,  "label": "Lê · Mẫu Đà Lạt"},
-    "le2":   {"script": "generate_le2.py",        "seed": True,  "label": "Lê · Cover + slide"},
+    "hien1": {"script": "generate_hien25111.py", "seed": True,  "label": "Hiền · Album 1"},
+    "hien2": {"script": "generate_hien21113.py", "seed": True,  "label": "Hiền · Album 2"},
+    "le1":   {"script": "demo_mye26.py",          "seed": True,  "label": "Lê · Album 1"},
+    "le2":   {"script": "generate_le2.py",        "seed": True,  "label": "Lê · Album 2"},
     "muoi1": {"script": "generate_muoi1912.py",   "seed": True,  "label": "Muối · Album 1"},
     "muoi2": {"script": "generate_muoi1311.py",   "seed": True,  "label": "Muối · Album 2"},
     "vy1":   {"script": "generate_vy1.py",        "seed": True,  "label": "Vy · Album 1"},
     "vy2":   {"script": "generate_hien19111.py",  "seed": True,  "label": "Vy · Album 2"},
-    "uyen1": {"script": "generate_uyen1tip.py",   "seed": True,  "label": "Uyên · Travel tips"},
-    "uyen2": {"script": "generate_uyen2.py",      "seed": True,  "label": "Uyên · Review diary"},
+    "uyen1": {"script": "generate_uyen1tip.py",   "seed": True,  "label": "Uyên · Album 1"},
+    "uyen2": {"script": "generate_uyen2.py",      "seed": True,  "label": "Uyên · Album 2"},
 }
 
 
@@ -1010,8 +1010,9 @@ class AssembleHandler(BaseHTTPRequestHandler):
             self._json_response({"error": f"Unknown path: {self.path}"}, 404)
 
     def do_GET(self):
-        if self.path.split("?", 1)[0] in ("/", "/app", "/index.html"):
-            self._serve_index()
+        if self.path.split("?", 1)[0] in ("/", "/app", "/index.html",
+                                          "/trang-chu", "/video", "/thu-vien", "/anh", "/cai-dat"):
+            self._serve_index()   # SPA routes → trả index.html để refresh/bookmark không 404
         elif self.path == "/settings":
             self.handle_settings_get()
         elif self.path == "/user-keys":

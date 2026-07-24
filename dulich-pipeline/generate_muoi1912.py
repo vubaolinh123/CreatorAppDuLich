@@ -31,7 +31,7 @@ def main():
     p = Path(out_dir)
     p.mkdir(parents=True, exist_ok=True)
 
-    cover_bg = picker.album_bg()   # cover không nói về 1 quán → ảnh chung
+    cover_bg = picker.album_cover_bg()   # cover: ảnh chung, không trùng album khác
     print(f"[COVER] hook: {hook[0]}")
     paths = [render_cover(hook, cover_bg, str(p / "muoi1912_00_cover.png"))]
 
