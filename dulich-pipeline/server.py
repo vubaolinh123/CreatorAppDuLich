@@ -531,6 +531,67 @@ def _caption_for(topic: str, user: str = "", photo: bool = False) -> str:
     return out
 
 
+# Gợi ý chủ đề theo loại album (khi label cover chưa nói rõ) — để caption + hashtag đúng ngữ cảnh.
+_ALBUM_KIND_CAT = {
+    "le1": "lịch trình du lịch Đà Lạt",
+    "le2": "review địa điểm Đà Lạt",
+    "hien1": "bản đồ món ngon, quán ăn Đà Lạt",
+    "hien2": "điểm check-in Đà Lạt",
+    "muoi1": "quán cà phê, ăn sáng, điểm check-in Đà Lạt",
+    "muoi2": "quán cà phê, ăn sáng, điểm check-in Đà Lạt",
+    "vy1": "quán ăn, cà phê, điểm check-in Đà Lạt",
+    "vy2": "quán ăn, cà phê, điểm check-in Đà Lạt",
+    "uyen1": "tips du lịch Đà Lạt",
+    "uyen2": "review du lịch Đà Lạt",
+}
+_ALBUM_CAPTION_FALLBACK_TAGS = "#dalat #checkindalat #dulichdalat #reviewdalat"
+
+
+def _album_caption(rec: dict) -> str:
+    """Caption sáng tạo + hashtag cho BÀI ẢNH album, viết bằng OpenRouter, dựa trên chủ đề album.
+    VD: 'Những quán cafe mới toanh ở Đà Lạt☕️✨ #dalat #checkindalat #cafedalat'.
+    Fail → dùng label + hashtag mẫu. Giới hạn ~90 ký tự (TikTok photo = tiêu đề slideshow)."""
+    import re as _re
+    label = _re.sub(r"^[^·]+·\s*", "", (rec.get("label") or "").strip()).strip()
+    cat = _ALBUM_KIND_CAT.get((rec.get("album") or "").strip(), "")
+    theme = " – ".join([x for x in (label, cat) if x]) or "địa điểm Đà Lạt"
+
+    key = os.getenv("OPENROUTER_KEY") or os.getenv("OPENROUTER_API_KEY")
+    out = ""
+    if key:
+        try:
+            import requests as _rq, random as _rd
+            r = _rq.post(
+                "https://openrouter.ai/api/v1/chat/completions", timeout=25,
+                headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"},
+                json={"model": "deepseek/deepseek-chat", "temperature": 1.0, "max_tokens": 120,
+                      "messages": [
+                          {"role": "system", "content":
+                           "Bạn viết caption cho bài ảnh (slideshow) du lịch Đà Lạt, giọng trẻ trung bắt trend."},
+                          {"role": "user", "content":
+                           f"Viết caption cho 1 bài ảnh về Đà Lạt. Chủ đề: {theme}.\n"
+                           "- 1 câu ngắn, sáng tạo, giọng gần gũi/bắt trend, được dùng 1-2 emoji hợp ngữ cảnh.\n"
+                           "- Ngay sau đó thêm 3-5 hashtag tiếng Việt KHÔNG DẤU, liền mạch trên cùng dòng, "
+                           "bắt buộc có #dalat và hashtag theo chủ đề (vd #cafedalat #checkindalat #anuongdalat #sanmaydalat).\n"
+                           "- TỔNG độ dài cả hashtag không quá 90 ký tự. Chỉ tiếng Việt + emoji + hashtag, không giải thích.\n"
+                           'Ví dụ phong cách: "Những quán cafe mới toanh ở Đà Lạt☕️✨ #dalat #checkindalat #cafedalat"\n'
+                           f"Chỉ trả về đúng caption. (seed: {_rd.randint(100, 999)})"}]})
+            if r.status_code == 200:
+                out = r.json()["choices"][0]["message"]["content"].strip().strip('"')
+                out = " ".join(out.split())   # gộp về 1 dòng
+        except Exception as e:
+            print(f"[pub] album caption AI lỗi: {e}", file=sys.stderr)
+    if not out:
+        base = label or "Đà Lạt trong tim"
+        out = f"{base} {_ALBUM_CAPTION_FALLBACK_TAGS}".strip()
+    if len(out) > 90:   # cắt bớt hashtag cuối cho vừa, không cắt giữa câu
+        while len(out) > 90 and "#" in out and out.rfind(" #") > 0:
+            out = out[:out.rfind(" #")].rstrip()
+        if len(out) > 90:
+            out = out[:90].rstrip()
+    return out
+
+
 def _update_product(video_url: str, **fields) -> None:
     with _PROD_LOCK:
         items = _load_products()
@@ -591,7 +652,7 @@ def _do_publish_album(dir_rel: str, user: str,
     urls = [im.get("url", "") for im in (rec or {}).get("images", []) if im.get("url")]
     if not urls:
         return {"success": False, "error": "Album không có ảnh"}
-    caption = _caption_for("", user, photo=True)   # label mẫu album không phải chủ đề
+    caption = _album_caption(rec)   # caption sáng tạo + hashtag theo chủ đề album (OpenRouter)
     try:
         from tools import publisher
         res = publisher.post_images_to_tiktok(urls, caption,
