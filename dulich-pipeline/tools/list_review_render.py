@@ -557,7 +557,7 @@ def _concat_with_xfade(segs: list[str], out_path: Path, work: Path,
           "-map", f"[{prev}]", "-map", f"[{aprev}]",
           "-c:v", "libx264", "-preset", "fast", "-pix_fmt", "yuv420p",
           "-movflags", "+faststart",   # moov đầu file → phone/stream phát ngay
-          "-c:a", "aac", "-b:a", "160k", str(out_path)], cwd=str(work))
+          "-c:a", "aac", "-b:a", "160k", str(out_path)], cwd=str(work), timeout=480)
 
 
 def _render_segment(kind: str, seg: dict, idx: int, work: Path,
@@ -651,7 +651,7 @@ def _render_segment(kind: str, seg: dict, idx: int, work: Path,
           "-filter_complex", fc,
           "-map", f"[{last}]", "-map", f"{audio_idx}:a", "-t", f"{dur:.2f}",
           "-c:v", "libx264", "-preset", "veryfast", "-pix_fmt", "yuv420p",
-          "-c:a", "aac", "-shortest", out.name], cwd=str(work))
+          "-c:a", "aac", "-shortest", out.name], cwd=str(work), timeout=360)
     print(f"[perf] {kind}{idx} overlay+mux: {_pt.time()-_t1:.1f}s | segment total {_pt.time()-_t0:.1f}s", file=sys.stderr)
     return str(out)
 

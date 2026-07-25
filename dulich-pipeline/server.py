@@ -238,6 +238,12 @@ def _job_update(job_id: str, **kw) -> None:
         _RENDER_JOBS[job_id].update(kw)
 
 
+def _is_transient_render_err(e) -> bool:
+    """Lỗi tạm thời (đáng thử lại): timeout do server bận, không phải source hỏng."""
+    low = str(e or "").lower()
+    return "quá thời gian" in low or "timeout" in low
+
+
 def _render_worker():
     """Worker nền: render từng job trong queue (sống độc lập với session người dùng).
     Số worker song song = env RENDER_WORKERS (mặc định 1)."""
@@ -247,18 +253,36 @@ def _render_worker():
         jid = job["job_id"]
         _job_update(jid, status="rendering")
         print(f"[render-queue] bắt đầu {jid} (user {job.get('user')})", file=sys.stderr)
-        try:
+
+        def _render_once():
             if n_workers == 1:
                 with _HEAVY_LOCK:
                     for m in list(sys.modules.keys()):
                         if m.startswith("tools.list_review_render"):
                             sys.modules.pop(m, None)
                     from tools.list_review_render import render_list_review
-                    result = render_list_review(job["spec"])
-            else:
-                # nhiều worker: không reload module (không thread-safe), không giữ _HEAVY_LOCK
-                from tools.list_review_render import render_list_review
-                result = render_list_review(job["spec"])
+                    return render_list_review(job["spec"])
+            # nhiều worker: không reload module (không thread-safe), không giữ _HEAVY_LOCK
+            from tools.list_review_render import render_list_review
+            return render_list_review(job["spec"])
+
+        try:
+            # Render + tự thử lại 1 lần nếu lỗi TẠM THỜI (timeout do server bận).
+            # Retry chạy inline trước finally → temp_dir còn nguyên, không cần re-queue.
+            result = None
+            for attempt in (1, 2):
+                try:
+                    result = _render_once()
+                except Exception as e:
+                    if attempt == 1 and _is_transient_render_err(e):
+                        print(f"[render-queue] {jid} lỗi tạm ({e}) → thử lại (lần 2)", file=sys.stderr)
+                        continue
+                    raise
+                if (attempt == 1 and not result.get("success")
+                        and _is_transient_render_err(result.get("error"))):
+                    print(f"[render-queue] {jid} fail tạm → thử lại (lần 2)", file=sys.stderr)
+                    continue
+                break
             if result.get("success"):
                 video_url = _to_output_url(result.get("video_path", ""))
                 thumb_url = _to_output_url(result.get("thumb_path", ""))
@@ -405,7 +429,8 @@ def _friendly_error(e) -> str:
     s = str(e or "")
     low = s.lower()
     if "quá thời gian" in low or "timeout" in low:
-        cause = "⏱ Render quá lâu — source có thể quá nặng/hỏng. Thử clip nhẹ hơn."
+        cause = ("⏱ Render lâu quá — server đang bận (nhiều clip cùng lúc) hoặc clip quá nặng. "
+                 "Hệ thống đã tự thử lại 1 lần; thử render lại sau ít phút.")
     elif "ffmpeg" in low and ("not found" in low or "winerror 2" in low or "no such file" in low):
         cause = "⚙ Chưa cài FFmpeg (hoặc chưa có trong PATH)."
     elif "ffmpeg" in low or "moov atom" in low or "invalid data" in low:
