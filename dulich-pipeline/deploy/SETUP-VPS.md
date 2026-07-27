@@ -22,9 +22,27 @@ Lưu ý: KHÔNG cần node_modules / dulich-desktop / dulich-dashboard — chỉ
 
 ## 3. systemd
 ```bash
-cp deploy/dulich.service /etc/systemd/system/
-systemctl daemon-reload && systemctl enable --now dulich
+sudo -u dulich .venv/bin/python -X utf8 tools/migrate_auth.py --source auto --dry-run
+sudo -u dulich .venv/bin/python -X utf8 tools/migrate_auth.py --source auto
+sudo -u dulich .venv/bin/python -X utf8 tools/migrate_pipeline.py
+cp deploy/dulich.service deploy/dulich-worker.service /etc/systemd/system/
+systemctl daemon-reload
+systemctl enable --now dulich dulich-worker
 curl http://localhost:7788/health
+systemctl status dulich dulich-worker --no-pager
+```
+
+`dulich` chỉ phục vụ HTTP/upload. `dulich-worker` xử lý hàng đợi SQLite bền vững
+(render video, tạo ảnh, publish). Vì vậy restart web hoặc logout không làm mất job.
+Mặc định chỉ có 1 heavy worker để tránh FFmpeg/Whisper tranh RAM/CPU; 2 network
+worker dành cho publish. Chỉ tăng `HEAVY_JOB_WORKERS` sau khi đo RAM thực tế.
+Mỗi job nằm trong process group riêng; thao tác hủy/timeout sẽ kill cả FFmpeg con.
+
+Các file JSON cũ được backup vào `data/migration-backups/` trước khi import.
+Có thể kiểm tra/khôi phục dữ liệu ở dạng JSON bằng:
+
+```bash
+sudo -u dulich .venv/bin/python -X utf8 tools/migrate_pipeline.py --export
 ```
 
 ## 4. Cloudflare Tunnel (public URL, không cần mở port)
@@ -36,10 +54,16 @@ cloudflared tunnel route dns dulich app.<domain>
 # /etc/cloudflared/config.yml: tunnel + credentials-file + ingress → http://localhost:7788
 cloudflared service install && systemctl enable --now cloudflared
 ```
-Sau đó set `PUBLIC_BASE_URL=https://app.<domain>` trong .env, restart dulich.
+Sau đó set `PUBLIC_BASE_URL=https://app.<domain>` trong .env, restart cả hai service:
+
+```bash
+systemctl restart dulich dulich-worker
+```
 
 ## 5. Dọn disk (đã tự động)
-- Server chạy `tools/storage_cleanup.py` mỗi ngày (chung daily scheduler 6h): output cũ hơn 5 ngày → upload Drive `DuLichApp/archive/...` → xóa local. Upload fail thì giữ file.
+- Scheduler bảo trì độc lập chạy mỗi giờ, kể cả khi `DAILY_AUTO_ENABLED=False`.
+- Upload/job IPC hết hạn được dọn mỗi giờ. Sau `MAINTENANCE_HOUR`, output cũ hơn `OUTPUT_RETENTION_DAYS` → upload Drive `DuLichApp/archive/...` → chỉ xóa local khi upload thành công.
+- Cùng scheduler sẽ đối soát các bài Zernio `publishing/unknown` đã có post ID.
 - Chạy tay / kiểm tra: `.venv/bin/python -X utf8 tools/storage_cleanup.py --dry-run`
 - Manifest file đã archive: `data/archive_manifest.json` (kèm link Drive).
 
@@ -47,6 +71,12 @@ Sau đó set `PUBLIC_BASE_URL=https://app.<domain>` trong .env, restart dulich.
 ```bash
 bash deploy/deploy.sh
 ```
+
+Script deploy dừng worker trước, backup/import dữ liệu, cài lại hai unit rồi mới
+khởi động. Migration auth chạy idempotent trước migration pipeline; nếu nguồn
+legacy đã scrub nhưng database auth chưa đủ tài khoản, deploy sẽ dừng thay vì
+bật một app không đăng nhập được. Sau deploy phải thấy cả `dulich` và
+`dulich-worker` ở trạng thái active.
 
 ## Key cần có trước khi deploy
 1. `credentials.json` service account + share folder Drive cho email SA + `GOOGLE_DRIVE_FOLDER_ID`.

@@ -85,15 +85,8 @@ class SupabaseClient:
             return result[0]
         return None
 
-    def verify_user(self, username: str, password: str) -> Optional[dict]:
-        """Verify user credentials and return user data if valid."""
-        user = self.get_user(username)
-        if user and user.get("password") == password:
-            return user
-        return None
-
     def get_users(self) -> list:
-        """Get all users."""
+        """Read legacy users for the one-time SQLite migration only."""
         result = self._request("GET", "users", params={"select": "*", "order": "created_at"})
         return result if isinstance(result, list) else []
 

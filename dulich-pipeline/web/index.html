@@ -82,7 +82,8 @@
   .clip-row .nm { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .clip-row .du { color: var(--ok); font-weight: 700; } .clip-row .x { background: none; color: var(--err); font-size: 15px; box-shadow: none; }
   .drop { border: 1.5px dashed var(--line); border-radius: 11px; padding: 13px; text-align: center; color: var(--muted);
-    font-size: 12px; cursor: pointer; margin-top: 8px; background: var(--surface); transition: .15s; }
+    font-size: 12px; cursor: pointer; margin-top: 8px; background: var(--surface); transition: .15s;
+    letter-spacing:0;text-transform:none;font-weight:500; }
   .drop:hover { border-color: var(--amber); color: var(--amber); }
   .drop.over { border-color: var(--pine2); background: rgba(31,75,56,.06); color: var(--pine); }
   .pager { display: flex; align-items: center; gap: 8px; }
@@ -183,6 +184,38 @@
   .lb-prev { left: 20px; } .lb-next { right: 20px; }
   .lb-count { position: absolute; bottom: 22px; left: 50%; transform: translateX(-50%); color: #fff; font-size: 13px;
     background: rgba(0,0,0,.5); padding: 4px 12px; border-radius: 20px; }
+  @media (max-width: 600px) {
+    body { padding-bottom: env(safe-area-inset-bottom); background-attachment: scroll; }
+    header { padding: 9px 10px; align-items: flex-start; }
+    header .brand { font-size: 17px; white-space: nowrap; }
+    header .brand small { display: none; }
+    .hdr-right { gap: 5px; }
+    .wrap { padding: 14px 10px calc(76px + env(safe-area-inset-bottom)); }
+    .card { padding: 14px; border-radius: 13px; }
+    .scene { padding: 11px; }
+    button, .btn, .btn-ghost, .chip, input, select { min-height: 44px; }
+    button { min-width: 44px; }
+    textarea { min-height: 72px; }
+    .drop { min-height: 54px; display:flex;align-items:center;justify-content:center;font-size:13px; }
+    .phones { gap: 8px; }
+    .phone { width: min(46%, 180px); }
+    .lib { padding: 14px 10px calc(30px + env(safe-area-inset-bottom)); }
+    .lib-top { margin-bottom: 12px; }
+    .lib-top h2 { font-size: 21px; }
+    .lib-grid { grid-template-columns: repeat(auto-fill,minmax(150px,1fr)); gap: 10px; }
+    .created .box { width:calc(100% - 24px);padding:24px 16px; }
+    .viewer video { height:auto;max-height:82vh; }
+    .stat-table { display:block;overflow-x:auto;-webkit-overflow-scrolling:touch; }
+    .alb-grid, .gal-grid { grid-template-columns:repeat(2,minmax(0,1fr));gap:9px; }
+    .alb-grid-tpl { grid-template-columns:1fr; }
+    .alb-slide img { height:auto;max-height:72vh;max-width:82vw; }
+    .lb-nav { width:44px;height:44px;font-size:28px; }
+    .lb-prev { left:6px; }.lb-next { right:6px; }
+  }
+  @media (pointer: coarse) {
+    .lib-card:hover, .colordot:hover { transform:none; }
+    .drop:hover { border-color:var(--line);color:var(--muted); }
+  }
 </style>
 </head>
 <body>
@@ -220,6 +253,24 @@
 <script>
 const API = location.origin;
 let SESSION = null;
+let CSRF_TOKEN = "";
+const NATIVE_FETCH = window.fetch.bind(window);
+window.fetch = async function(input, init={}){
+  const url = new URL(typeof input==="string" ? input : input.url, location.href);
+  const method = (init.method || (typeof input!=="string"&&input.method) || "GET").toUpperCase();
+  const options = {...init};
+  if(url.origin===location.origin && !["GET","HEAD","OPTIONS"].includes(method) && url.pathname!=="/login"){
+    const headers = new Headers(options.headers || {});
+    if(CSRF_TOKEN) headers.set("X-CSRF-Token", CSRF_TOKEN);
+    options.headers = headers;
+  }
+  const response = await NATIVE_FETCH(input, options);
+  if(response.status===401 && !["/login","/session"].includes(url.pathname)){
+    SESSION=null; CSRF_TOKEN="";
+    setTimeout(()=>location.reload(), 50);
+  }
+  return response;
+};
 const HOOK_NAMES = { hook_red:"Viền đỏ", hook_green:"Hộp xanh", hook_brown:"Hộp nâu", hook_serif:"Khung vuông", hook_meo:"Khung mèo", hook_news:"Tin tức" };
 const PAGE = 3;
 let currentScenes = [], scenePage = 0, jobs = [], rendering = false, prevTimer = null, hookOverlayUrl = "";
@@ -236,22 +287,14 @@ async function doLogin(){
     const r=await fetch(API+"/login",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({username:u,password:p})});
     const j=await r.json();
     if(!j.ok){err.textContent=j.error||"Sai tài khoản";return;}
-    SESSION=j; sessionStorage.setItem("dalat_session",JSON.stringify(j)); startApp();
+    SESSION=j; CSRF_TOKEN=j.csrf_token||""; startApp();
   }catch(e){err.textContent="Lỗi kết nối server";}
 }
-function logout(){ sessionStorage.removeItem("dalat_session"); history.replaceState(null,"",location.pathname); location.reload(); }
-
-// Auto-login theo hash: domain/#nv1 → luồng nv1, domain/#tintuc → luồng tin tức (per-tab session)
-const HASH_USERS = {tintuc:"tintuc",nv1:"nv1",nv2:"nv2",nv3:"nv3",nv4:"nv4",nv5:"nv5",admin:"admin"};
-async function autoLoginFromHash(){
-  const h=(location.hash||"").replace(/^#/,"").trim().toLowerCase();
-  const u=HASH_USERS[h]; if(!u)return false;
-  const p = u==="admin" ? "admin123" : "123";
-  try{
-    const r=await fetch(API+"/login",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({username:u,password:p})});
-    const j=await r.json(); if(!j.ok)return false;
-    SESSION=j; sessionStorage.setItem("dalat_session",JSON.stringify(j)); startApp(); return true;
-  }catch(e){return false;}
+async function logout(){
+  try{ await fetch(API+"/logout",{method:"POST"}); }catch{}
+  SESSION=null; CSRF_TOKEN="";
+  history.replaceState(null,"",location.pathname);
+  location.reload();
 }
 document.getElementById("lg-pass").addEventListener("keydown",e=>{if(e.key==="Enter")doLogin();});
 
@@ -437,7 +480,7 @@ async function scrapeAllVenues(){
 async function renderVenues(target){
   target=target||"appbody";
   if(target==="appbody"&&typeof resetEditor==="function") resetEditor();
-  document.getElementById(target).innerHTML=`<div class="card"><div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap"><h2 class="sec">🗂 Thư viện địa điểm</h2><div style="display:flex;gap:8px"><button class="btn-ghost" onclick="scrapeAllVenues()">⬇ Cào ảnh APIFY (quán thiếu)</button><button class="btn" onclick="venueForm({})">➕ Thêm địa điểm</button></div></div><div class="muted" style="margin:6px 0 12px">Quán <b>seeding</b> (nền vàng) luôn ở đầu — đây là nhóm dùng để tạo content. Sửa loại "cần/không seeding" để bật/tắt.</div><div id="vlist" class="muted">Đang tải…</div></div>`;
+  document.getElementById(target).innerHTML=`<div class="card"><div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap"><h2 class="sec">🗂 Thư viện địa điểm</h2><div style="display:flex;gap:8px">${SESSION.role==="admin"?`<button class="btn-ghost" onclick="scrapeAllVenues()">⬇ Cào ảnh APIFY (quán thiếu)</button>`:""}<button class="btn" onclick="venueForm({})">➕ Thêm địa điểm</button></div></div><div class="muted" style="margin:6px 0 12px">Quán <b>seeding</b> (nền vàng) luôn ở đầu — đây là nhóm dùng để tạo content. Sửa loại "cần/không seeding" để bật/tắt.</div><div id="vlist" class="muted">Đang tải…</div></div>`;
   try{
     const r=await fetch(API+"/venues",{cache:"no-store"}); const j=await r.json();
     if(j.options) VOPTS=j.options;
@@ -453,7 +496,7 @@ async function renderVenues(target){
           <div class="muted" style="font-size:13px">${esc(v.address)}</div>
           <div class="muted" style="font-size:12px">${esc(v.feature||v.signature||"")}</div>
         </div>
-        <div style="display:flex;gap:6px"><button class="btn-ghost chip" onclick="editVenueById(${v.id})">Sửa</button><button class="btn-ghost chip" onclick="deleteVenueById(${v.id})">Xóa</button></div>
+        ${SESSION.role==="admin"?`<div style="display:flex;gap:6px"><button class="btn-ghost chip" onclick="editVenueById(${v.id})">Sửa</button><button class="btn-ghost chip" onclick="deleteVenueById(${v.id})">Xóa</button></div>`:""}
       </div>`;
     }).join("");
     document.getElementById("vlist").innerHTML=rows||"<div>Chưa có địa điểm nào.</div>";
@@ -463,7 +506,7 @@ function _sel(name,opts,val){return `<select data-f="${name}">`+opts.map(o=>`<op
 function venueForm(v){
   v=v||{}; VFORM=v; const isNew=!v.id;
   if(typeof resetEditor==="function") resetEditor();
-  const imgs=(v.image_urls||[]).map((u,i)=>`<div style="position:relative;display:inline-block;margin:4px"><img src="${u}?w=200" loading="lazy" decoding="async" style="width:84px;height:84px;object-fit:cover;border-radius:10px"><button onclick="deleteVenueImage(${v.id},${i})" style="position:absolute;top:-8px;right:-8px;border:none;background:#e44a60;color:#fff;border-radius:50%;width:22px;height:22px;cursor:pointer">×</button></div>`).join("");
+  const imgs=(v.image_urls||[]).map((u,i)=>`<div style="position:relative;display:inline-block;margin:4px"><img src="${u}?w=200" loading="lazy" decoding="async" style="width:84px;height:84px;object-fit:cover;border-radius:10px">${SESSION.role==="admin"?`<button onclick="deleteVenueImage(${v.id},${i})" style="position:absolute;top:-8px;right:-8px;border:none;background:#e44a60;color:#fff;border-radius:50%;width:22px;height:22px;cursor:pointer">×</button>`:""}</div>`).join("");
   document.getElementById("appbody").innerHTML=`<div class="card" style="max-width:640px;margin:0 auto" id="vform">
     <h2 class="sec">${isNew?"➕ Thêm địa điểm":"✏️ Sửa: "+esc(v.name)}</h2>
     <label>Tên quán</label><input data-f="name" value="${esc(v.name)}">
@@ -477,7 +520,7 @@ function venueForm(v){
     <label style="margin-top:12px">Ảnh (${(v.image_urls||[]).length})</label>
     <div id="vimgs">${imgs||(isNew?'<span class="muted">Lưu địa điểm trước rồi thêm ảnh.</span>':'<span class="muted">Chưa có ảnh.</span>')}</div>
     ${isNew?'':`<div style="display:flex;gap:8px;align-items:center;margin-top:8px;flex-wrap:wrap"><input type="file" accept="image/*" multiple onchange="uploadVenueImages(${v.id},this.files)"><button class="btn-ghost chip" onclick="scrapeVenueImages(${v.id})">🔄 Lấy ảnh từ Google Maps</button></div>`}
-    <div style="display:flex;gap:8px;margin-top:16px"><button class="btn" style="flex:1" onclick="saveVenue(${v.id||'null'})">💾 Lưu</button><button class="btn-ghost" onclick="renderVenues()">← Quay lại</button></div>
+    <div style="display:flex;gap:8px;margin-top:16px">${isNew||SESSION.role==="admin"?`<button class="btn" style="flex:1" onclick="saveVenue(${v.id||'null'})">💾 Lưu</button>`:""}<button class="btn-ghost" onclick="renderVenues()">← Quay lại</button></div>
   </div>`;
 }
 function _collectVenue(id){const o={};if(id)o.id=id;document.querySelectorAll("#vform [data-f]").forEach(el=>o[el.getAttribute("data-f")]=el.value.trim());return o;}
@@ -518,7 +561,7 @@ async function renderImages(target){
   try{
     const r=await fetch(API+"/images",{cache:"no-store"}); const j=await r.json();
     window.SHARED_IMGS=(j.images||[]).map(im=>im.url);
-    const cells=(j.images||[]).map((im,i)=>`<div style="position:relative"><img src="${im.url}?w=380" loading="lazy" decoding="async" onclick="openLightbox(window.SHARED_IMGS,${i})" style="width:100%;aspect-ratio:1;object-fit:cover;border-radius:12px;background:var(--surface2);cursor:zoom-in"><button onclick="event.stopPropagation();deleteAlbumImage(${im.id})" style="position:absolute;top:4px;right:4px;border:none;background:rgba(228,74,96,.92);color:#fff;border-radius:50%;width:24px;height:24px;cursor:pointer">×</button></div>`).join("");
+    const cells=(j.images||[]).map((im,i)=>`<div style="position:relative"><img src="${im.url}?w=380" loading="lazy" decoding="async" onclick="openLightbox(window.SHARED_IMGS,${i})" style="width:100%;aspect-ratio:1;object-fit:cover;border-radius:12px;background:var(--surface2);cursor:zoom-in">${SESSION.role==="admin"?`<button onclick="event.stopPropagation();deleteAlbumImage(${im.id})" style="position:absolute;top:4px;right:4px;border:none;background:rgba(228,74,96,.92);color:#fff;border-radius:50%;width:24px;height:24px;cursor:pointer">×</button>`:""}</div>`).join("");
     document.getElementById("imgrid").innerHTML=`<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:8px">${cells}</div><div class="muted" style="margin-top:10px">Tổng: ${(j.images||[]).length} ảnh</div>`;
   }catch(e){ document.getElementById("imgrid").textContent="Lỗi tải ảnh: "+e.message; }
 }
@@ -533,6 +576,112 @@ async function deleteAlbumImage(id){
 
 // ---------- shared clip meta ----------
 function loadClipMeta(file){return new Promise(res=>{const url=URL.createObjectURL(file),v=document.createElement("video");v.preload="metadata";v.muted=true;v.src=url;let done=false;const fin=(d,t)=>{if(done)return;done=true;URL.revokeObjectURL(url);res({dur:d,thumb:t});};v.onloadedmetadata=()=>{try{v.currentTime=Math.min(.15,(v.duration||1)/2);}catch{fin(v.duration||0,"");}};v.onseeked=()=>{let t="";try{const c=document.createElement("canvas");const ar=(v.videoWidth&&v.videoHeight)?v.videoWidth/v.videoHeight:9/16;c.width=120;c.height=Math.round(120/(ar||9/16));c.getContext("2d").drawImage(v,0,0,c.width,c.height);t=c.toDataURL("image/jpeg",.6);}catch{}fin(v.duration||0,t);};v.onerror=()=>fin(0,"");setTimeout(()=>fin(v.duration||0,""),4000);});}
+const UPLOAD_CHUNK_SIZE=8*1024*1024;
+const JOB_ABORTERS=new Map();
+function localJobId(prefix){return prefix+"_"+(crypto.randomUUID?crypto.randomUUID():Date.now().toString(36)+"_"+Math.random().toString(36).slice(2));}
+function jobUploadFiles(job){
+  const out=[];
+  (job.scenes||[]).forEach(scene=>(scene.files||[]).forEach((file,k)=>out.push({field:scene.scene_id+"__"+k,file})));
+  return out;
+}
+async function uploadState(job){
+  if(!job.uploadId)return null;
+  try{
+    const j=await (await fetch(API+"/uploads/"+job.uploadId,{cache:"no-store"})).json();
+    return j.success?j.upload:null;
+  }catch{return null;}
+}
+async function sendChunkWithRetry(job,serverFile,file,offset,controller){
+  let tries=0;
+  while(offset<file.size){
+    const end=Math.min(file.size,offset+UPLOAD_CHUNK_SIZE),blob=file.slice(offset,end);
+    try{
+      const r=await fetch(API+`/uploads/${job.uploadId}/${serverFile.id}`,{
+        method:"PUT",headers:{"Content-Type":"application/octet-stream","X-Upload-Offset":String(offset)},
+        body:blob,signal:controller.signal
+      });
+      const j=await r.json();
+      if(!r.ok||!j.success)throw new Error(j.error||`Upload HTTP ${r.status}`);
+      offset=Number(j.received||end); tries=0;
+      job.uploadedBytes=(job.uploadedBytesBase||0)+offset;
+      job.uploadPct=Math.min(100,Math.round(100*job.uploadedBytes/job.uploadTotal));
+      job.progress=Math.round(5+50*job.uploadPct/100); renderLibrary();
+    }catch(e){
+      if(e.name==="AbortError")throw e;
+      if(++tries>=3)throw e;
+      await new Promise(r=>setTimeout(r,600*tries));
+      const state=await uploadState(job),remote=(state&&state.files||[]).find(x=>x.id===serverFile.id);
+      if(remote)offset=Number(remote.received||0);
+    }
+  }
+}
+async function uploadAndQueue(job){
+  const entries=jobUploadFiles(job);
+  if(!entries.length)throw new Error("Job chưa có clip.");
+  job.uploadTotal=entries.reduce((sum,x)=>sum+x.file.size,0); job.uploadedBytes=0;
+  const controller=new AbortController(); JOB_ABORTERS.set(job.id,controller);
+  try{
+    let state=await uploadState(job);
+    if(!state){
+      const init=await (await fetch(API+"/uploads/init",{method:"POST",headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({kind:job.mode==="listreview"?"listreview_video":"personal_video",
+          files:entries.map(x=>({field:x.field,name:x.file.name,size:x.file.size,type:x.file.type||"application/octet-stream"}))})})).json();
+      if(!init.success)throw new Error(init.error||"Không tạo được phiên upload");
+      job.uploadId=init.upload.id; state=init.upload;
+    }
+    const remoteFiles=state.files||[];
+    if(remoteFiles.length!==entries.length)throw new Error("Danh sách file upload không khớp.");
+    let completed=0;
+    for(let i=0;i<entries.length;i++){
+      const remote=remoteFiles[i],entry=entries[i],offset=Number(remote.received||remote.received_size||0);
+      job.uploadedBytesBase=completed;
+      await sendChunkWithRetry(job,remote,entry.file,offset,controller);
+      completed+=entry.file.size; job.uploadedBytes=completed;
+    }
+    const done=await (await fetch(API+`/uploads/${job.uploadId}/complete`,{method:"POST",
+      headers:{"Content-Type":"application/json"},body:"{}"})).json();
+    if(!done.success)throw new Error(done.error||"Upload chưa hoàn tất");
+    job.uploadPct=null;job.progress=58;renderLibrary();
+    const payload=job.mode==="listreview"
+      ? {topic:job.topic,spec:job.spec,hook_style:job.hookStyle,draft_id:job.draftId||"",
+         voice_mode:job.voiceMode,voice_id:job.voiceId||""}
+      : {topic:job.topic,script:job.script,scenes_meta:job.scenes.map(s=>({scene_id:s.scene_id,
+         description:s.description,min_duration_sec:s.min_duration_sec,type:s.type})),
+         voice_mode:job.voiceMode,voice_id:job.voiceId||"",hook_style:job.hookStyle,
+         hook_title:job.hookTitle,hook_subtitle:job.hookSub,hook_text:job.hookTitle,
+         transition:"fade",template_ratio:"9:16",video_type:"personal"};
+    const created=await (await fetch(API+"/jobs",{method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({kind:job.mode==="listreview"?"listreview_video":"personal_video",upload_id:job.uploadId,payload})})).json();
+    if(!created.success)throw new Error(created.error||"Không tạo được job");
+    job.status="queued";job.progress=60;job.serverJob=created.job_id;
+    toast(`🎬 Đã vào hàng render nền (vị trí ${created.position||1}). Có thể logout.`);
+    startJobPolling();
+  }finally{JOB_ABORTERS.delete(job.id);}
+}
+async function cancelJob(id){
+  const job=jobs.find(x=>x.id===id);if(!job)return;
+  const controller=JOB_ABORTERS.get(id);if(controller)controller.abort();
+  try{
+    if(job.serverJob)await fetch(API+"/jobs/cancel",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({job_id:job.serverJob})});
+    else if(job.uploadId)await fetch(API+"/uploads/cancel",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({upload_id:job.uploadId})});
+  }catch{}
+  job.status="cancelled";job.error="Đã hủy";job.uploadPct=null;renderLibrary();
+}
+async function retryLocalJob(id){
+  const job=jobs.find(x=>x.id===id);if(!job||job.status!=="error")return;
+  if(job.serverJob){
+    try{
+      const response=await fetch(API+"/jobs/retry",{method:"POST",headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({job_id:job.serverJob})});
+      const data=await response.json();
+      if(!data.success)throw new Error(data.error||"Không thể thử lại job");
+      job.status="queued";job.error="";job.progress=60;renderLibrary();startJobPolling();
+      toast("Đã đưa job trở lại hàng đợi.");
+    }catch(error){job.error=error.message||String(error);renderLibrary();}
+    return;
+  }
+  job.status="pending";job.error="";job.progress=0;renderLibrary();renderAll();
+}
 
 // ---------- STAFF / NEWS create flow ----------
 function curHookStyle(){ return SESSION.role==="news" ? ("hook_news_"+newsColor) : SESSION.hook_style; }
@@ -796,6 +945,7 @@ function pageScene(d){
   const ed=document.getElementById("editor");if(ed)ed.scrollIntoView({behavior:"smooth",block:"start"});
 }
 
+function clipPickerLabel(){return matchMedia("(pointer:coarse)").matches?"+ Bấm để chọn clip":"+ Kéo-thả / bấm thêm clip";}
 function renderSceneInputs(){
   renderPager(); const box=document.getElementById("scenes"); if(!box)return; box.innerHTML="";
   const start=scenePage*PAGE;
@@ -838,7 +988,7 @@ function renderSceneInputs(){
     }
     div.innerHTML=`<div class="tag">${sc.label} <span class="dur">· mục tiêu ~${sc.min_duration_sec}s${sc.sources_needed?` · cần ~${sc.sources_needed} source`:""}</span></div>${head}${refBox}
       <div class="scene-total" id="total-${i}"></div><div class="clip-list" id="clips-${i}"></div>
-      <div class="drop" id="drop-${i}">+ Kéo-thả / bấm thêm clip</div>
+      <label class="drop" id="drop-${i}" for="file-${i}">${clipPickerLabel()}</label>
       <input type="file" accept="video/*,.mov,.mp4" multiple class="hidden" id="file-${i}">${extra}`;
     box.appendChild(div);
     const tEl=div.querySelector(`[data-title="${i}"]`); if(tEl)tEl.oninput=()=>{currentScenes[i].title=tEl.value;updateHookOverlay();};
@@ -851,7 +1001,7 @@ function renderSceneInputs(){
     const emEl=div.querySelector(`[data-emoji="${i}"]`); if(emEl)emEl.oninput=()=>{currentScenes[i].emoji=emEl.value;renderPreview();};
     const bdEl=div.querySelector(`[data-body="${i}"]`); if(bdEl)bdEl.oninput=()=>{currentScenes[i].body=bdEl.value.split("\n").map(x=>x.trim()).filter(Boolean);renderPreview();};
     const drop=div.querySelector("#drop-"+i),input=div.querySelector("#file-"+i);
-    drop.onclick=()=>input.click(); input.onchange=()=>{addFiles(i,input.files);input.value="";};
+    input.onchange=()=>{addFiles(i,input.files);input.value="";};
     drop.ondragover=e=>{e.preventDefault();drop.classList.add("over");};drop.ondragleave=()=>drop.classList.remove("over");
     drop.ondrop=e=>{e.preventDefault();drop.classList.remove("over");addFiles(i,e.dataTransfer.files);};
     renderClipList(i);
@@ -879,13 +1029,14 @@ async function addFiles(i,fl){
     READING_CLIPS--;
     renderClipList(i);renderPreview();
   }
-  const d3=document.getElementById("drop-"+i); if(d3)d3.textContent="+ Kéo-thả / bấm thêm clip";
+  const d3=document.getElementById("drop-"+i); if(d3)d3.textContent=clipPickerLabel();
 }
 function removeClip(i,k){currentScenes[i].files.splice(k,1);renderClipList(i);renderPreview();}
 function sceneTotal(i){return currentScenes[i].files.reduce((a,c)=>a+(c.dur||0),0);}
 function renderClipList(i){const sc=currentScenes[i],box=document.getElementById("clips-"+i);if(!box)return;box.innerHTML="";sc.files.forEach((c,k)=>{const row=document.createElement("div");row.className="clip-row";row.innerHTML=`${c.thumb?`<img src="${c.thumb}">`:`<img>`}<span class="nm">${k+1}. ${c.file.name}</span><span class="du">${c.dur?c.dur.toFixed(1)+"s":"—"}</span><button class="x">✕</button>`;row.querySelector(".x").onclick=()=>removeClip(i,k);box.appendChild(row);});const tot=sceneTotal(i),tg=sc.min_duration_sec,el=document.getElementById("total-"+i);if(!el)return;if(!sc.files.length){el.textContent="";return;}const ok=tot>=tg;el.className="scene-total "+(ok?"ok":"low");el.textContent=ok?`✓ ${tot.toFixed(1)}s (mục tiêu ~${tg}s)`+(tot>tg+1?" — dư sẽ cắt":""):`⚠ ${tot.toFixed(1)}s / ~${tg}s — nên thêm clip`;}
 
 async function createVideo(){
+  if(READING_CLIPS>0){toast(`⏳ Đang đọc ${READING_CLIPS} clip, chờ hoàn tất rồi render.`);return;}
   // Guard: mọi scene phải có clip (không thì render ra nền navy). Chỉ RÕ scene thiếu + nhảy tới đó cho dễ tìm.
   const emptyIdxs=currentScenes.map((s,i)=>s.files.length===0?i:-1).filter(i=>i>=0);
   if(emptyIdxs.length){
@@ -898,7 +1049,7 @@ async function createVideo(){
   if(SESSION.role==="staff") return createVideoLR();
   const isNews=SESSION.role==="news";
   const sub=isNews?"":(currentScenes[0].caption||"").trim();
-  const job={id:"job_"+Date.now().toString(36),topic:((currentScenes[0].title||"")||"Clip").slice(0,50),
+  const job={id:localJobId("job"),topic:((currentScenes[0].title||"")||"Clip").slice(0,50),
     script:{hook:(currentScenes[0].title||"").trim(),body:(currentScenes[1].caption||"").trim(),cta:(currentScenes[2].caption||"").trim()},
     hookTitle:(currentScenes[0].title||"").trim(),hookSub:sub,hookStyle:curHookStyle(),hookPrev:hookOverlayUrl,
     voiceMode:voicePickMode().mode,voiceId:voicePickMode().id,
@@ -926,7 +1077,7 @@ function createVideoLR(){
     outro:{scene_id:"outro",section_title:(outro&&outro.section_title||"").trim(),emoji:(outro&&outro.emoji||"").trim(),body:(outro&&outro.body)||null,vo:(outro?(outro.caption||""):"").trim()}
   };
   const _vp=voicePickMode();
-  const job={id:"lr_"+Date.now().toString(36),mode:"listreview",topic:((intro.title||"")||"List review").slice(0,50),
+  const job={id:localJobId("lr"),mode:"listreview",topic:((intro.title||"")||"List review").slice(0,50),
     draftId:CURRENT_DRAFT_ID,
     spec,hookStyle:curHookStyle(),voiceMode:_vp.mode,voiceId:_vp.id,
     scenes:currentScenes.filter(s=>s.files.length).map(s=>({scene_id:s.scene_id,files:s.files.map(c=>c.file)})),
@@ -941,58 +1092,14 @@ async function renderAll(){
   if(rendering)return; rendering=true;
   let job;
   while((job=jobs.find(j=>j.status==="pending"))){
-    job.status="rendering"; job.progress=15; renderLibrary();
+    job.status="uploading"; job.progress=5; renderLibrary();
     try{
-      if(job.mode==="listreview"){
-        const fd=new FormData();
-        fd.append("job_id",job.id); fd.append("user",SESSION.username); fd.append("creator_id",SESSION.username);
-        fd.append("hook_style",job.hookStyle); fd.append("voice_mode",job.voiceMode||SESSION.voice||"gtts"); fd.append("voice_id",job.voiceId||"");
-        if(job.draftId) fd.append("draft_id",job.draftId);
-        fd.append("spec",JSON.stringify(job.spec));
-        job.scenes.forEach(s=>s.files.forEach((f,k)=>fd.append(s.scene_id+"__"+k,f,f.name)));
-        // Upload bằng XHR để có TIẾN ĐỘ thật (phone 4G upload lâu không còn tưởng đơ)
-        const t=await new Promise((resolve,reject)=>{
-          const xhr=new XMLHttpRequest();
-          xhr.open("POST",API+"/assemble-listreview");
-          xhr.upload.onprogress=(ev)=>{
-            if(ev.lengthComputable){
-              job.progress=Math.round(5+50*ev.loaded/ev.total);
-              job.uploadPct=Math.round(100*ev.loaded/ev.total);
-              renderLibrary();
-            }
-          };
-          xhr.onload=()=>resolve(xhr.responseText);
-          xhr.onerror=()=>reject(new Error("Mất kết nối khi tải lên"));
-          xhr.send(fd);
-        });
-        job.uploadPct=null; job.progress=55; renderLibrary();
-        let res; try{res=JSON.parse(t);}catch{throw new Error("Phản hồi lạ");}
-        if(!res.success) throw new Error(res.error||"render fail");
-        if(res.queued){
-          // RENDER NỀN: server đã nhận đủ file — logout cũng vẫn render tiếp.
-          job.status="queued"; job.progress=60; job.serverJob=res.job_id;
-          toast(`🎬 Đã vào hàng render nền (vị trí ${res.position}). Có thể LOGOUT — video xong tự vào thư viện Video.`);
-          startJobPolling();
-        } else {
-          job.status="done"; job.progress=100; job.videoUrl=res.video_url||"";
-        }
-        renderLibrary(); continue;
-      }
-      const fd=new FormData();
-      fd.append("job_id",job.id); fd.append("video_type","personal"); fd.append("creator_id",SESSION.username);
-      fd.append("user",SESSION.username); fd.append("topic",job.topic);
-      fd.append("voice_mode",job.voiceMode||SESSION.voice||"gtts"); fd.append("voice_id",job.voiceId||"");
-      fd.append("hook_style",job.hookStyle); fd.append("hook_title",job.hookTitle); fd.append("hook_subtitle",job.hookSub);
-      fd.append("hook_text",job.hookTitle); fd.append("transition","fade"); fd.append("template_ratio","9:16");
-      fd.append("script",JSON.stringify(job.script));
-      fd.append("scenes_meta",JSON.stringify(job.scenes.map(s=>({scene_id:s.scene_id,description:s.description,min_duration_sec:s.min_duration_sec,type:s.type}))));
-      job.scenes.forEach(s=>s.files.forEach((f,k)=>fd.append(s.scene_id+"__"+k,f,f.name)));
-      job.progress=55; renderLibrary();
-      const r=await fetch(API+"/assemble",{method:"POST",body:fd}); const t=await r.text();
-      let res; try{res=JSON.parse(t);}catch{throw new Error("Phản hồi lạ");}
-      if(!res.success) throw new Error(res.error||"render fail");
-      job.status="done"; job.progress=100; job.videoUrl=res.video_url||"";
-    }catch(e){job.status="error";job.error=e.message;}
+      await uploadAndQueue(job);
+    }catch(e){
+      job.uploadPct=null;
+      if(e.name==="AbortError"){job.status="cancelled";job.error="Đã hủy";}
+      else{job.status="error";job.error=e.message;}
+    }
     renderLibrary();
   }
   rendering=false;
@@ -1006,11 +1113,12 @@ function startJobPolling(){
     const waiting=jobs.filter(j=>j.status==="queued"&&j.serverJob);
     if(!waiting.length){ clearInterval(_jobPollTimer); _jobPollTimer=null; return; }
     try{
-      const j=await (await fetch(API+`/render-jobs?user=${SESSION.username}`,{cache:"no-store"})).json();
+      const j=await (await fetch(API+"/render-jobs",{cache:"no-store"})).json();
       (j.jobs||[]).forEach(sj=>{
         const loc=jobs.find(x=>x.serverJob===sj.job_id); if(!loc)return;
         if(sj.status==="done"){ loc.status="done"; loc.progress=100; loc.videoUrl=sj.video_url||""; loc.thumbUrl=sj.thumb_url||""; toast("✅ Render xong: "+(loc.topic||"")); }
-        else if(sj.status==="failed"){ loc.status="error"; loc.error=sj.error||"render lỗi"; toast("⚠ Render lỗi: "+(sj.error||"")); }
+        else if(sj.status==="failed"||sj.status==="unknown"){ loc.status="error"; loc.error=sj.error||"render lỗi"; toast("⚠ Job lỗi: "+(sj.error||"")); }
+        else if(sj.status==="cancelled"){ loc.status="cancelled"; loc.error="Đã hủy"; }
         else if(sj.status==="rendering"){ loc.progress=80; }
       });
       renderLibrary();
@@ -1020,7 +1128,7 @@ function startJobPolling(){
 
 // ---------- VIDEO (trang riêng: kịch bản đã lưu + video) ----------
 let libVideos=[];
-async function fetchLibrary(){try{const r=await fetch(API+`/library?user=${SESSION.username}&role=${SESSION.role}`,{cache:"no-store"});libVideos=(await r.json()).videos||[];}catch{}}
+async function fetchLibrary(){try{const r=await fetch(API+"/library",{cache:"no-store"});libVideos=(await r.json()).videos||[];}catch{}}
 function renderVideoPage(){
   if(typeof resetEditor==="function") resetEditor();
   document.getElementById("appbody").innerHTML=`
@@ -1044,15 +1152,16 @@ function renderVideoPage(){
 }
 let SERVER_RJOBS=[];
 async function fetchServerJobs(){
-  try{ const j=await (await fetch(API+`/render-jobs?user=${SESSION.username}&role=${SESSION.role}`,{cache:"no-store"})).json();
-    SERVER_RJOBS=(j.jobs||[]).filter(x=>x.status==="queued"||x.status==="rendering");
+  try{ const j=await (await fetch(API+"/render-jobs",{cache:"no-store"})).json();
+    SERVER_RJOBS=(j.jobs||[]).filter(x=>(x.status==="queued"||x.status==="rendering")
+      &&(x.kind==="personal_video"||x.kind==="listreview_video"));
   }catch{ SERVER_RJOBS=[]; }
 }
 let VIDEO_DRAFTS=[];
 async function loadDrafts(){
   const box=document.getElementById("draftBox"); if(!box)return;
   try{
-    const j=await (await fetch(API+`/script-drafts?user=${SESSION.username}&role=${SESSION.role}`,{cache:"no-store"})).json();
+    const j=await (await fetch(API+"/script-drafts",{cache:"no-store"})).json();
     VIDEO_DRAFTS=j.drafts||[]; renderDrafts();
   }catch(e){ box.textContent="Lỗi tải kịch bản: "+e.message; }
 }
@@ -1116,7 +1225,18 @@ function renderLibrary(){
     SERVER_RJOBS.filter(sj=>!localIds.has(sj.job_id)).forEach(sj=>{
       cards.push(`<div class="lib-card"><div class="lib-render"><div class="mid"><div class="spin"></div><div>${sj.status==="rendering"?"⏳ Đang render…":"🕓 Chờ render (hàng đợi)"}</div><div class="muted" style="color:#ddd;font-size:11px">${(sj.topic||"").replace(/</g,"&lt;")}</div></div><div class="lib-bar" style="width:${sj.status==="rendering"?70:30}%"></div></div><div class="cap"><span>${(sj.topic||"video").replace(/</g,"&lt;")}${SESSION.role==="admin"&&sj.user?" · "+makerName(sj.user):""}</span></div></div>`);
     });
-    jobs.filter(j=>j.status!=="done").forEach(j=>{cards.push(`<div class="lib-card"><div class="lib-render" style="${j.hookPrev?`background-image:url(${j.hookPrev})`:""}"><div class="blur" style="${j.hookPrev?`background-image:url(${j.hookPrev})`:""}"></div><div class="mid">${j.status==="error"?`<div style="color:#ffb4b4">Lỗi</div><div class="muted" style="color:#ddd;max-width:90%;text-align:center">${j.error||""}</div>`:`<div class="spin"></div><div>${j.uploadPct!=null?"📤 Đang tải lên "+j.uploadPct+"%":j.status==="rendering"?"Đang render "+j.progress+"%":j.status==="queued"?"🎬 Render nền (logout được)":"Chờ…"}</div>`}</div><div class="lib-bar" style="width:${j.progress}%"></div></div><div class="cap"><span>${j.topic}</span></div></div>`);});
+    jobs.filter(j=>j.status!=="done").forEach(j=>{
+      const failed=j.status==="error",cancelled=j.status==="cancelled";
+      const state=failed
+        ? `<div style="color:#ffb4b4">Lỗi</div><div class="muted" style="color:#ddd;max-width:90%;text-align:center">${(j.error||"").replace(/</g,"&lt;")}</div>`
+        : cancelled
+          ? `<div style="color:#ddd">Đã hủy</div>`
+          : `<div class="spin"></div><div>${j.uploadPct!=null?"📤 Đang tải lên "+j.uploadPct+"%":j.status==="rendering"?"Đang render "+j.progress+"%":j.status==="queued"?"🎬 Render nền (logout được)":"Chuẩn bị upload…"}</div>`;
+      const actions=failed
+        ? `<button class="btn chip" onclick="retryLocalJob('${j.id}')">↻ Thử lại</button>`
+        : (!cancelled?`<button class="btn-ghost chip" onclick="cancelJob('${j.id}')">✕ Hủy</button>`:"");
+      cards.push(`<div class="lib-card"><div class="lib-render" style="${j.hookPrev?`background-image:url(${j.hookPrev})`:""}"><div class="blur" style="${j.hookPrev?`background-image:url(${j.hookPrev})`:""}"></div><div class="mid">${state}</div><div class="lib-bar" style="width:${j.progress}%"></div></div><div class="cap" style="flex-wrap:wrap"><span>${(j.topic||"Video").replace(/</g,"&lt;")}</span>${actions}</div></div>`);
+    });
   }
   const shown=new Set();
   if(!LIB_FILTER) jobs.filter(j=>j.status==="done"&&j.videoUrl).forEach(j=>{shown.add(j.videoUrl);cards.push(libCard(j.videoUrl,j.topic,null,null,null,{thumb_url:j.thumbUrl||""}));});
@@ -1132,7 +1252,7 @@ function renderLibrary(){
 }
 let LIB_SHOWN=18;
 function statusChip(s){
-  const m={posted:["✅ Đã đăng","#2f9d57"],failed:["⚠ Đăng lỗi","#e2536b"],cancelled:["✕ Hủy","#999"],pending:["🕓 Chưa đăng","#b98b00"]};
+  const m={posted:["✅ Đã đăng","#2f9d57"],publishing:["⏳ Đang đăng","#1976d2"],unknown:["❓ Cần kiểm tra","#c46b16"],failed:["⚠ Đăng lỗi","#e2536b"],cancelled:["✕ Hủy","#999"],pending:["🕓 Chưa đăng","#b98b00"]};
   const [t,c]=m[s]||m.pending;
   return `<span style="font-size:11px;font-weight:700;color:${c}">${t}</span>`;
 }
@@ -1158,7 +1278,7 @@ function libCard(url,topic,user,status,time,rec){
 
 // ---------- ADMIN: duyệt bài + KPI ----------
 let ADMIN_TAB="pending", REVIEW_ITEMS=[];
-function statusLabel(s){return {pending:"Chưa đăng",posted:"Đã đăng",failed:"Đăng lỗi",cancelled:"Hủy"}[s]||s;}
+function statusLabel(s){return {pending:"Chưa đăng",publishing:"Đang đăng",unknown:"Cần kiểm tra",posted:"Đã đăng",failed:"Đăng lỗi",cancelled:"Hủy"}[s]||s;}
 async function renderAdmin(){
   document.getElementById("appbody").innerHTML=`
     <div class="card" style="margin-bottom:16px"><h2 class="sec">📊 KPI hôm nay (mục tiêu: nv 5 video + 5 ảnh · tin tức 10 video)</h2><div id="kpiBox" class="muted">Đang tải…</div></div>
@@ -1201,11 +1321,11 @@ async function adminReviewLoad(){
   try{
     const s=revSince();
     const [lv,la]=await Promise.all([
-      fetch(API+`/library?role=admin&since=${s}`,{cache:"no-store"}).then(r=>r.json()),
-      fetch(API+`/album-library?role=admin&since=${s}`,{cache:"no-store"}).then(r=>r.json())
+      fetch(API+`/library?since=${s}`,{cache:"no-store"}).then(r=>r.json()),
+      fetch(API+`/album-library?since=${s}`,{cache:"no-store"}).then(r=>r.json())
     ]);
-    const vids=(lv.videos||[]).map(v=>({kind:"video",key:v.video_url,url:v.video_url,thumb_url:v.thumb_url||"",preview_url:v.preview_url||"",user:v.user,title:v.topic||"video",status:v.status||"pending",time:v.time||0,archived:!!v.archived,drive_link:v.drive_link||""}));
-    const albs=(la.albums||[]).map(a=>({kind:"album",key:a.dir,cover:(a.images&&a.images[0])?a.images[0].url:"",images:(a.images||[]).map(im=>im.url),user:a.user,title:a.label||a.album,status:a.status||"pending",time:a.time||0,count:(a.images||[]).length}));
+    const vids=(lv.videos||[]).map(v=>({kind:"video",key:v.id,url:v.video_url,thumb_url:v.thumb_url||"",preview_url:v.preview_url||"",user:v.user,title:v.topic||"video",status:v.status||"pending",time:v.time||0,archived:!!v.archived,drive_link:v.drive_link||""}));
+    const albs=(la.albums||[]).map(a=>({kind:"album",key:a.id,cover:(a.images&&a.images[0])?a.images[0].url:"",images:(a.images||[]).map(im=>im.url),user:a.user,title:a.label||a.album,status:a.status||"pending",time:a.time||0,count:(a.images||[]).length}));
     REVIEW_ITEMS=[...vids,...albs].sort((x,y)=>y.time-x.time);
     renderReview();
   }catch(e){const b=document.getElementById("reviewBox");if(b)b.textContent="Lỗi tải: "+e.message;}
@@ -1241,6 +1361,10 @@ function renderReview(){
       : (it.cover?`<div style="position:relative;cursor:pointer" onclick="openAlbumImages('${it.key}')"><img src="${API+it.cover}?w=220" loading="lazy" decoding="async" style="width:100%;aspect-ratio:4/5;object-fit:cover;border-radius:10px"><span style="position:absolute;bottom:6px;right:6px;background:rgba(0,0,0,.65);color:#fff;font-size:11px;padding:2px 7px;border-radius:8px">🖼 ${it.count} ảnh</span></div>`:"<div class='muted'>—</div>");
     const btns = it.status==="posted"
       ? `<button class="btn-ghost chip" onclick="setStatus('${it.kind}','${it.key}','pending')">↩ Chưa đăng</button>`
+      : it.status==="publishing"
+        ? `<button class="btn chip" disabled>⏳ Đang đăng…</button>`
+      : it.status==="unknown"
+        ? `<button class="btn chip" style="background:#c46b16;border-color:#c46b16" onclick="reconcilePublish('${it.kind}','${it.key}',this)">↻ Đối soát Zernio</button>`
       : `<button class="btn chip" style="background:#1976d2;border-color:#1976d2" onclick="publishItem('${it.kind}','${it.key}','${it.user||""}',this)">Đăng</button><button class="btn-ghost chip" onclick="setStatus('${it.kind}','${it.key}','cancelled',this)">✕ Hủy</button>`;
     const dd=it.time?new Date(it.time*1000).toLocaleDateString("vi"):"";
     return `<div class="lib-card" style="padding:8px">${media}
@@ -1272,13 +1396,40 @@ async function publishItem(kind,key,user,btn){
 }
 async function setStatus(kind,key,status,btn,opts){
   if(btn){ btn.disabled=true; btn.style.opacity=".6"; if(status==="posted"){ btn.textContent="⏳ Đang đăng…"; toast("⏳ Đang đăng lên TikTok…"); } }
-  try{ const j=await (await fetch(API+"/product-status",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({kind,key,status,...(opts||{})})})).json();
+  try{ const j=await (await fetch(API+"/product-status",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({kind,id:key,status,...(opts||{})})})).json();
     if(!j.success)throw new Error(j.error||"không tìm thấy");
-    if(status==="posted" && j.posted===false){ status="failed"; toast("Đăng lỗi: "+(j.error||"")); }
+    if(j.queued){
+      status="publishing";toast("🕓 Đã xếp hàng đăng TikTok — có thể tiếp tục duyệt bài khác.");
+      waitDurableJob(j.job_id).then(done=>{
+        toast(done.result_status==="publishing"
+          ?"⏳ Zernio đã nhận bài, hệ thống đang đối soát trạng thái."
+          :"✅ Đã đăng TikTok");
+        adminReviewLoad();loadKpi();
+      })
+        .catch(e=>{toast("⚠ Đăng bài: "+e.message);adminReviewLoad();});
+    }else if(status==="posted" && j.posted===false){ status="failed"; toast("Đăng lỗi: "+(j.error||"")); }
     else toast(status==="posted"&&j.posted?"✅ Đã đăng TikTok":"Đã cập nhật: "+statusLabel(status));
     const it=REVIEW_ITEMS.find(x=>x.kind===kind&&x.key===key); if(it)it.status=status;
     renderReview(); loadKpi();
   }catch(e){toast("Lỗi: "+e.message); if(btn){btn.disabled=false;btn.style.opacity="1";btn.textContent="Đăng";}}
+}
+async function reconcilePublish(kind,key,btn){
+  if(btn){btn.disabled=true;btn.style.opacity=".6";btn.textContent="Đang đối soát…";}
+  try{
+    const r=await fetch(API+"/publish-reconcile",{method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({kind,id:key})});
+    const j=await r.json();
+    if(!j.success)throw new Error(j.error||"Không đối soát được Zernio");
+    const item=REVIEW_ITEMS.find(x=>x.kind===kind&&x.key===key);
+    if(item)item.status=j.status||"unknown";
+    toast(j.status==="posted"?"✅ Zernio xác nhận bài đã đăng":
+      j.status==="failed"?"⚠ Zernio xác nhận đăng thất bại — có thể thử lại":
+      "⏳ Zernio vẫn đang xử lý bài.");
+    adminReviewLoad();loadKpi();
+  }catch(error){
+    toast("⚠ Đối soát: "+error.message);
+    if(btn){btn.disabled=false;btn.style.opacity="1";btn.textContent="↻ Đối soát Zernio";}
+  }
 }
 
 // ---------- TẠO ẢNH (per-nv: mẫu album theo tài khoản + album đã lưu) ----------
@@ -1310,7 +1461,7 @@ function renderImageGen(){
 async function loadAlbumTemplates(){
   const box=document.getElementById("albTpls"); if(!box)return;
   try{
-    const r=await fetch(API+`/albums?user=${SESSION.username}`,{cache:"no-store"});
+    const r=await fetch(API+"/albums",{cache:"no-store"});
     const items=(await r.json()).albums||[];
     if(!items.length){ box.innerHTML="<div class='muted'>Tài khoản này chưa có mẫu album (sẽ cập nhật sau).</div>"; return; }
     box.classList.remove("muted");
@@ -1323,7 +1474,7 @@ async function loadAlbumTemplates(){
 async function loadSavedAlbums(){
   const box=document.getElementById("albSaved"); if(!box)return;
   try{
-    const r=await fetch(API+`/album-library?user=${SESSION.username}&role=${SESSION.role}`,{cache:"no-store"});
+    const r=await fetch(API+"/album-library",{cache:"no-store"});
     SAVED_ALBUMS=(await r.json()).albums||[]; renderSavedAlbums();
   }catch(e){ box.textContent="Lỗi: "+e.message; }
 }
@@ -1346,7 +1497,20 @@ function renderSavedAlbums(){
   }).join("")}</div>`;
 }
 function openSavedAlbum(i){ const a=SAVED_ALBUMS[i]; if(a) renderAlbumView(a); }
-let _aiimgPollIv=null;
+async function waitDurableJob(jobId,onTick,timeoutMs=20*60*1000){
+  const started=Date.now();
+  while(Date.now()-started<timeoutMs){
+    const j=await (await fetch(API+"/render-jobs",{cache:"no-store"})).json();
+    const job=(j.jobs||[]).find(x=>x.job_id===jobId);
+    if(job){
+      if(onTick)onTick(job);
+      if(job.status==="done")return job;
+      if(job.status==="failed"||job.status==="unknown"||job.status==="cancelled")throw new Error(job.error||job.status);
+    }
+    await new Promise(r=>setTimeout(r,3000));
+  }
+  throw new Error("Job chạy quá 20 phút; có thể xem lại trong thư viện.");
+}
 async function aiImageFromLink(){
   const url=(document.getElementById("aiimgLink").value||"").trim();
   if(!url){toast("Dán link bài ảnh TikTok trước");return;}
@@ -1354,13 +1518,13 @@ async function aiImageFromLink(){
   btn.disabled=true; btn.textContent="⏳ Đang gửi…";
   try{
     const j=await (await fetch(API+"/ai-image-from-link",{method:"POST",headers:{"Content-Type":"application/json"},
-      body:JSON.stringify({user:SESSION.username,url})})).json();
+      body:JSON.stringify({url})})).json();
     if(!j.success)throw new Error(j.error||"lỗi");
-    if(st)st.textContent="🎬 Đang tạo nền — AI vẽ lại từng ảnh (bài nhiều ảnh ~vài phút). Xong sẽ tự vào 'Album đã lưu' bên dưới. Có thể làm việc khác / logout.";
-    toast("🎬 Đang tạo nền, xong tự vào Album đã lưu");
-    // Poll lại danh sách album mỗi 20s (~8 phút) để album mới hiện khi xong
-    if(_aiimgPollIv) clearInterval(_aiimgPollIv);
-    let n=0; _aiimgPollIv=setInterval(()=>{ n++; loadSavedAlbums(); if(n>=24){clearInterval(_aiimgPollIv);_aiimgPollIv=null;} }, 20000);
+    if(st)st.textContent=`🎬 Đã xếp hàng (vị trí ${j.position||1}) — có thể làm việc khác hoặc logout.`;
+    toast("🎬 Đã xếp hàng tạo ảnh");
+    waitDurableJob(j.job_id,job=>{if(st)st.textContent=job.status==="rendering"?"🪄 AI đang tạo ảnh…":"🕓 Đang chờ tài nguyên…";})
+      .then(()=>{if(st)st.textContent="✅ Đã tạo xong và lưu vào Album.";loadSavedAlbums();toast("✅ Album AI đã tạo xong");})
+      .catch(e=>{if(st)st.textContent="⚠ "+e.message;toast("Lỗi: "+e.message);});
   }catch(e){ toast("Lỗi: "+e.message); if(st)st.textContent="⚠ "+e.message; }
   finally{ btn.disabled=false; btn.textContent="🪄 Tạo lại"; }
 }
@@ -1372,13 +1536,19 @@ async function genAlbum(id){
   const titlePrompt=ALB_TITLE_PROMPTS[id]||"";
   toast("⏳ Đang dựng album…");
   try{
-    const r=await fetch(API+"/assemble-image",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({album:id,user:SESSION.username,title_prompt:titlePrompt})});
+    const r=await fetch(API+"/assemble-image",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({album:id,title_prompt:titlePrompt})});
     const j=await r.json(); if(!j.success) throw new Error(j.error||"lỗi");
-    renderAlbumView(j); toast(`Đã tạo ${(j.images||[]).length} ảnh`);
+    toast(`🕓 Đã vào hàng tạo ảnh (vị trí ${j.position||1})`);
+    const done=await waitDurableJob(j.job_id,job=>{if(btn)btn.textContent=job.status==="rendering"?"🪄 Đang dựng…":"🕓 Đang chờ…";});
+    const lib=await (await fetch(API+"/album-library",{cache:"no-store"})).json();
+    SAVED_ALBUMS=lib.albums||[];
+    const album=SAVED_ALBUMS.find(a=>a.id===done.album_id);
+    if(!album)throw new Error("Album đã tạo nhưng chưa tải được dữ liệu.");
+    renderAlbumView(album); toast(`Đã tạo ${(album.images||[]).length} ảnh`);
   }catch(e){ toast("Lỗi: "+e.message); if(btn){btn.disabled=false;btn.textContent="Tạo album";} }
 }
 function renderAlbumView(a){
-  const imgs=a.images||[]; window._albImgs=imgs;
+  const imgs=a.images||[]; window._albImgs=imgs;window._albId=a.id||"";
   document.getElementById("appbody").innerHTML=`
     <div class="card" style="margin-bottom:14px;display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap">
       <div><h2 class="sec" style="margin:0">${a.label||a.album}</h2>
@@ -1386,7 +1556,7 @@ function renderAlbumView(a){
       <div style="display:flex;gap:8px;flex-wrap:wrap">
         <button class="btn" onclick="genAlbum('${a.album}')">↻ Tạo lại</button>
         <button class="btn-ghost" onclick="downloadAlbum()">⤓ Tải cả bộ</button>
-        ${a.dir?`<button class="btn-ghost" onclick="deleteAlbum('${a.dir}')">🗑 Xoá</button>`:""}
+        ${a.id?`<button class="btn-ghost" onclick="deleteAlbum('${a.id}')">🗑 Xoá</button>`:""}
         <button class="btn-ghost" onclick="renderImageGen()">← Ảnh</button>
       </div>
     </div>
@@ -1394,10 +1564,13 @@ function renderAlbumView(a){
       <div class="alb-slide"><img src="${API+im.url}" loading="lazy" onclick="openLightbox(window._albImgs.map(x=>x.url),${k})">
         <a href="${API+im.url}" download="${im.name}">⤓ ${im.name}</a></div>`).join("")||"<div class='muted'>Không có ảnh.</div>"}</div></div>`;
 }
-function downloadAlbum(){ (window._albImgs||[]).forEach((im,k)=>{ const el=document.createElement("a"); el.href=API+im.url; el.download=im.name; document.body.appendChild(el); setTimeout(()=>{el.click();el.remove();}, k*250); }); }
-async function deleteAlbum(dir){
+function downloadAlbum(){
+  if(window._albId){const el=document.createElement("a");el.href=API+"/album-zip/"+encodeURIComponent(window._albId);el.download="album.zip";document.body.appendChild(el);el.click();el.remove();return;}
+  (window._albImgs||[]).forEach((im,k)=>{const el=document.createElement("a");el.href=API+im.url;el.download=im.name;document.body.appendChild(el);setTimeout(()=>{el.click();el.remove();},k*250);});
+}
+async function deleteAlbum(id){
   if(!confirm("Xoá album này (cả ảnh)?"))return;
-  try{ const r=await fetch(API+"/album-delete",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({dir})}); const j=await r.json(); if(!j.success)throw new Error(j.error||"lỗi"); toast("Đã xoá"); renderImageGen(); }catch(e){ toast("Lỗi: "+e.message); }
+  try{ const r=await fetch(API+"/album-delete",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({id})}); const j=await r.json(); if(!j.success)throw new Error(j.error||"lỗi"); toast("Đã xoá"); renderImageGen(); }catch(e){ toast("Lỗi: "+e.message); }
 }
 let LB_LIST=[], LB_IDX=0;
 function openLightbox(list,idx){ LB_LIST=list||[]; LB_IDX=idx||0; if(!LB_LIST.length)return; _lbShow(); document.getElementById("imgview").classList.remove("hidden"); }
@@ -1472,11 +1645,15 @@ async function savePrompt(){
   }catch(e){ st.textContent="⚠ "+e.message; toast("Lỗi lưu: "+e.message); }
 }
 
-// boot — phiên per-tab (sessionStorage); nếu chưa có thì auto-login theo hash (#nv1, #tintuc...)
-(function(){
-  const s=sessionStorage.getItem("dalat_session");
-  if(s){try{SESSION=JSON.parse(s);startApp();return;}catch{}}
-  autoLoginFromHash();
+// Boot from the server-side HttpOnly session. URL hashes never authenticate users.
+(async function(){
+  sessionStorage.removeItem("dalat_session");
+  try{
+    const r=await fetch(API+"/session",{cache:"no-store"});
+    if(!r.ok)return;
+    const j=await r.json();
+    if(j.ok){SESSION=j;CSRF_TOKEN=j.csrf_token||"";startApp();}
+  }catch{}
 })();
 </script>
 </body>

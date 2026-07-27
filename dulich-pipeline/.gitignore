@@ -7,6 +7,17 @@ __pycache__/
 
 # ── Secrets (KHONG BAO GIO commit) ───────────────────────
 .env
+data/auth.sqlite3
+data/auth.sqlite3-shm
+data/auth.sqlite3-wal
+data/security_audit.jsonl
+data/pipeline.sqlite3
+data/pipeline.sqlite3-shm
+data/pipeline.sqlite3-wal
+data/migration-backups/
+data/pipeline-export/
+data/job-uploads/
+data/job-results/
 
 # ── Output / media sinh ra ───────────────────────────────
 output/

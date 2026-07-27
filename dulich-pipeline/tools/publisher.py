@@ -7,9 +7,13 @@ LƯU Ý: Zernio cần URL video CÔNG KHAI. Chạy local (localhost) Zernio khô
 from __future__ import annotations
 
 import os
+from urllib.parse import quote
 
-ZERNIO_POSTS = "https://api.zernio.com/v1/posts"
-ZERNIO_ACCOUNTS = "https://api.zernio.com/v1/accounts"
+ZERNIO_BASE = (
+    os.getenv("ZERNIO_API_BASE_URL") or "https://zernio.com/api/v1"
+).rstrip("/")
+ZERNIO_POSTS = f"{ZERNIO_BASE}/posts"
+ZERNIO_ACCOUNTS = f"{ZERNIO_BASE}/accounts"
 
 
 def public_base() -> str:
@@ -40,8 +44,43 @@ def zernio_tiktok_account(api_key: str | None = None) -> str | None:
     return None
 
 
-def _zernio_post(media_items: list, caption: str, api_key: str | None = None,
-                 account_id: str | None = None, tiktok_settings: dict | None = None) -> dict:
+def _post_result(data: dict) -> dict:
+    """Normalize create/retry responses from current and legacy Zernio APIs."""
+    post = (
+        data.get("post")
+        or data.get("existingPost")
+        or data.get("data")
+        or data
+    )
+    if not isinstance(post, dict):
+        post = {}
+    platforms = post.get("platforms") if isinstance(post.get("platforms"), list) else []
+    platform_url = next(
+        (
+            item.get("platformPostUrl")
+            for item in platforms
+            if isinstance(item, dict) and item.get("platformPostUrl")
+        ),
+        "",
+    )
+    return {
+        "success": True,
+        "id": post.get("_id") or post.get("id") or "",
+        "provider_status": post.get("status") or "",
+        "platform_url": platform_url,
+        "provider_post": post,
+        "deduplicated": bool(data.get("existingPost")),
+    }
+
+
+def _zernio_post(
+    media_items: list,
+    caption: str,
+    api_key: str | None = None,
+    account_id: str | None = None,
+    tiktok_settings: dict | None = None,
+    request_id: str = "",
+) -> dict:
     key = api_key or os.getenv("ZERNIO_KEY")
     if not key:
         return {"success": False, "error": "Thiếu Zernio key (Cài đặt → key theo tài khoản)"}
@@ -56,27 +95,40 @@ def _zernio_post(media_items: list, caption: str, api_key: str | None = None,
         body["tiktokSettings"] = tiktok_settings
     try:
         import requests
+        headers = {
+            "Authorization": f"Bearer {key}",
+            "Content-Type": "application/json",
+        }
+        if request_id:
+            headers["x-request-id"] = request_id
         r = requests.post(ZERNIO_POSTS, timeout=60,
-                          headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"},
+                          headers=headers,
                           json=body)
-        if r.status_code in (200, 201):
-            return {"success": True, "id": (r.json() or {}).get("_id", "")}
+        if r.status_code in (200, 201, 202):
+            return _post_result(r.json() or {})
         return {"success": False, "error": f"Zernio {r.status_code}: {r.text[:200]}"}
     except Exception as e:
         return {"success": False, "error": str(e)}
 
 
 def post_to_tiktok(video_url: str, caption: str, account_id: str | None = None,
-                   api_key: str | None = None) -> dict:
+                   api_key: str | None = None, request_id: str = "") -> dict:
     full = full_url(video_url)
     if not full.startswith("http"):
         return {"success": False, "error": "Video chưa có URL công khai (đặt PUBLIC_BASE_URL khi deploy VPS)"}
-    return _zernio_post([{"type": "video", "url": full}], caption, api_key, account_id)
+    return _zernio_post(
+        [{"type": "video", "url": full}],
+        caption,
+        api_key,
+        account_id,
+        request_id=request_id,
+    )
 
 
 def post_images_to_tiktok(image_urls: list, caption: str,
                           api_key: str | None = None,
-                          account_id: str | None = None) -> dict:
+                          account_id: str | None = None,
+                          request_id: str = "") -> dict:
     """Đăng bộ ảnh (carousel) lên TikTok qua Zernio. Tối đa 10 ảnh."""
     items = []
     for u in image_urls[:10]:
@@ -88,7 +140,55 @@ def post_images_to_tiktok(image_urls: list, caption: str,
         return {"success": False, "error": "Album không có ảnh"}
     # TikTok bài ẢNH: bật auto-add-music để TikTok tự gắn nhạc gợi ý (không gắn nhạc theo link được).
     return _zernio_post(items, caption, api_key, account_id,
-                        tiktok_settings={"autoAddMusic": True})
+                        tiktok_settings={"autoAddMusic": True},
+                        request_id=request_id)
+
+
+def get_zernio_post(post_id: str, api_key: str | None = None) -> dict:
+    """Fetch the authoritative Zernio/platform status for one known post."""
+    key = api_key or os.getenv("ZERNIO_KEY")
+    if not key or not post_id:
+        return {"success": False, "error": "Thiếu Zernio key hoặc post id."}
+    try:
+        import requests
+
+        response = requests.get(
+            f"{ZERNIO_POSTS}/{quote(str(post_id), safe='')}",
+            headers={"Authorization": f"Bearer {key}"},
+            timeout=30,
+        )
+        if response.status_code == 200:
+            return _post_result(response.json() or {})
+        return {
+            "success": False,
+            "http_status": response.status_code,
+            "error": f"Zernio {response.status_code}: {response.text[:200]}",
+        }
+    except Exception as exc:
+        return {"success": False, "error": str(exc)}
+
+
+def retry_zernio_post(post_id: str, api_key: str | None = None) -> dict:
+    """Retry only failed platforms of an existing Zernio post."""
+    key = api_key or os.getenv("ZERNIO_KEY")
+    if not key or not post_id:
+        return {"success": False, "error": "Thiếu Zernio key hoặc post id."}
+    try:
+        import requests
+
+        response = requests.post(
+            f"{ZERNIO_POSTS}/{quote(str(post_id), safe='')}/retry",
+            headers={"Authorization": f"Bearer {key}"},
+            timeout=60,
+        )
+        if response.status_code in (200, 201, 202):
+            return _post_result(response.json() or {})
+        return {
+            "success": False,
+            "error": f"Zernio {response.status_code}: {response.text[:200]}",
+        }
+    except Exception as exc:
+        return {"success": False, "error": str(exc)}
 
 
 def list_tiktok_accounts(api_key: str | None = None) -> list:

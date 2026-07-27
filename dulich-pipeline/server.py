@@ -16,12 +16,17 @@ import os
 import sys
 import json
 import uuid
+import time
+import hmac
+import hashlib
 import shutil
 import tempfile
 import threading
 import subprocess
 from pathlib import Path
+from http.cookies import SimpleCookie
 from http.server import HTTPServer, ThreadingHTTPServer, BaseHTTPRequestHandler
+from urllib.parse import parse_qs, quote, unquote, urlencode, urlparse
 
 # Configure UTF-8 encoding for Windows console to avoid print crashes
 if sys.platform.startswith("win"):
@@ -42,6 +47,16 @@ try:
     load_dotenv(_DOTENV_PATH)
 except Exception:
     pass
+
+from tools.pipeline_store import (
+    PipelineStoreError,
+    QueueLimitError,
+    UploadValidationError,
+    get_pipeline_store,
+)
+from tools.process_control import popen_group_kwargs, terminate_process_tree
+
+PIPELINE_STORE = get_pipeline_store()
 
 # ── Cài đặt API key trong app (trang Settings) ──────────────────────────────
 # Ghi đúng file .env đang được load; nếu chưa có thì dùng .env cạnh server.py.
@@ -102,19 +117,31 @@ def _remember_seed(album: str, seed: int) -> None:
         _ALBUM_SEED_FILE.write_text(json.dumps(d, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
-def _generate_album(album: str, user: str = "", auto: bool = False,
-                    title_prompt: str = "") -> dict:
+def _generate_album(
+    album: str,
+    user: str = "",
+    auto: bool = False,
+    title_prompt: str = "",
+    job_id: str = "",
+) -> dict:
     """Chạy script CLI dựng 1 album ảnh (tránh lặp seed 10 lần gần nhất), lưu record. Dùng chung
     cho endpoint /assemble-image và bộ tự tạo ảnh hàng ngày."""
     cfg = IMAGE_ALBUMS.get(album)
     if not cfg:
         return {"success": False, "error": f"Album không hợp lệ: {album}"}
+    if job_id:
+        existing = _find_album(job_id)
+        if existing:
+            return {"success": True, **_album_view(existing), "deduplicated": True}
     base = Path(__file__).parent
     script_abs = base / cfg["script"]
     if not script_abs.exists():
         return {"success": False, "error": f"Thiếu script: {cfg['script']}"}
 
-    out_dir = base / "output" / "albums" / f"app_{album}_{uuid.uuid4().hex[:8]}"
+    suffix = job_id[:16] if job_id else uuid.uuid4().hex[:8]
+    out_dir = base / "output" / "albums" / f"app_{album}_{suffix}"
+    if job_id:
+        shutil.rmtree(out_dir, ignore_errors=True)
     out_dir.mkdir(parents=True, exist_ok=True)
 
     cmd = [sys.executable, str(script_abs), "--out", str(out_dir)]
@@ -140,15 +167,18 @@ def _generate_album(album: str, user: str = "", auto: bool = False,
                                   capture_output=True, text=True,
                                   encoding="utf-8", errors="replace", timeout=300)
     except subprocess.TimeoutExpired:
+        shutil.rmtree(out_dir, ignore_errors=True)
         return {"success": False, "error": "Quá thời gian (300s)."}
 
     if proc.returncode != 0:
         tail = (proc.stderr or proc.stdout or "").strip()[-1200:]
         print(f"[Server] ❌ tạo ảnh {album} lỗi (rc={proc.returncode}):\n{tail}", file=sys.stderr)
+        shutil.rmtree(out_dir, ignore_errors=True)
         return {"success": False, "error": tail or "Script lỗi"}
 
     files = sorted(out_dir.glob("*.png"))
     if not files:
+        shutil.rmtree(out_dir, ignore_errors=True)
         return {"success": False, "error": "Script chạy xong nhưng không có ảnh PNG."}
 
     if seed is not None:
@@ -156,14 +186,77 @@ def _generate_album(album: str, user: str = "", auto: bool = False,
 
     images = [{"name": f.name, "url": _to_output_url(str(f))} for f in files]
     dir_rel = str(out_dir.relative_to(base)).replace("\\", "/")
-    rec = {"user": user, "album": album, "label": cfg.get("label", album),
-           "dir": dir_rel, "images": images, "auto": auto}
+    rec = {
+        "id": job_id or uuid.uuid4().hex[:20],
+        "job_id": job_id,
+        "user": user,
+        "album": album,
+        "label": cfg.get("label", album),
+        "dir": dir_rel,
+        "images": images,
+        "auto": auto,
+    }
     try:
         import time as _t
-        _append_album({**rec, "time": _t.time()})
+        saved = _append_album({**rec, "time": _t.time()})
     except Exception as _e:
         print(f"[Server] album log lỗi: {_e}", file=sys.stderr)
-    return {"success": True, **rec}
+        shutil.rmtree(out_dir, ignore_errors=True)
+        return {"success": False, "error": "Không thể lưu album."}
+    return {"success": True, **_album_view(saved)}
+
+
+def _generate_ai_album_from_link(user: str, url: str, job_id: str = "") -> dict:
+    """Create and persist a recreated TikTok carousel for one durable job."""
+    if job_id:
+        existing = _find_album(job_id)
+        if existing:
+            return {"success": True, **_album_view(existing), "deduplicated": True}
+
+    from tools.ai_image_gen import recreate_all_from_tiktok
+
+    with _HEAVY_LOCK:
+        result = recreate_all_from_tiktok(url, handle="@dalatnow")
+    if not result.get("success"):
+        return {"success": False, "error": result.get("error", "AI không tạo được ảnh.")}
+    base = Path(__file__).parent
+    suffix = job_id[:16] if job_id else uuid.uuid4().hex[:8]
+    out_dir = base / "output" / "albums" / f"app_aiimg_{suffix}"
+    if job_id:
+        shutil.rmtree(out_dir, ignore_errors=True)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    images = []
+    try:
+        for index, source in enumerate(result.get("paths") or []):
+            source_path = Path(source)
+            if not source_path.is_file():
+                continue
+            destination = out_dir / f"aiimg_{index:02d}.png"
+            shutil.copy2(source_path, destination)
+            images.append({"name": destination.name, "url": _to_output_url(str(destination))})
+        if not images:
+            raise RuntimeError("AI chạy xong nhưng không tạo được file ảnh.")
+        saved = _append_album(
+            {
+                "id": job_id or uuid.uuid4().hex[:20],
+                "job_id": job_id,
+                "user": user,
+                "album": "aiimg",
+                "label": f"Tạo lại từ TikTok ({len(images)} ảnh)",
+                "dir": str(out_dir.relative_to(base)).replace("\\", "/"),
+                "images": images,
+                "auto": False,
+                "time": time.time(),
+            }
+        )
+        return {
+            "success": True,
+            **_album_view(saved),
+            "source_count": result.get("source_count"),
+        }
+    except Exception as exc:
+        shutil.rmtree(out_dir, ignore_errors=True)
+        return {"success": False, "error": str(exc)}
 
 
 # Danh sách key cho trang Cài đặt. Tất cả TÙY CHỌN — thiếu vẫn chạy free.
@@ -208,116 +301,590 @@ def _update_env(updates: dict) -> None:
             os.environ[k] = v
 
 PORT = 7788
-UPLOAD_TEMP_DIR = Path(__file__).parent / "output" / "temp_uploads"
+UPLOAD_TEMP_DIR = PIPELINE_STORE.upload_root
 UPLOAD_TEMP_DIR.mkdir(parents=True, exist_ok=True)
 
 WEB_INDEX = Path(__file__).parent / "web" / "index.html"
 
-# Serialize heavy operations (script gen / assembly) so the threaded server can
-# still answer health checks + serve files while one render is running.
-_HEAVY_LOCK = threading.Lock()
+# Bound CPU/RAM-heavy work across worker threads and legacy synchronous tools.
+# Default is one-at-a-time; raising HEAVY_JOB_WORKERS intentionally raises this
+# semaphore too, so a larger VPS can opt into measured parallel rendering.
+try:
+    _HEAVY_SLOTS = max(1, int(os.getenv("HEAVY_JOB_WORKERS", "1") or 1))
+except (TypeError, ValueError):
+    _HEAVY_SLOTS = 1
+_HEAVY_LOCK = threading.BoundedSemaphore(_HEAVY_SLOTS)
 
-# ── Render NỀN: hàng đợi tuần tự — bấm render là vào queue, logout vẫn chạy ────
-import queue as _queue
-_RENDER_QUEUE: "_queue.Queue" = _queue.Queue()
-_RENDER_JOBS: dict = {}          # job_id → {user, topic, status, error, video_url, time}
-_RENDER_JOBS_LOCK = threading.Lock()
+def _env_int(name: str, default: int, minimum: int = 1) -> int:
+    try:
+        return max(minimum, int(os.getenv(name, str(default)) or default))
+    except (TypeError, ValueError):
+        return max(minimum, default)
 
 
-def _job_update(job_id: str, **kw) -> None:
-    with _RENDER_JOBS_LOCK:
-        _RENDER_JOBS.setdefault(job_id, {})
-        _RENDER_JOBS[job_id].update(kw)
+MAX_ACTIVE_JOBS_PER_USER = _env_int("MAX_ACTIVE_JOBS_PER_USER", 2)
+MAX_UPLOAD_FILE_BYTES = _env_int("MAX_UPLOAD_FILE_MB", 500) * 1024 * 1024
+MAX_UPLOAD_JOB_BYTES = _env_int("MAX_UPLOAD_JOB_MB", 1536) * 1024 * 1024
+MAX_UPLOAD_SESSIONS_PER_USER = _env_int("MAX_UPLOAD_SESSIONS_PER_USER", 2)
+MAX_UPLOAD_CHUNK_BYTES = _env_int("MAX_UPLOAD_CHUNK_MB", 16) * 1024 * 1024
+UPLOAD_DISK_RESERVE_BYTES = _env_int("UPLOAD_DISK_RESERVE_MB", 2048) * 1024 * 1024
+MAX_LEGACY_MULTIPART_BYTES = _env_int("MAX_LEGACY_MULTIPART_MB", 64) * 1024 * 1024
+
+
+def _validate_uploaded_media(upload: dict) -> None:
+    """Reject renamed/corrupt files before they can consume a render worker."""
+    if os.getenv("SKIP_UPLOAD_FFPROBE", "").strip() == "1":
+        return
+    ffprobe = shutil.which("ffprobe")
+    if not ffprobe:
+        raise UploadValidationError(
+            "Server thiếu ffprobe nên chưa thể xác thực video upload."
+        )
+    upload_root = PIPELINE_STORE.upload_root.resolve()
+    for item in upload.get("files") or []:
+        relative = str(item.get("relative_path") or "")
+        path = (upload_root / relative).resolve()
+        try:
+            path.relative_to(upload_root)
+        except ValueError as exc:
+            raise UploadValidationError("Đường dẫn video upload không hợp lệ.") from exc
+        try:
+            probe = subprocess.run(
+                [
+                    ffprobe,
+                    "-v",
+                    "error",
+                    "-select_streams",
+                    "v:0",
+                    "-show_entries",
+                    "stream=codec_type",
+                    "-of",
+                    "json",
+                    str(path),
+                ],
+                capture_output=True,
+                text=True,
+                timeout=15,
+                check=False,
+            )
+        except subprocess.TimeoutExpired as exc:
+            raise UploadValidationError(
+                f"ffprobe quá thời gian khi kiểm tra video {item.get('original_name') or path.name}."
+            ) from exc
+        try:
+            details = json.loads(probe.stdout or "{}")
+        except json.JSONDecodeError:
+            details = {}
+        if probe.returncode != 0 or not details.get("streams"):
+            raise UploadValidationError(
+                f"File {item.get('original_name') or path.name} không phải video hợp lệ."
+            )
+
+
+HEAVY_JOB_KINDS = {
+    "personal_video",
+    "listreview_video",
+    "album_image",
+    "ai_image_from_link",
+}
+NETWORK_JOB_KINDS = {
+    "publish_video",
+    "publish_album",
+    "publish_dashboard",
+}
+_ZERNIO_ACCOUNTS_CACHE: dict[str, tuple[float, list[dict]]] = {}
+_ZERNIO_ACCOUNTS_CACHE_LOCK = threading.Lock()
 
 
 def _is_transient_render_err(e) -> bool:
     """Lỗi tạm thời (đáng thử lại): timeout do server bận, không phải source hỏng."""
     low = str(e or "").lower()
-    return "quá thời gian" in low or "timeout" in low
+    return any(
+        marker in low
+        for marker in (
+            "quá thời gian",
+            "timeout",
+            "temporarily unavailable",
+            "connection reset",
+            "rate limit",
+            "429",
+        )
+    )
 
 
-def _render_worker():
-    """Worker nền: render từng job trong queue (sống độc lập với session người dùng).
-    Số worker song song = env RENDER_WORKERS (mặc định 1)."""
-    n_workers = max(1, int(os.getenv("RENDER_WORKERS", "1") or 1))
-    while True:
-        job = _RENDER_QUEUE.get()
-        jid = job["job_id"]
-        _job_update(jid, status="rendering")
-        print(f"[render-queue] bắt đầu {jid} (user {job.get('user')})", file=sys.stderr)
+def _is_uncertain_publish_err(e) -> bool:
+    low = str(e or "").lower()
+    return any(
+        marker in low
+        for marker in (
+            "timeout",
+            "timed out",
+            "connection reset",
+            "remote end closed",
+            "mất kết nối",
+        )
+    )
 
-        def _render_once():
-            if n_workers == 1:
-                with _HEAVY_LOCK:
-                    for m in list(sys.modules.keys()):
-                        if m.startswith("tools.list_review_render"):
-                            sys.modules.pop(m, None)
-                    from tools.list_review_render import render_list_review
-                    return render_list_review(job["spec"])
-            # nhiều worker: không reload module (không thread-safe), không giữ _HEAVY_LOCK
-            from tools.list_review_render import render_list_review
-            return render_list_review(job["spec"])
 
+class JobExecutionError(RuntimeError):
+    def __init__(self, message: str, *, retryable: bool = False, uncertain: bool = False):
+        super().__init__(message)
+        self.retryable = retryable
+        self.uncertain = uncertain
+
+
+def _render_product_from_result(job: dict, result: dict, payload: dict) -> dict:
+    if not result or not result.get("success"):
+        message = (result or {}).get("error") or "Render không thành công."
+        raise JobExecutionError(
+            _friendly_error(message),
+            retryable=_is_transient_render_err(message),
+        )
+    current = PIPELINE_STORE.get_job(job["id"])
+    if current and current.get("cancel_requested"):
+        raise JobExecutionError("Job đã được hủy.")
+    video_url = _to_output_url(result.get("video_path", ""))
+    thumb_url = _to_output_url(result.get("thumb_path", ""))
+    preview_url = _to_output_url(result.get("preview_path", ""))
+    saved = _append_product(
+        {
+            "job_id": job["id"],
+            "user": job["owner"],
+            "topic": payload.get("topic") or "Video",
+            "hook_style": payload.get("hook_style", ""),
+            "video_url": video_url,
+            "thumb_url": thumb_url,
+            "preview_url": preview_url,
+            "time": time.time(),
+        }
+    )
+    public = _product_view(saved)
+    if payload.get("draft_id"):
         try:
-            # Render + tự thử lại 1 lần nếu lỗi TẠM THỜI (timeout do server bận).
-            # Retry chạy inline trước finally → temp_dir còn nguyên, không cần re-queue.
-            result = None
-            for attempt in (1, 2):
+            from tools.script_drafts import mark_used
+
+            mark_used(payload["draft_id"])
+        except Exception as exc:
+            print(f"[jobs] mark draft lỗi: {exc}", file=sys.stderr)
+    return {
+        "product_id": saved["id"],
+        "video_url": public["video_url"],
+        "thumb_url": public.get("thumb_url", ""),
+        "preview_url": public.get("preview_url", ""),
+    }
+
+
+def _uploaded_paths_by_scene(payload: dict) -> dict[str, list[str]]:
+    grouped: dict[str, list[tuple[int, str]]] = {}
+    for item in payload.get("upload_files") or []:
+        field = str(item.get("field") or "")
+        if "__" in field:
+            scene_id, suffix = field.rsplit("__", 1)
+            order = int(suffix) if suffix.isdigit() else 0
+        else:
+            scene_id, order = field, 0
+        grouped.setdefault(scene_id, []).append((order, str(item.get("path") or "")))
+    return {
+        scene_id: [path for _, path in sorted(items) if path]
+        for scene_id, items in grouped.items()
+    }
+
+
+def _hydrate_listreview_spec(payload: dict) -> dict:
+    spec = json.loads(json.dumps(payload.get("spec") or {}))
+    grouped = _uploaded_paths_by_scene(payload)
+    intro = spec.get("intro") or {}
+    intro["clips"] = grouped.get(str(intro.get("scene_id") or "intro"), grouped.get("intro", []))
+    spec["intro"] = intro
+    for index, spot in enumerate(spec.get("spots") or [], start=1):
+        scene_id = str(spot.get("scene_id") or f"spot{index}")
+        spot["clips"] = grouped.get(scene_id, [])
+    outro = spec.get("outro") or {}
+    outro["clips"] = grouped.get(str(outro.get("scene_id") or "outro"), grouped.get("outro", []))
+    spec["outro"] = outro
+    return spec
+
+
+def _personal_scene_uploads(payload: dict, job_id: str) -> list[dict]:
+    if payload.get("scene_uploads"):
+        return payload["scene_uploads"]
+    grouped = _uploaded_paths_by_scene(payload)
+    session_dir = None
+    files = payload.get("upload_files") or []
+    if files:
+        session_dir = Path(files[0]["path"]).resolve().parent
+    uploads: list[dict] = []
+    for scene in payload.get("scenes_meta") or []:
+        scene_id = str(scene.get("scene_id") or "")
+        paths = grouped.get(scene_id, [])
+        if len(paths) <= 1:
+            file_path = paths[0] if paths else ""
+        else:
+            concat_dest = str((session_dir or UPLOAD_TEMP_DIR) / f"{scene_id}_concat.mp4")
+            file_path = concat_dest if _concat_scene_clips(paths, concat_dest) else paths[0]
+        uploads.append({"scene_id": scene_id, "file_path": file_path})
+    return uploads
+
+
+def _execute_durable_job(job: dict) -> dict:
+    """Run one leased job.  Called by embedded and systemd workers."""
+    payload = job.get("payload") or {}
+    kind = job.get("kind")
+    if kind in {"personal_video", "listreview_video"}:
+        existing = _find_product(job["id"])
+        if existing:
+            public = _product_view(existing)
+            return {
+                "product_id": existing["id"],
+                "video_url": public["video_url"],
+                "thumb_url": public.get("thumb_url", ""),
+                "preview_url": public.get("preview_url", ""),
+                "deduplicated": True,
+            }
+    if kind == "listreview_video":
+        from tools.list_review_render import render_list_review
+
+        spec = _hydrate_listreview_spec(payload) if payload.get("upload_files") else payload["spec"]
+        spec["job_id"] = job["id"]
+        with _HEAVY_LOCK:
+            result = render_list_review(spec)
+        return _render_product_from_result(job, result, payload)
+
+    if kind == "personal_video":
+        from agents.personal_video_agent import run_assemble_video
+
+        with _HEAVY_LOCK:
+            result = run_assemble_video(
+                job_id=job["id"],
+                scene_uploads=_personal_scene_uploads(payload, job["id"]),
+                transition=payload.get("transition", "fade"),
+                hook_style=payload.get("hook_style", "zoom_in"),
+                hook_text=payload.get("hook_text", ""),
+                hook_title=payload.get("hook_title", ""),
+                hook_subtitle=payload.get("hook_subtitle", ""),
+                video_type=payload.get("video_type", "personal"),
+                voice_provider=payload.get("voice_mode", "gtts"),
+                voice_id=payload.get("voice_id", ""),
+            )
+        if result and "success" not in result:
+            result["success"] = bool(result.get("video_path"))
+        return _render_product_from_result(job, result, payload)
+
+    if kind == "album_image":
+        result = _generate_album(
+            payload["album"],
+            job["owner"],
+            auto=bool(payload.get("auto")),
+            title_prompt=payload.get("title_prompt", ""),
+            job_id=job["id"],
+        )
+        if not result.get("success"):
+            raise JobExecutionError(
+                result.get("error", "Không thể tạo album."),
+                retryable=_is_transient_render_err(result.get("error")),
+            )
+        return result
+
+    if kind == "ai_image_from_link":
+        result = _generate_ai_album_from_link(
+            job["owner"], payload["url"], job_id=job["id"]
+        )
+        if not result.get("success"):
+            raise JobExecutionError(
+                result.get("error", "Không thể tạo lại album AI."),
+                retryable=_is_transient_render_err(result.get("error")),
+            )
+        return result
+
+    if kind in {"publish_video", "publish_album"}:
+        resource_id = payload["resource_id"]
+        if kind == "publish_video":
+            rec = _find_product(resource_id) or {}
+            result = _do_publish(
+                resource_id,
+                _caption_for(rec.get("topic", ""), job["owner"]),
+                job["owner"],
+                ki=int(payload.get("zernio_ki") or 0),
+                account_id=payload.get("account_id", ""),
+                request_id=payload.get("provider_request_id", ""),
+            )
+        else:
+            result = _do_publish_album(
+                resource_id,
+                job["owner"],
+                ki=int(payload.get("zernio_ki") or 0),
+                account_id=payload.get("account_id", ""),
+                request_id=payload.get("provider_request_id", ""),
+            )
+        if not result.get("success"):
+            safe_idempotent_retry = bool(payload.get("provider_request_id")) and (
+                result.get("status") == "unknown"
+                and int(job.get("attempts") or 0) < int(job.get("max_attempts") or 1)
+            )
+            raise JobExecutionError(
+                result.get("error", "Đăng bài thất bại."),
+                retryable=safe_idempotent_retry,
+                uncertain=(
+                    result.get("status") == "unknown"
+                    and not safe_idempotent_retry
+                ),
+            )
+        return result
+
+    if kind == "publish_dashboard":
+        result = _publish_dashboard_resource(payload["resource_id"], payload)
+        if not result.get("success"):
+            raise JobExecutionError(result.get("error", "Đăng Dashboard thất bại."))
+        return result
+
+    raise JobExecutionError(f"Loại job không được hỗ trợ: {kind}")
+
+
+def _job_timeout_seconds(kind: str) -> int:
+    if kind in NETWORK_JOB_KINDS:
+        return _env_int("NETWORK_JOB_TIMEOUT_SECONDS", 180, 30)
+    return _env_int("HEAVY_JOB_TIMEOUT_SECONDS", 1800, 60)
+
+
+def _run_durable_job_isolated(job: dict) -> dict:
+    """Run one job in a killable process group and monitor cancel/timeout."""
+    result_dir = PIPELINE_STORE.db_path.parent / "job-results"
+    result_dir.mkdir(parents=True, exist_ok=True)
+    result_file = result_dir / (
+        f"{job['id']}-{int(job.get('attempts') or 0)}-{uuid.uuid4().hex[:8]}.json"
+    )
+    env = os.environ.copy()
+    env["PIPELINE_DB_PATH"] = str(PIPELINE_STORE.db_path)
+    env["UPLOAD_TEMP_DIR"] = str(PIPELINE_STORE.upload_root)
+    env["DISABLE_BACKGROUND_JOBS"] = "1"
+    env["DISABLE_JOB_WORKER"] = "1"
+    env["PYTHONUNBUFFERED"] = "1"
+    command = [
+        sys.executable,
+        "-X",
+        "utf8",
+        str(Path(__file__).parent / "job_runner.py"),
+        "--job-id",
+        job["id"],
+        "--result-file",
+        str(result_file),
+    ]
+    process = subprocess.Popen(
+        command,
+        cwd=str(Path(__file__).parent),
+        env=env,
+        **popen_group_kwargs(),
+    )
+    timeout = _job_timeout_seconds(str(job.get("kind") or ""))
+    deadline = time.monotonic() + timeout
+    try:
+        while process.poll() is None:
+            current = PIPELINE_STORE.get_job(job["id"]) or {}
+            if current.get("cancel_requested"):
+                terminate_process_tree(process)
+                raise JobExecutionError("Job đã được hủy.")
+            if time.monotonic() >= deadline:
+                terminate_process_tree(process)
+                is_publish = str(job.get("kind") or "").startswith("publish_")
+                safe_retry = (
+                    is_publish
+                    and bool((job.get("payload") or {}).get("provider_request_id"))
+                    and int(job.get("attempts") or 0)
+                    < int(job.get("max_attempts") or 1)
+                )
+                raise JobExecutionError(
+                    f"Job vượt quá giới hạn {timeout} giây và đã bị dừng.",
+                    retryable=(not is_publish) or safe_retry,
+                    uncertain=is_publish and not safe_retry,
+                )
+            time.sleep(0.25)
+
+        if not result_file.is_file():
+            is_publish = str(job.get("kind") or "").startswith("publish_")
+            safe_retry = (
+                is_publish
+                and bool((job.get("payload") or {}).get("provider_request_id"))
+                and int(job.get("attempts") or 0)
+                < int(job.get("max_attempts") or 1)
+            )
+            raise JobExecutionError(
+                f"Tiến trình job dừng bất thường (exit={process.returncode}).",
+                retryable=(not is_publish) or safe_retry,
+                uncertain=is_publish and not safe_retry,
+            )
+        try:
+            envelope = json.loads(result_file.read_text(encoding="utf-8"))
+        except (OSError, ValueError) as exc:
+            raise JobExecutionError(
+                "Không đọc được kết quả từ tiến trình job.",
+                retryable=True,
+            ) from exc
+        if envelope.get("ok"):
+            return envelope.get("result") or {}
+        raise JobExecutionError(
+            envelope.get("error") or "Tiến trình job thất bại.",
+            retryable=bool(envelope.get("retryable")),
+            uncertain=bool(envelope.get("uncertain")),
+        )
+    finally:
+        if process.poll() is None:
+            terminate_process_tree(process)
+        result_file.unlink(missing_ok=True)
+
+
+def _durable_worker_loop(kinds: set[str], label: str) -> None:
+    worker_id = f"{label}-{os.getpid()}-{uuid.uuid4().hex[:8]}"
+    recovery = PIPELINE_STORE.recover_stale_jobs(_env_int("JOB_LEASE_SECONDS", 120, 30))
+    if recovery["recovered"] or recovery["failed"]:
+        print(f"[jobs] recovery {recovery}", file=sys.stderr)
+    while True:
+        try:
+            job = PIPELINE_STORE.claim_next(worker_id, kinds=kinds)
+        except Exception as exc:
+            print(f"[jobs] claim lỗi: {exc}", file=sys.stderr)
+            time.sleep(2)
+            continue
+        if not job:
+            time.sleep(1)
+            continue
+        stop_heartbeat = threading.Event()
+
+        def heartbeat() -> None:
+            while not stop_heartbeat.wait(10):
                 try:
-                    result = _render_once()
-                except Exception as e:
-                    if attempt == 1 and _is_transient_render_err(e):
-                        print(f"[render-queue] {jid} lỗi tạm ({e}) → thử lại (lần 2)", file=sys.stderr)
-                        continue
-                    raise
-                if (attempt == 1 and not result.get("success")
-                        and _is_transient_render_err(result.get("error"))):
-                    print(f"[render-queue] {jid} fail tạm → thử lại (lần 2)", file=sys.stderr)
-                    continue
-                break
-            if result.get("success"):
-                video_url = _to_output_url(result.get("video_path", ""))
-                thumb_url = _to_output_url(result.get("thumb_path", ""))
-                preview_url = _to_output_url(result.get("preview_path", ""))
-                _job_update(jid, status="done", video_url=video_url, thumb_url=thumb_url)
-                try:
-                    import time as _t
-                    _append_product({"user": job["user"], "topic": job["topic"],
-                                     "hook_style": job.get("hook_style", ""),
-                                     "video_url": video_url, "thumb_url": thumb_url,
-                                     "preview_url": preview_url,
-                                     "time": _t.time()})
-                except Exception as _e:
-                    print(f"[render-queue] product log lỗi: {_e}", file=sys.stderr)
-                # Kịch bản đã render xong → đánh dấu "đã render" (vào Lưu trữ, không xóa)
-                if job.get("draft_id"):
-                    try:
-                        from tools.script_drafts import mark_used
-                        mark_used(job["draft_id"])
-                    except Exception as _e:
-                        print(f"[render-queue] mark draft lỗi: {_e}", file=sys.stderr)
-                print(f"[render-queue] ✓ xong {jid}: {video_url}", file=sys.stderr)
-            else:
-                _job_update(jid, status="failed", error=_friendly_error(result.get("error", "render fail")))
-                print(f"[render-queue] ✗ {jid}: {result.get('error')}", file=sys.stderr)
-        except Exception as e:
+                    PIPELINE_STORE.heartbeat(job["id"], worker_id)
+                except Exception as exc:
+                    print(f"[jobs] heartbeat lỗi {job['id']}: {exc}", file=sys.stderr)
+
+        pulse = threading.Thread(target=heartbeat, daemon=True)
+        pulse.start()
+        terminal_status = ""
+        try:
+            print(
+                f"[jobs] bắt đầu {job['id']} kind={job['kind']} owner={job['owner']}",
+                file=sys.stderr,
+            )
+            result = _run_durable_job_isolated(job)
+            if (
+                job["kind"] == "publish_video"
+                and result.get("status") == "posted"
+            ):
+                record = _find_product((job.get("payload") or {}).get("resource_id", ""))
+                if record:
+                    _archive_video(record.get("video_url", ""))
+            PIPELINE_STORE.complete_job(job["id"], worker_id, result)
+            completed = PIPELINE_STORE.get_job(job["id"]) or {}
+            terminal_status = str(completed.get("status") or "")
+            print(f"[jobs] ✓ {job['id']}", file=sys.stderr)
+        except JobExecutionError as exc:
+            status = PIPELINE_STORE.fail_job(
+                job["id"],
+                worker_id,
+                _friendly_error(exc),
+                retryable=exc.retryable,
+                uncertain=exc.uncertain,
+            )
+            terminal_status = status
+            print(f"[jobs] ✗ {job['id']} → {status}: {exc}", file=sys.stderr)
+        except Exception as exc:
             import traceback
-            print(f"[render-queue] ✗ {jid}: {e}\n{traceback.format_exc()}", file=sys.stderr)
-            _job_update(jid, status="failed", error=_friendly_error(e))
+
+            status = PIPELINE_STORE.fail_job(
+                job["id"],
+                worker_id,
+                _friendly_error(exc),
+                retryable=_is_transient_render_err(exc),
+            )
+            terminal_status = status
+            print(
+                f"[jobs] ✗ {job['id']} → {status}: {exc}\n{traceback.format_exc()}",
+                file=sys.stderr,
+            )
         finally:
-            def _cleanup(p=job.get("temp_dir")):
-                import time as _t
-                _t.sleep(60)
-                if p:
-                    shutil.rmtree(str(p), ignore_errors=True)
-            threading.Thread(target=_cleanup, daemon=True).start()
+            stop_heartbeat.set()
+            pulse.join(timeout=1)
+            if (
+                terminal_status in {"done", "cancelled"}
+                and job["kind"] in {"personal_video", "listreview_video"}
+            ):
+                try:
+                    PIPELINE_STORE.cleanup_job_upload(job["id"])
+                except Exception as exc:
+                    print(f"[jobs] cleanup upload lỗi: {exc}", file=sys.stderr)
+                legacy_temp = str((job.get("payload") or {}).get("legacy_temp_dir") or "")
+                if legacy_temp:
+                    try:
+                        target = Path(legacy_temp).resolve()
+                        if target.parent == UPLOAD_TEMP_DIR:
+                            shutil.rmtree(target, ignore_errors=True)
+                    except OSError:
+                        pass
 
 
-def _start_render_worker():
-    n = max(1, int(os.getenv("RENDER_WORKERS", "1") or 1))
-    for _ in range(n):
-        threading.Thread(target=_render_worker, daemon=True).start()
-    print(f"[Server] Render queue nền bật ({n} worker).", file=sys.stderr)
+def run_durable_workers(queue_name: str = "all") -> list[threading.Thread]:
+    """Start worker loops and return their threads (used by server.py and worker.py)."""
+    threads: list[threading.Thread] = []
+    specs: list[tuple[set[str], str, int]] = []
+    if queue_name in {"all", "heavy"}:
+        specs.append(
+            (
+                HEAVY_JOB_KINDS,
+                "heavy",
+                _env_int("HEAVY_JOB_WORKERS", 1),
+            )
+        )
+    if queue_name in {"all", "network"}:
+        specs.append(
+            (
+                NETWORK_JOB_KINDS,
+                "network",
+                _env_int("NETWORK_JOB_WORKERS", 2),
+            )
+        )
+    for kinds, label, count in specs:
+        for index in range(count):
+            thread = threading.Thread(
+                target=_durable_worker_loop,
+                args=(kinds, f"{label}{index + 1}"),
+                daemon=True,
+            )
+            thread.start()
+            threads.append(thread)
+    return threads
+
+
+def _start_render_worker() -> None:
+    threads = run_durable_workers("all")
+    print(f"[Server] Durable jobs bật ({len(threads)} worker).", file=sys.stderr)
+
+
+def _job_client_view(job: dict) -> dict:
+    """Return job state without exposing server paths or provider payloads."""
+    payload = job.get("payload") or {}
+    result = job.get("result") or {}
+    status = job.get("status", "")
+    legacy_status = "rendering" if status == "running" else status
+    return {
+        "job_id": job.get("id", ""),
+        "kind": job.get("kind", ""),
+        "user": job.get("owner", ""),
+        "topic": payload.get("topic")
+        or payload.get("album")
+        or ("Đăng bài" if str(job.get("kind", "")).startswith("publish_") else "Job"),
+        "status": legacy_status,
+        "durable_status": status,
+        "progress": int(job.get("progress") or 0),
+        "error": job.get("error", ""),
+        "time": float(job.get("created_at") or 0),
+        "attempts": int(job.get("attempts") or 0),
+        "cancel_requested": bool(job.get("cancel_requested")),
+        "product_id": result.get("product_id", ""),
+        "video_url": result.get("video_url", ""),
+        "thumb_url": result.get("thumb_url", ""),
+        "preview_url": result.get("preview_url", ""),
+        "album_id": result.get("id", "") if job.get("kind") in {"album_image", "ai_image_from_link"} else "",
+        "result_status": result.get("status", ""),
+    }
 
 # No API keys in this demo → default voice engine is free Microsoft Edge TTS (vi-VN).
 os.environ.setdefault("VOICE_PROVIDER", "edge")
@@ -332,6 +899,116 @@ def _to_output_url(abs_path: str) -> str:
         return "/" + rel.replace("\\", "/")
     except Exception:
         return ""
+
+
+BASE_DIR = Path(__file__).resolve().parent
+OUTPUT_DIR = (BASE_DIR / "output").resolve()
+
+
+def _resolve_under(base_dir: Path, requested: str, *, must_exist: bool = True) -> Path:
+    """Resolve a client/data path without allowing absolute, traversal or symlink escape."""
+    base = base_dir.resolve()
+    raw = unquote(str(requested or "")).replace("\\", "/")
+    candidate_path = Path(raw)
+    if not raw or candidate_path.is_absolute() or "\x00" in raw:
+        raise ValueError("invalid path")
+    candidate = (base / candidate_path).resolve(strict=must_exist)
+    try:
+        candidate.relative_to(base)
+    except ValueError as exc:
+        raise ValueError("path escapes allowed directory") from exc
+    return candidate
+
+
+def _output_file_from_url(url: str) -> Path:
+    parsed = urlparse(str(url or ""))
+    if parsed.scheme or parsed.netloc or not parsed.path.startswith("/output/"):
+        raise ValueError("not a local output URL")
+    return _resolve_under(OUTPUT_DIR, parsed.path[len("/output/"):])
+
+
+def _image_variant(file_path: Path, width: int) -> Path:
+    if (
+        width <= 0
+        or width > 1600
+        or file_path.suffix.lower() not in {".png", ".jpg", ".jpeg", ".webp"}
+    ):
+        return file_path
+    try:
+        relative = file_path.relative_to(OUTPUT_DIR).as_posix()
+        cache = OUTPUT_DIR / "_cache"
+        cache.mkdir(parents=True, exist_ok=True)
+        key = hashlib.sha256(f"{relative}:{width}".encode("utf-8")).hexdigest()[:20]
+        cached = cache / f"{width}_{key}.jpg"
+        if not cached.exists() or cached.stat().st_mtime < file_path.stat().st_mtime:
+            from PIL import Image
+            image = Image.open(file_path)
+            if image.mode not in {"RGB", "L"}:
+                image = image.convert("RGB")
+            old_width, old_height = image.size
+            if old_width > width:
+                image = image.resize(
+                    (width, max(1, round(old_height * width / old_width))),
+                    Image.LANCZOS,
+                )
+            image.save(cached, "JPEG", quality=82)
+        return cached if cached.exists() else file_path
+    except Exception as exc:
+        print(f"[media] resize failed for {file_path.name}: {exc}", file=sys.stderr)
+        return file_path
+
+
+def _stable_resource_id(kind: str, record: dict) -> str:
+    existing = str(record.get("id") or "").strip()
+    if existing:
+        return existing
+    source = (
+        record.get("video_url")
+        or record.get("dir")
+        or record.get("job_id")
+        or f"{record.get('user','')}:{record.get('time','')}"
+    )
+    return uuid.uuid5(uuid.NAMESPACE_URL, f"dulich:{kind}:{source}").hex[:20]
+
+
+def _safe_identifier(value: str, prefix: str) -> str:
+    clean = "".join(ch for ch in str(value or "") if ch.isalnum() or ch in {"_", "-"})
+    return clean[:64] or f"{prefix}_{uuid.uuid4().hex[:12]}"
+
+
+def _media_url(kind: str, resource_id: str, asset: str = "") -> str:
+    suffix = f"/{quote(str(asset), safe='')}" if asset != "" else ""
+    return f"/media/{kind}/{quote(str(resource_id), safe='')}{suffix}"
+
+
+def _signed_media_url(kind: str, resource_id: str, asset: str = "", ttl: int = 7200) -> str:
+    secret = (os.getenv("MEDIA_SIGNING_SECRET") or "").strip()
+    if len(secret) < 32:
+        raise RuntimeError("MEDIA_SIGNING_SECRET must contain at least 32 characters")
+    suffix = f"/{quote(str(asset), safe='')}" if asset != "" else ""
+    path = f"/media/public/{kind}/{quote(str(resource_id), safe='')}{suffix}"
+    exp = int(time.time()) + max(60, min(int(ttl), 7200))
+    message = f"GET\n{path}\n{exp}".encode("utf-8")
+    signature = hmac.new(secret.encode("utf-8"), message, hashlib.sha256).hexdigest()
+    return f"{path}?{urlencode({'exp': exp, 'sig': signature})}"
+
+
+def _verify_signed_media(path: str, query: dict[str, list[str]]) -> bool:
+    secret = (os.getenv("MEDIA_SIGNING_SECRET") or "").strip()
+    try:
+        exp = int((query.get("exp") or ["0"])[0])
+        signature = (query.get("sig") or [""])[0]
+    except (TypeError, ValueError):
+        return False
+    now = int(time.time())
+    if len(secret) < 32 or exp < now or exp > now + 7260:
+        return False
+    expected = hmac.new(
+        secret.encode("utf-8"),
+        f"GET\n{path}\n{exp}".encode("utf-8"),
+        hashlib.sha256,
+    ).hexdigest()
+    return hmac.compare_digest(signature, expected)
 
 
 def _derive_title(topic: str) -> str:
@@ -351,6 +1028,52 @@ def _derive_title(topic: str) -> str:
 USERS_FILE = Path(__file__).parent / "data" / "users.json"
 PRODUCTS_FILE = Path(__file__).parent / "output" / "products.json"
 _PROD_LOCK = threading.Lock()
+AUTH_DB_FILE = Path(os.getenv("AUTH_DB_PATH") or (Path(__file__).parent / "data" / "auth.sqlite3"))
+from tools.auth_store import AuthStore
+AUTH_STORE = AuthStore(AUTH_DB_FILE)
+AUTH_STORE.cleanup()
+AUDIT_FILE = Path(__file__).parent / "data" / "security_audit.jsonl"
+_AUDIT_LOCK = threading.Lock()
+_TEMP_MEDIA: dict[str, dict] = {}
+_TEMP_MEDIA_LOCK = threading.Lock()
+
+
+def _audit(actor: str, action: str, target: str = "", **details) -> None:
+    event = {
+        "time": int(time.time()),
+        "actor": actor,
+        "action": action,
+        "target": target,
+        "details": details,
+    }
+    try:
+        with _AUDIT_LOCK:
+            AUDIT_FILE.parent.mkdir(parents=True, exist_ok=True)
+            with AUDIT_FILE.open("a", encoding="utf-8") as handle:
+                handle.write(json.dumps(event, ensure_ascii=False) + "\n")
+            try:
+                os.chmod(AUDIT_FILE, 0o600)
+            except OSError:
+                pass
+    except Exception as exc:
+        print(f"[security-audit] write failed: {exc}", file=sys.stderr)
+
+
+def _register_temp_media(owner: str, file_path: str) -> str:
+    path = Path(file_path).resolve(strict=True)
+    path.relative_to(OUTPUT_DIR)
+    token = uuid.uuid4().hex
+    now = int(time.time())
+    with _TEMP_MEDIA_LOCK:
+        for key, item in list(_TEMP_MEDIA.items()):
+            if int(item.get("expires_at", 0)) <= now:
+                _TEMP_MEDIA.pop(key, None)
+        _TEMP_MEDIA[token] = {
+            "owner": owner,
+            "path": str(path),
+            "expires_at": now + 10 * 60,
+        }
+    return _media_url("temp", token)
 
 # Supabase client (lazy init)
 _supabase_client = None
@@ -369,50 +1092,76 @@ def _get_supabase():
 
 
 def _load_users() -> dict:
-    """Load users from Supabase, fallback to local file."""
+    """Load public user profiles from SQLite; never load a plaintext password."""
+    users = AUTH_STORE.users_dict()
+    if users:
+        return users
+    # Metadata-only fallback helps render the migration/login screen, but cannot log in.
     try:
-        sb = _get_supabase()
-        if sb and sb.url:
-            users = sb.get_users()
-            if users:
-                return {u["username"]: u for u in users}
-    except Exception as e:
-        print(f"[Server] Supabase users load error: {e}", file=sys.stderr)
-    # Fallback to local file
-    try:
-        return json.loads(USERS_FILE.read_text(encoding="utf-8"))
+        legacy = json.loads(USERS_FILE.read_text(encoding="utf-8"))
+        return {
+            username: {
+                key: value
+                for key, value in (record or {}).items()
+                if key not in {"password", "password_hash"}
+            }
+            for username, record in legacy.items()
+        }
     except Exception:
         return {}
 
 
 def _load_products() -> list:
-    try:
-        return json.loads(PRODUCTS_FILE.read_text(encoding="utf-8"))
-    except Exception:
-        return []
+    if not PIPELINE_STORE.resource_migration_done("video"):
+        with _PROD_LOCK:
+            if not PIPELINE_STORE.resource_migration_done("video"):
+                try:
+                    legacy = json.loads(PRODUCTS_FILE.read_text(encoding="utf-8"))
+                    if not isinstance(legacy, list):
+                        legacy = []
+                except Exception:
+                    legacy = []
+                for item in legacy:
+                    item["id"] = _stable_resource_id("video", item)
+                PIPELINE_STORE.import_resources("video", legacy)
+                PIPELINE_STORE.mark_resource_migration_done("video")
+    return PIPELINE_STORE.list_resources("video")
 
 
-def _append_product(rec: dict) -> None:
+def _append_product(rec: dict) -> dict:
+    rec = dict(rec)
+    rec.setdefault("id", rec.get("job_id") or uuid.uuid4().hex[:20])
     rec.setdefault("status", "pending")   # pending(chưa duyệt) | posted(đã đăng) | failed(đăng lỗi) | cancelled(hủy)
-    with _PROD_LOCK:
-        items = _load_products()
-        items.append(rec)
-        PRODUCTS_FILE.parent.mkdir(parents=True, exist_ok=True)
-        PRODUCTS_FILE.write_text(json.dumps(items, ensure_ascii=False, indent=2), encoding="utf-8")
+    _load_products()  # one-time legacy import before the first insert
+    return PIPELINE_STORE.insert_resource_once("video", rec)[0]
 
 
 def _set_product_status(key: str, status: str) -> bool:
-    """Đổi status 1 video theo video_url. Trả True nếu tìm thấy."""
-    with _PROD_LOCK:
-        items = _load_products()
-        hit = False
-        for p in items:
-            if p.get("video_url") == key:
-                p["status"] = status
-                hit = True
-        if hit:
-            PRODUCTS_FILE.write_text(json.dumps(items, ensure_ascii=False, indent=2), encoding="utf-8")
-        return hit
+    """Change a video status by opaque id (legacy URL accepted internally)."""
+    record = _find_product(key)
+    if not record:
+        record = next((p for p in _load_products() if p.get("video_url") == key), None)
+    if not record:
+        return False
+    return bool(PIPELINE_STORE.update_resource("video", record["id"], status=status))
+
+
+def _find_product(resource_id: str) -> dict | None:
+    _load_products()
+    return PIPELINE_STORE.get_resource("video", resource_id)
+
+
+def _product_view(record: dict) -> dict:
+    item = dict(record)
+    resource_id = _stable_resource_id("video", item)
+    item["id"] = resource_id
+    item["video_url"] = _media_url("video", resource_id)
+    if item.get("thumb_url"):
+        item["thumb_url"] = _media_url("video", resource_id, "thumb")
+    if item.get("preview_url"):
+        item["preview_url"] = _media_url("video", resource_id, "preview")
+    item.pop("video_path", None)
+    return item
 
 
 def _friendly_error(e) -> str:
@@ -607,12 +1356,9 @@ def _album_caption(rec: dict) -> str:
 
 
 def _update_product(video_url: str, **fields) -> None:
-    with _PROD_LOCK:
-        items = _load_products()
-        for p in items:
-            if p.get("video_url") == video_url:
-                p.update(fields)
-        PRODUCTS_FILE.write_text(json.dumps(items, ensure_ascii=False, indent=2), encoding="utf-8")
+    record = next((p for p in _load_products() if p.get("video_url") == video_url), None)
+    if record:
+        PIPELINE_STORE.update_resource("video", record["id"], **fields)
 
 
 def _archive_video(video_url: str, delay_sec: int = 900) -> None:
@@ -643,39 +1389,418 @@ def _archive_video(video_url: str, delay_sec: int = 900) -> None:
     threading.Thread(target=_job, daemon=True).start()
 
 
-def _do_publish(video_url: str, caption: str, user: str,
-                ki: int = 0, account_id: str = "") -> dict:
-    """Đăng TikTok qua Zernio (key ki của nv, account_id đã chọn) + cập nhật status."""
+def _zernio_local_status(result: dict) -> str:
+    post = result.get("provider_post") if isinstance(result.get("provider_post"), dict) else {}
+    raw = str(result.get("provider_status") or post.get("status") or "").lower()
+    platforms = post.get("platforms") if isinstance(post.get("platforms"), list) else []
+    platform_states = {
+        str(item.get("status") or "").lower()
+        for item in platforms
+        if isinstance(item, dict)
+    }
+    if raw == "published" or (platform_states and platform_states <= {"published"}):
+        return "posted"
+    if raw == "failed" or (platform_states and platform_states <= {"failed", "cancelled"}):
+        return "failed"
+    if raw in {"partial", "cancelled"}:
+        return "unknown"
+    return "publishing"
+
+
+def _confirm_zernio_post(result: dict, api_key: str) -> dict:
+    """Briefly poll accepted posts; hourly maintenance handles slower providers."""
+    post_id = str(result.get("id") or "")
+    if not result.get("success") or not post_id:
+        return result
+    if _zernio_local_status(result) in {"posted", "failed", "unknown"}:
+        return result
+    from tools import publisher
+
+    deadline = time.monotonic() + _env_int("ZERNIO_CONFIRM_SECONDS", 45, 0)
+    latest = result
+    while time.monotonic() < deadline:
+        time.sleep(3)
+        checked = publisher.get_zernio_post(post_id, api_key=api_key)
+        if not checked.get("success"):
+            break
+        latest = checked
+        if _zernio_local_status(latest) in {"posted", "failed", "unknown"}:
+            break
+    return latest
+
+
+def _update_publish_resource(kind: str, resource_id: str, **fields) -> dict | None:
+    return PIPELINE_STORE.update_resource(kind, resource_id, **fields)
+
+
+def _provider_error(result: dict) -> str:
+    post = result.get("provider_post") if isinstance(result.get("provider_post"), dict) else {}
+    for platform in post.get("platforms") or []:
+        if isinstance(platform, dict) and platform.get("error"):
+            return str(platform["error"])
+    return str(result.get("error") or "")
+
+
+def _do_publish(
+    resource_id: str,
+    caption: str,
+    user: str,
+    ki: int = 0,
+    account_id: str = "",
+    request_id: str = "",
+) -> dict:
+    """Publish one exact video through a short-lived signed media URL."""
+    record = _find_product(resource_id)
+    if not record:
+        return {"success": False, "error": "Không tìm thấy video"}
+    api_key = _user_zernio(user, ki)
+    request_id = request_id or str(
+        uuid.uuid5(
+            uuid.NAMESPACE_URL,
+            f"dulich:publish:video:{resource_id}:{account_id or ki}",
+        )
+    )
     try:
         from tools import publisher
-        res = publisher.post_to_tiktok(video_url, caption,
-                                       api_key=_user_zernio(user, ki),
-                                       account_id=account_id or None)
+        if record.get("zernio_post_id") and (
+            record.get("status") == "failed"
+            or str(record.get("provider_status") or "").lower() == "failed"
+        ):
+            res = publisher.retry_zernio_post(
+                record["zernio_post_id"],
+                api_key=api_key,
+            )
+        else:
+            res = publisher.post_to_tiktok(
+                _signed_media_url("video", record["id"]),
+                caption,
+                api_key=api_key,
+                account_id=account_id or None,
+                request_id=request_id,
+            )
     except Exception as e:
         res = {"success": False, "error": str(e)}
-    _set_product_status(video_url, "posted" if res.get("success") else "failed")
-    if res.get("success"):
-        _archive_video(video_url)   # 15 phút sau tự đẩy Drive + xóa local
+    if res.get("success") and res.get("id"):
+        _update_publish_resource(
+            "video",
+            resource_id,
+            status="publishing",
+            zernio_post_id=res["id"],
+            zernio_request_id=request_id,
+            zernio_ki=ki,
+            zernio_account_id=account_id,
+            provider_status=res.get("provider_status", ""),
+            provider_checked_at=time.time(),
+        )
+        res = _confirm_zernio_post(res, api_key)
+        status = _zernio_local_status(res)
+    elif res.get("success"):
+        status = "unknown"
+        res["error"] = "Zernio nhận request nhưng không trả post id để đối soát."
+    else:
+        status = "unknown" if _is_uncertain_publish_err(res.get("error")) else "failed"
+    if status in {"failed", "unknown"}:
+        res["success"] = False
+    res["status"] = status
+    _update_publish_resource(
+        "video",
+        resource_id,
+        status=status,
+        zernio_post_id=res.get("id") or record.get("zernio_post_id", ""),
+        zernio_request_id=request_id,
+        zernio_ki=ki,
+        zernio_account_id=account_id,
+        provider_status=res.get("provider_status", ""),
+        provider_checked_at=time.time(),
+        platform_url=res.get("platform_url", ""),
+        publish_error=_provider_error(res),
+        posted_at=time.time() if status == "posted" else record.get("posted_at"),
+    )
+    res.pop("provider_post", None)
     return res
 
 
-def _do_publish_album(dir_rel: str, user: str,
-                      ki: int = 0, account_id: str = "") -> dict:
-    """Đăng bộ ảnh album lên TikTok (carousel) qua Zernio key ki + account_id đã chọn."""
-    rec = next((a for a in _load_albums() if a.get("dir") == dir_rel), None)
-    urls = [im.get("url", "") for im in (rec or {}).get("images", []) if im.get("url")]
+def _do_publish_album(
+    resource_id: str,
+    user: str,
+    ki: int = 0,
+    account_id: str = "",
+    request_id: str = "",
+) -> dict:
+    """Publish an album through exact, expiring signed image URLs."""
+    rec = _find_album(resource_id)
+    urls = [
+        _signed_media_url("album", rec["id"], str(index))
+        for index, image in enumerate((rec or {}).get("images") or [])
+        if image.get("url")
+    ]
     if not urls:
         return {"success": False, "error": "Album không có ảnh"}
     caption = _album_caption(rec)   # caption sáng tạo + hashtag theo chủ đề album (OpenRouter)
+    api_key = _user_zernio(user, ki)
+    request_id = request_id or str(
+        uuid.uuid5(
+            uuid.NAMESPACE_URL,
+            f"dulich:publish:album:{resource_id}:{account_id or ki}",
+        )
+    )
     try:
         from tools import publisher
-        res = publisher.post_images_to_tiktok(urls, caption,
-                                              api_key=_user_zernio(user, ki),
-                                              account_id=account_id or None)
+        if rec.get("zernio_post_id") and (
+            rec.get("status") == "failed"
+            or str(rec.get("provider_status") or "").lower() == "failed"
+        ):
+            res = publisher.retry_zernio_post(
+                rec["zernio_post_id"],
+                api_key=api_key,
+            )
+        else:
+            res = publisher.post_images_to_tiktok(
+                urls,
+                caption,
+                api_key=api_key,
+                account_id=account_id or None,
+                request_id=request_id,
+            )
     except Exception as e:
         res = {"success": False, "error": str(e)}
-    _set_album_status(dir_rel, "posted" if res.get("success") else "failed")
+    if res.get("success") and res.get("id"):
+        _update_publish_resource(
+            "album",
+            resource_id,
+            status="publishing",
+            zernio_post_id=res["id"],
+            zernio_request_id=request_id,
+            zernio_ki=ki,
+            zernio_account_id=account_id,
+            provider_status=res.get("provider_status", ""),
+            provider_checked_at=time.time(),
+        )
+        res = _confirm_zernio_post(res, api_key)
+        status = _zernio_local_status(res)
+    elif res.get("success"):
+        status = "unknown"
+        res["error"] = "Zernio nhận request nhưng không trả post id để đối soát."
+    else:
+        status = "unknown" if _is_uncertain_publish_err(res.get("error")) else "failed"
+    if status in {"failed", "unknown"}:
+        res["success"] = False
+    res["status"] = status
+    _update_publish_resource(
+        "album",
+        resource_id,
+        status=status,
+        zernio_post_id=res.get("id") or rec.get("zernio_post_id", ""),
+        zernio_request_id=request_id,
+        zernio_ki=ki,
+        zernio_account_id=account_id,
+        provider_status=res.get("provider_status", ""),
+        provider_checked_at=time.time(),
+        platform_url=res.get("platform_url", ""),
+        publish_error=_provider_error(res),
+        posted_at=time.time() if status == "posted" else rec.get("posted_at"),
+    )
+    res.pop("provider_post", None)
     return res
+
+
+def _publish_job_for_resource(kind: str, resource_id: str) -> dict | None:
+    jobs = PIPELINE_STORE.list_jobs(
+        kinds=[f"publish_{kind}"],
+        limit=200,
+    )
+    return next(
+        (
+            job
+            for job in jobs
+            if (job.get("payload") or {}).get("resource_id") == resource_id
+        ),
+        None,
+    )
+
+
+def _reconcile_publish_resource(
+    kind: str,
+    resource_id: str,
+    *,
+    job: dict | None = None,
+) -> dict:
+    """Query Zernio before deciding whether a publish may be retried."""
+    record = _find_product(resource_id) if kind == "video" else _find_album(resource_id)
+    if not record:
+        return {"success": False, "status": "unknown", "error": "Không tìm thấy nội dung."}
+    post_id = str(record.get("zernio_post_id") or "")
+    if not post_id:
+        return {
+            "success": False,
+            "status": "unknown",
+            "error": "Chưa có Zernio post id nên không thể đối soát tự động.",
+        }
+    job = job or _publish_job_for_resource(kind, resource_id)
+    payload = (job or {}).get("payload") or {}
+    ki = int(payload.get("zernio_ki", record.get("zernio_ki", 0)) or 0)
+    owner = str(record.get("user") or (job or {}).get("owner") or "")
+    from tools import publisher
+
+    checked = publisher.get_zernio_post(post_id, api_key=_user_zernio(owner, ki))
+    if not checked.get("success"):
+        _update_publish_resource(
+            kind,
+            resource_id,
+            status="unknown",
+            provider_checked_at=time.time(),
+            publish_error=checked.get("error", ""),
+        )
+        return {
+            "success": False,
+            "status": "unknown",
+            "error": checked.get("error") or "Không đọc được trạng thái Zernio.",
+        }
+
+    status = _zernio_local_status(checked)
+    error = _provider_error(checked)
+    previous_status = str(record.get("status") or "")
+    _update_publish_resource(
+        kind,
+        resource_id,
+        status=status,
+        provider_status=checked.get("provider_status", ""),
+        provider_checked_at=time.time(),
+        platform_url=checked.get("platform_url", ""),
+        publish_error=error,
+        posted_at=time.time() if status == "posted" else record.get("posted_at"),
+    )
+    if job and status == "posted":
+        PIPELINE_STORE.resolve_external_job(
+            job["id"],
+            status="done",
+            result={
+                "success": True,
+                "status": "posted",
+                "id": post_id,
+                "platform_url": checked.get("platform_url", ""),
+                "reconciled": True,
+            },
+        )
+    elif job and status == "failed":
+        PIPELINE_STORE.resolve_external_job(
+            job["id"],
+            status="failed",
+            error=error or "Zernio xác nhận đăng bài thất bại.",
+            result={
+                "success": False,
+                "status": "failed",
+                "id": post_id,
+                "reconciled": True,
+            },
+        )
+    if kind == "video" and status == "posted" and previous_status != "posted":
+        _archive_video(record.get("video_url", ""))
+    checked.pop("provider_post", None)
+    return {
+        "success": True,
+        "status": status,
+        "post_id": post_id,
+        "platform_url": checked.get("platform_url", ""),
+        "error": error,
+    }
+
+
+def _reconcile_pending_publishes(limit: int = 20) -> dict:
+    checked = posted = failed = unknown = 0
+    for kind, records in (("video", _load_products()), ("album", _load_albums())):
+        for record in records:
+            if checked >= max(1, int(limit)):
+                return {
+                    "checked": checked,
+                    "posted": posted,
+                    "failed": failed,
+                    "unknown": unknown,
+                }
+            if (
+                record.get("status") not in {"publishing", "unknown"}
+                or not record.get("zernio_post_id")
+            ):
+                continue
+            result = _reconcile_publish_resource(kind, record["id"])
+            checked += 1
+            status = result.get("status")
+            posted += int(status == "posted")
+            failed += int(status == "failed")
+            unknown += int(status == "unknown")
+    return {
+        "checked": checked,
+        "posted": posted,
+        "failed": failed,
+        "unknown": unknown,
+    }
+
+
+def _publish_dashboard_resource(resource_id: str, payload: dict | None = None) -> dict:
+    """Idempotently upload one video to Drive/Supabase outside the HTTP request."""
+    payload = payload or {}
+    record = _find_product(resource_id)
+    if not record:
+        return {"success": False, "error": "Không tìm thấy video."}
+    try:
+        full_path = _output_file_from_url(record.get("video_url", ""))
+    except (OSError, ValueError):
+        return {"success": False, "error": "Video local không tồn tại."}
+    if not full_path.exists():
+        return {"success": False, "error": "Video local không tồn tại."}
+
+    sb = _get_supabase()
+    if not sb or not sb.url:
+        return {"success": False, "error": "Supabase chưa được cấu hình."}
+    # A retry or duplicate admin tab returns the already-created record.
+    existing = sb.get_content_by_job_id(resource_id)
+    if existing and existing.get("id"):
+        return {
+            "success": True,
+            "content_id": existing["id"],
+            "drive_url": existing.get("drive_url", ""),
+            "deduplicated": True,
+        }
+
+    actual_drive_url = record.get("drive_link", "")
+    if not actual_drive_url:
+        try:
+            from tools.drive_uploader import get_drive_uploader
+
+            upload_result = get_drive_uploader().upload_video(str(full_path), resource_id)
+            if upload_result.get("webViewLink"):
+                actual_drive_url = upload_result["webViewLink"]
+                _update_product(record.get("video_url", ""), drive_link=actual_drive_url)
+            elif upload_result.get("error"):
+                return {
+                    "success": False,
+                    "error": f"Google Drive: {upload_result['error']}",
+                }
+        except Exception as exc:
+            return {"success": False, "error": f"Google Drive: {exc}"}
+
+    content_data = {
+        "user_id": record.get("user") or None,
+        "content_type": payload.get("video_type", "video"),
+        "status": "pending",
+        "title": record.get("topic", ""),
+        "topic": record.get("topic", ""),
+        "script": payload.get("script", {}),
+        "drive_url": actual_drive_url,
+        "local_path": record.get("video_url", ""),
+        "hook_style": record.get("hook_style", ""),
+        "hook_text": payload.get("hook_text", ""),
+        "job_id": resource_id,
+        "video_type": payload.get("video_type", "video"),
+    }
+    created = sb.create_content(content_data)
+    if created and created.get("id"):
+        return {
+            "success": True,
+            "content_id": created["id"],
+            "drive_url": actual_drive_url,
+        }
+    return {"success": False, "error": f"Lỗi Supabase: {created}"}
 
 
 # Album ảnh đã tạo — lưu lại như "Tất cả video" (mở lại / xoá / tạo lại).
@@ -684,46 +1809,72 @@ _ALBUM_PROD_LOCK = threading.Lock()
 
 
 def _load_albums() -> list:
-    try:
-        return json.loads(ALBUM_PRODUCTS_FILE.read_text(encoding="utf-8"))
-    except Exception:
-        return []
+    if not PIPELINE_STORE.resource_migration_done("album"):
+        with _ALBUM_PROD_LOCK:
+            if not PIPELINE_STORE.resource_migration_done("album"):
+                try:
+                    legacy = json.loads(ALBUM_PRODUCTS_FILE.read_text(encoding="utf-8"))
+                    if not isinstance(legacy, list):
+                        legacy = []
+                except Exception:
+                    legacy = []
+                for item in legacy:
+                    item["id"] = _stable_resource_id("album", item)
+                PIPELINE_STORE.import_resources("album", legacy)
+                PIPELINE_STORE.mark_resource_migration_done("album")
+    return PIPELINE_STORE.list_resources("album")
 
 
-def _append_album(rec: dict) -> None:
+def _append_album(rec: dict) -> dict:
+    rec = dict(rec)
+    rec.setdefault("id", rec.get("job_id") or uuid.uuid4().hex[:20])
     rec.setdefault("status", "pending")
-    with _ALBUM_PROD_LOCK:
-        items = _load_albums()
-        items.append(rec)
-        ALBUM_PRODUCTS_FILE.parent.mkdir(parents=True, exist_ok=True)
-        ALBUM_PRODUCTS_FILE.write_text(json.dumps(items, ensure_ascii=False, indent=2), encoding="utf-8")
+    _load_albums()
+    return PIPELINE_STORE.insert_resource_once("album", rec)[0]
 
 
 def _set_album_status(key: str, status: str) -> bool:
-    """Đổi status 1 album theo dir."""
-    with _ALBUM_PROD_LOCK:
-        items = _load_albums()
-        hit = False
-        for a in items:
-            if a.get("dir") == key:
-                a["status"] = status
-                hit = True
-        if hit:
-            ALBUM_PRODUCTS_FILE.write_text(json.dumps(items, ensure_ascii=False, indent=2), encoding="utf-8")
-        return hit
+    """Change an album status by opaque id (legacy directory accepted internally)."""
+    record = _find_album(key)
+    if not record:
+        record = next((a for a in _load_albums() if a.get("dir") == key), None)
+    if not record:
+        return False
+    return bool(PIPELINE_STORE.update_resource("album", record["id"], status=status))
 
 
-def _delete_album(dir_rel: str) -> bool:
-    """Xoá 1 album đã lưu (record + folder ảnh)."""
-    dir_rel = (dir_rel or "").strip().replace("\\", "/")
+def _find_album(resource_id: str) -> dict | None:
+    _load_albums()
+    return PIPELINE_STORE.get_resource("album", resource_id)
+
+
+def _album_view(record: dict) -> dict:
+    item = dict(record)
+    resource_id = _stable_resource_id("album", item)
+    item["id"] = resource_id
+    item["images"] = [
+        {**image, "url": _media_url("album", resource_id, str(index))}
+        for index, image in enumerate(item.get("images") or [])
+    ]
+    item.pop("dir", None)
+    return item
+
+
+def _delete_album(resource_id: str) -> bool:
+    """Delete an album by id after resolving its stored directory under output/albums."""
+    record = _find_album(resource_id)
+    if not record:
+        return False
+    dir_rel = str(record.get("dir") or "").replace("\\", "/")
     if not dir_rel.startswith("output/albums/"):
         return False
-    with _ALBUM_PROD_LOCK:
-        items = _load_albums()
-        kept = [a for a in items if a.get("dir") != dir_rel]
-        ALBUM_PRODUCTS_FILE.write_text(json.dumps(kept, ensure_ascii=False, indent=2), encoding="utf-8")
     try:
-        shutil.rmtree(str(Path(__file__).parent / dir_rel), ignore_errors=True)
+        target = _resolve_under(OUTPUT_DIR / "albums", dir_rel[len("output/albums/"):])
+    except ValueError:
+        return False
+    PIPELINE_STORE.delete_resource("album", resource_id)
+    try:
+        shutil.rmtree(str(target), ignore_errors=True)
     except Exception:
         pass
     return True
@@ -814,6 +1965,15 @@ def parse_multipart(handler: BaseHTTPRequestHandler):
     """
     content_type = handler.headers.get("Content-Type", "")
     content_length = int(handler.headers.get("Content-Length", 0))
+    if content_length <= 0:
+        raise UploadValidationError("Request upload rỗng.")
+    if content_length > MAX_LEGACY_MULTIPART_BYTES:
+        handler.close_connection = True
+        raise UploadValidationError(
+            "Endpoint upload cũ chỉ nhận tối đa "
+            f"{MAX_LEGACY_MULTIPART_BYTES // (1024 * 1024)} MB; "
+            "hãy tải bằng giao diện mới có chia nhỏ file."
+        )
     body = handler.rfile.read(content_length)
 
     # Extract boundary from Content-Type header
@@ -888,27 +2048,146 @@ class AssembleHandler(BaseHTTPRequestHandler):
         print(f"[Server] {self.address_string()} — {format % args}", file=sys.stderr)
 
     def do_OPTIONS(self):
-        """Handle CORS preflight."""
-        self.send_response(200)
+        """The web UI is same-origin; cross-origin preflight is not supported."""
+        self.send_response(405)
+        self.send_header("Allow", "GET, POST")
         self._cors_headers()
         self.end_headers()
 
     def _cors_headers(self):
-        self.send_header("Access-Control-Allow-Origin", "*")
-        self.send_header("Access-Control-Allow-Methods", "POST, OPTIONS")
-        self.send_header("Access-Control-Allow-Headers", "Content-Type")
+        """Legacy name retained for call sites; now emits security headers, not CORS."""
+        self.send_header("X-Content-Type-Options", "nosniff")
+        self.send_header("X-Frame-Options", "DENY")
+        self.send_header("Referrer-Policy", "same-origin")
 
-    def _json_response(self, data: dict, status: int = 200):
+    def _json_response(self, data: dict, status: int = 200, headers: dict | None = None):
         body = json.dumps(data, ensure_ascii=False).encode("utf-8")
         self.send_response(status)
         self._cors_headers()
         self.send_header("Content-Type", "application/json; charset=utf-8")
         self.send_header("Content-Length", str(len(body)))
+        self.send_header("Cache-Control", "no-store")
+        for key, value in (headers or {}).items():
+            if isinstance(value, (list, tuple)):
+                for entry in value:
+                    self.send_header(key, str(entry))
+            else:
+                self.send_header(key, str(value))
         self.end_headers()
         self.wfile.write(body)
 
+    def _cookies(self) -> SimpleCookie:
+        cookie = SimpleCookie()
+        try:
+            cookie.load(self.headers.get("Cookie", ""))
+        except Exception:
+            pass
+        return cookie
+
+    def _session_token(self) -> str:
+        morsel = self._cookies().get("dulich_session")
+        return morsel.value if morsel else ""
+
+    def _csrf_cookie(self) -> str:
+        morsel = self._cookies().get("dulich_csrf")
+        return morsel.value if morsel else ""
+
+    def _cookie_flags(self, *, http_only: bool) -> str:
+        origin = (os.getenv("APP_ORIGIN") or "").strip().lower()
+        secure_env = (os.getenv("AUTH_COOKIE_SECURE") or "").strip().lower()
+        forwarded_proto = (
+            self.headers.get("X-Forwarded-Proto", "").split(",", 1)[0].strip().lower()
+        )
+        secure = secure_env in {"1", "true", "yes"} or (
+            secure_env == ""
+            and (origin.startswith("https://") or forwarded_proto == "https")
+        )
+        flags = "Path=/; SameSite=Strict"
+        if http_only:
+            flags += "; HttpOnly"
+        if secure:
+            flags += "; Secure"
+        return flags
+
+    def _load_auth(self) -> bool:
+        session = AUTH_STORE.get_session(self._session_token())
+        if not session:
+            self._json_response({"error": "Bạn chưa đăng nhập hoặc phiên đã hết hạn."}, 401)
+            return False
+        self.auth_session = session
+        self.auth_user = session["username"]
+        self.auth_role = session["role"]
+        return True
+
+    def _origin_allowed(self) -> bool:
+        origin = (self.headers.get("Origin") or "").rstrip("/")
+        if not origin:
+            return True
+        configured = (os.getenv("APP_ORIGIN") or "").rstrip("/")
+        if configured:
+            return hmac.compare_digest(origin, configured)
+        forwarded = (self.headers.get("X-Forwarded-Proto") or "").split(",", 1)[0].strip()
+        scheme = forwarded if forwarded in {"http", "https"} else "http"
+        expected = f"{scheme}://{self.headers.get('Host', '')}".rstrip("/")
+        return hmac.compare_digest(origin, expected)
+
+    def _require_csrf(self) -> bool:
+        token = self.headers.get("X-CSRF-Token", "")
+        if AUTH_STORE.csrf_matches(self.auth_session, token):
+            return True
+        self._json_response({"error": "CSRF token không hợp lệ."}, 403)
+        return False
+
+    def _forbid_unless(self, roles: set[str]) -> bool:
+        if self.auth_role in roles:
+            return False
+        self._json_response({"error": "Bạn không có quyền thực hiện thao tác này."}, 403)
+        return True
+
     def do_POST(self):
-        if self.path == "/assemble":
+        path = urlparse(self.path).path
+        self.path = path
+        if not self._origin_allowed():
+            self._json_response({"error": "Origin không được phép."}, 403)
+            return
+        if path == "/login":
+            self.handle_login()
+            return
+        if path == "/health":
+            self._json_response({"error": "Method not allowed"}, 405)
+            return
+        if path in {"/open-folder", "/download-file"}:
+            self._json_response({"error": "Endpoint đã bị vô hiệu hóa; hãy dùng media resource ID."}, 410)
+            return
+        if not self._load_auth() or not self._require_csrf():
+            return
+        admin_only = {
+            "/settings", "/user-keys", "/venues-delete", "/venue-image-delete",
+            "/venues-scrape-all", "/images-delete", "/product-status",
+            "/publish-to-dashboard", "/publish-reconcile",
+        }
+        news_only = {"/news-use", "/news-scrape", "/news-research"}
+        if path in admin_only and self._forbid_unless({"admin"}):
+            return
+        if path in news_only and self._forbid_unless({"news", "admin"}):
+            return
+        if self.path == "/logout":
+            self.handle_logout()
+        elif self.path == "/uploads/init":
+            self.handle_upload_init()
+        elif self.path.startswith("/uploads/") and self.path.endswith("/complete"):
+            self.handle_upload_complete()
+        elif self.path == "/uploads/cancel":
+            self.handle_upload_cancel()
+        elif self.path == "/jobs":
+            self.handle_job_create()
+        elif self.path == "/jobs/cancel":
+            self.handle_job_cancel()
+        elif self.path == "/jobs/retry":
+            self.handle_job_retry()
+        elif self.path == "/publish-reconcile":
+            self.handle_publish_reconcile()
+        elif self.path == "/assemble":
             self.handle_assemble()
         elif self.path == "/assemble-listreview":
             self.handle_assemble_listreview()
@@ -956,8 +2235,6 @@ class AssembleHandler(BaseHTTPRequestHandler):
             self.handle_news_scrape()
         elif self.path == "/venues-scrape-all":
             self.handle_venues_scrape_all()
-        elif self.path == "/login":
-            self.handle_login()
         elif self.path == "/news-research":
             self.handle_news_research()
         elif self.path == "/hookpreview":
@@ -975,7 +2252,47 @@ class AssembleHandler(BaseHTTPRequestHandler):
         else:
             self._json_response({"error": f"Unknown path: {self.path}"}, 404)
 
+    def do_PUT(self):
+        path = urlparse(self.path).path
+        self.path = path
+        if not self._origin_allowed():
+            self._json_response({"error": "Origin không được phép."}, 403)
+            return
+        if not self._load_auth() or not self._require_csrf():
+            return
+        if path.startswith("/uploads/"):
+            self.handle_upload_chunk()
+            return
+        self._json_response({"error": f"Unknown path: {path}"}, 404)
+
     def do_GET(self):
+        path = urlparse(self.path).path
+        spa_paths = {
+            "/", "/app", "/index.html", "/trang-chu", "/video",
+            "/thu-vien", "/anh", "/cai-dat",
+        }
+        if path.startswith("/media/"):
+            public = path.startswith("/media/public/")
+            if not public and not self._load_auth():
+                return
+            self.handle_media(public=public)
+            return
+        if path.startswith("/output/"):
+            self._json_response({"error": "Direct output paths are not available."}, 404)
+            return
+        is_public = (
+            path in spa_paths
+            or path == "/health"
+            or path.startswith("/font/")
+            or path.startswith("/hookframe/")
+        )
+        if not is_public and not self._load_auth():
+            return
+        if path in {"/settings", "/user-keys", "/stats", "/kpi"}:
+            if self._forbid_unless({"admin"}):
+                return
+        if path.startswith("/news-pool") and self._forbid_unless({"news", "admin"}):
+            return
         if self.path.split("?", 1)[0] in ("/", "/app", "/index.html",
                                           "/trang-chu", "/video", "/thu-vien", "/anh", "/cai-dat"):
             self._serve_index()   # SPA routes → trả index.html để refresh/bookmark không 404
@@ -993,12 +2310,18 @@ class AssembleHandler(BaseHTTPRequestHandler):
             self.handle_images_get()
         elif self.path.startswith("/album-img/"):
             self._serve_album(self.path[len("/album-img/"):])
+        elif self.path.startswith("/album-zip/"):
+            self.handle_album_zip()
         elif self.path.startswith("/hookframe/"):
             self._serve_hookframe(self.path[len("/hookframe/"):])
         elif self.path.startswith("/font/"):
             self._serve_font(self.path[len("/font/"):])
         elif self.path == "/health":
-            self._json_response({"status": "ok", "port": PORT})
+            self._json_response({"status": "ok"})
+        elif self.path == "/session":
+            self.handle_session()
+        elif self.path.startswith("/uploads/"):
+            self.handle_upload_status()
         elif self.path.startswith("/render-jobs"):
             self.handle_render_jobs()
         elif self.path.startswith("/library"):
@@ -1019,90 +2342,351 @@ class AssembleHandler(BaseHTTPRequestHandler):
             self.handle_script_drafts_get()
         elif self.path.startswith("/news-pool"):
             self.handle_news_pool()
-        elif self.path.startswith("/output/"):
-            # Ảnh + ?w=<px> → resize/cache (cover album là PNG 1-3MB, lưới duyệt bài không kham nổi)
-            raw = self.path[len("/output/"):]
-            if "?w=" in raw and Path(raw.split("?", 1)[0]).suffix.lower() in (
-                    ".png", ".jpg", ".jpeg", ".webp"):
-                self._serve_image(Path(__file__).parent / "output", raw)
-                return
-            # Serve output files statically for preview/playback (bỏ query ?w=… nếu có)
-            rel = self.path.split("?", 1)[0].lstrip("/")
-            file_path = Path(__file__).parent / rel
-            if file_path.exists() and file_path.is_file():
-                ext = file_path.suffix.lower()
-                mime_map = {".mp4": "video/mp4", ".mov": "video/quicktime",
-                            ".wav": "audio/wav", ".mp3": "audio/mpeg",
-                            ".srt": "text/plain",
-                            ".png": "image/png", ".jpg": "image/jpeg",
-                            ".jpeg": "image/jpeg", ".webp": "image/webp",
-                            ".gif": "image/gif"}
-                mime = mime_map.get(ext, "application/octet-stream")
-                fsize = file_path.stat().st_size
-                # HTTP Range (206) — cho video phát/tua ngay như YouTube (không tải cả file).
-                # Chỉ xử lý single-range "bytes=a-b"; bất thường → gửi full 200 (fallback an toàn).
-                rng = self.headers.get("Range", "")
-                start, end = 0, fsize - 1
-                use_range = False
-                if rng.startswith("bytes=") and "," not in rng:
-                    try:
-                        s, e = rng[6:].split("-", 1)
-                        if s.strip() == "":            # bytes=-N → N byte cuối
-                            start = max(0, fsize - int(e))
-                        else:
-                            start = int(s)
-                            if e.strip() != "":
-                                end = min(int(e), fsize - 1)
-                        if 0 <= start <= end < fsize:
-                            use_range = True
-                    except Exception:
-                        use_range = False
-                if use_range and start > end:            # range không thoả mãn
-                    self.send_response(416)
-                    self.send_header("Content-Range", f"bytes */{fsize}")
-                    self._cors_headers(); self.end_headers()
-                    return
-                length = (end - start + 1) if use_range else fsize
-                self.send_response(206 if use_range else 200)
-                self._cors_headers()
-                self.send_header("Content-Type", mime)
-                self.send_header("Accept-Ranges", "bytes")
-                self.send_header("Content-Length", str(length))
-                if use_range:
-                    self.send_header("Content-Range", f"bytes {start}-{end}/{fsize}")
-                self.send_header("Connection", "close")
-                self.end_headers()
-                if self.command == "HEAD":
-                    self.close_connection = True
-                    return
-                remaining = length
-                with open(file_path, "rb") as f:
-                    if use_range:
-                        f.seek(start)
-                    while remaining > 0:
-                        chunk = f.read(min(65536, remaining))
-                        if not chunk:
-                            break
-                        try:
-                            self.wfile.write(chunk)
-                        except (BrokenPipeError, ConnectionResetError):
-                            break   # player đóng kết nối khi tua/dừng — bình thường
-                        remaining -= len(chunk)
-                self.close_connection = True
-                return
-            else:
-                self.send_response(404)
-                self._cors_headers()
-                self.end_headers()
-                return
         else:
             self._json_response({"error": "Not found"}, 404)
+
+    def handle_media(self, *, public: bool) -> None:
+        """Resolve an opaque media id to one owned file and stream it safely."""
+        parsed = urlparse(self.path)
+        parts = [part for part in parsed.path.split("/") if part]
+        offset = 2 if public else 1
+        try:
+            kind = parts[offset]
+            resource_id = unquote(parts[offset + 1])
+            asset = unquote(parts[offset + 2]) if len(parts) > offset + 2 else ""
+        except IndexError:
+            self._json_response({"error": "Media URL không hợp lệ."}, 404)
+            return
+
+        if public:
+            if not _verify_signed_media(parsed.path, parse_qs(parsed.query)):
+                self._json_response({"error": "Media URL đã hết hạn hoặc không hợp lệ."}, 403)
+                return
+
+        record: dict | None = None
+        stored_url = ""
+        if kind == "temp" and not public:
+            with _TEMP_MEDIA_LOCK:
+                temp = dict(_TEMP_MEDIA.get(resource_id) or {})
+            if (
+                not temp
+                or int(temp.get("expires_at", 0)) <= int(time.time())
+                or (self.auth_role != "admin" and temp.get("owner") != self.auth_user)
+            ):
+                self._json_response({"error": "Không tìm thấy media."}, 404)
+                return
+            try:
+                file_path = Path(temp["path"]).resolve(strict=True)
+                file_path.relative_to(OUTPUT_DIR)
+            except (OSError, ValueError):
+                self._json_response({"error": "Không tìm thấy media."}, 404)
+                return
+            self._stream_file(
+                file_path,
+                download=(parse_qs(parsed.query).get("download") or ["0"])[0] == "1",
+            )
+            return
+        if kind == "video":
+            record = _find_product(resource_id)
+            key = {"": "video_url", "thumb": "thumb_url", "preview": "preview_url"}.get(asset)
+            if key:
+                stored_url = str((record or {}).get(key) or "")
+        elif kind == "album":
+            record = _find_album(resource_id)
+            try:
+                index = int(asset)
+                stored_url = str(((record or {}).get("images") or [])[index].get("url") or "")
+            except (ValueError, IndexError, AttributeError):
+                stored_url = ""
+        if not record or not stored_url:
+            self._json_response({"error": "Không tìm thấy media."}, 404)
+            return
+        if not public and self.auth_role != "admin" and record.get("user") != self.auth_user:
+            self._json_response({"error": "Không tìm thấy media."}, 404)
+            return
+        try:
+            file_path = _output_file_from_url(stored_url)
+        except (OSError, ValueError):
+            self._json_response({"error": "Media không tồn tại trên server."}, 404)
+            return
+        try:
+            width = int((parse_qs(parsed.query).get("w") or ["0"])[0])
+        except (TypeError, ValueError):
+            width = 0
+        self._stream_file(
+            _image_variant(file_path, width),
+            download=(parse_qs(parsed.query).get("download") or ["0"])[0] == "1",
+            public=public,
+        )
+
+    def _stream_file(self, file_path: Path, *, download: bool = False, public: bool = False) -> None:
+        mime_map = {
+            ".mp4": "video/mp4", ".mov": "video/quicktime",
+            ".wav": "audio/wav", ".mp3": "audio/mpeg", ".srt": "text/plain",
+            ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg",
+            ".webp": "image/webp", ".gif": "image/gif",
+        }
+        mime = mime_map.get(file_path.suffix.lower(), "application/octet-stream")
+        size = file_path.stat().st_size
+        start, end, use_range = 0, max(0, size - 1), False
+        range_header = self.headers.get("Range", "")
+        if size and range_header.startswith("bytes=") and "," not in range_header:
+            try:
+                left, right = range_header[6:].split("-", 1)
+                if left.strip() == "":
+                    start = max(0, size - int(right))
+                else:
+                    start = int(left)
+                    if right.strip():
+                        end = min(int(right), size - 1)
+                use_range = 0 <= start <= end < size
+            except (TypeError, ValueError):
+                use_range = False
+        if range_header and not use_range:
+            self.send_response(416)
+            self._cors_headers()
+            self.send_header("Content-Range", f"bytes */{size}")
+            self.end_headers()
+            return
+        length = end - start + 1 if size else 0
+        self.send_response(206 if use_range else 200)
+        self._cors_headers()
+        self.send_header("Content-Type", mime)
+        self.send_header("Accept-Ranges", "bytes")
+        self.send_header("Content-Length", str(length))
+        self.send_header("Cache-Control", "private, max-age=300" if not public else "public, max-age=120")
+        if download:
+            safe_name = file_path.name.replace('"', "_")
+            self.send_header("Content-Disposition", f'attachment; filename="{safe_name}"')
+        if use_range:
+            self.send_header("Content-Range", f"bytes {start}-{end}/{size}")
+        self.send_header("Connection", "close")
+        self.end_headers()
+        remaining = length
+        with file_path.open("rb") as handle:
+            if use_range:
+                handle.seek(start)
+            while remaining:
+                chunk = handle.read(min(65536, remaining))
+                if not chunk:
+                    break
+                try:
+                    self.wfile.write(chunk)
+                except (BrokenPipeError, ConnectionResetError):
+                    break
+                remaining -= len(chunk)
+        self.close_connection = True
 
     def _read_json_body(self) -> dict:
         """Read and parse JSON body from request."""
         length = int(self.headers.get("Content-Length", 0))
+        if length > 2 * 1024 * 1024:
+            raise ValueError("JSON body vượt giới hạn 2 MB.")
         body = self.rfile.read(length)
         return json.loads(body.decode("utf-8")) if body else {}
+
+    # ── Resumable streaming uploads + durable jobs ───────────────────────
+
+    def handle_upload_init(self):
+        try:
+            body = self._read_json_body()
+            session = PIPELINE_STORE.create_upload_session(
+                owner=self.auth_user,
+                kind=str(body.get("kind") or ""),
+                files=body.get("files") if isinstance(body.get("files"), list) else [],
+                max_file_bytes=MAX_UPLOAD_FILE_BYTES,
+                max_job_bytes=MAX_UPLOAD_JOB_BYTES,
+                max_active_sessions=MAX_UPLOAD_SESSIONS_PER_USER,
+                reserve_free_bytes=UPLOAD_DISK_RESERVE_BYTES,
+            )
+            self._json_response({"success": True, "upload": session}, 201)
+        except UploadValidationError as exc:
+            status = 507 if "dung lượng trống" in str(exc) else 400
+            self._json_response({"success": False, "error": str(exc)}, status)
+        except Exception as exc:
+            self._json_response({"success": False, "error": str(exc)}, 500)
+
+    def handle_upload_chunk(self):
+        parts = [part for part in self.path.split("/") if part]
+        if len(parts) != 3 or parts[0] != "uploads":
+            self._json_response({"success": False, "error": "URL upload không hợp lệ."}, 404)
+            return
+        session_id, file_id = parts[1], parts[2]
+        try:
+            length = int(self.headers.get("Content-Length") or 0)
+            offset = int(self.headers.get("X-Upload-Offset") or 0)
+            result = PIPELINE_STORE.append_upload_chunk(
+                session_id=session_id,
+                file_id=file_id,
+                owner=self.auth_user,
+                offset=offset,
+                length=length,
+                source=self.rfile,
+                max_chunk_bytes=MAX_UPLOAD_CHUNK_BYTES,
+            )
+            self._json_response({"success": True, **result})
+        except UploadValidationError as exc:
+            status = 409 if "Offset" in str(exc) or "không đồng nhất" in str(exc) else 400
+            self._json_response({"success": False, "error": str(exc)}, status)
+        except Exception as exc:
+            self._json_response({"success": False, "error": str(exc)}, 500)
+
+    def handle_upload_complete(self):
+        parts = [part for part in self.path.split("/") if part]
+        if len(parts) != 3 or parts[0] != "uploads" or parts[2] != "complete":
+            self._json_response({"success": False, "error": "URL upload không hợp lệ."}, 404)
+            return
+        try:
+            result = PIPELINE_STORE.complete_upload(parts[1], self.auth_user)
+            try:
+                _validate_uploaded_media(result)
+            except UploadValidationError:
+                PIPELINE_STORE.cancel_upload(parts[1], self.auth_user)
+                raise
+            self._json_response({"success": True, "upload": result})
+        except UploadValidationError as exc:
+            message = str(exc)
+            status = 415 if "video" in message.lower() or "ffprobe" in message.lower() else 409
+            self._json_response({"success": False, "error": message}, status)
+        except Exception as exc:
+            self._json_response({"success": False, "error": str(exc)}, 500)
+
+    def handle_upload_status(self):
+        parts = [part for part in urlparse(self.path).path.split("/") if part]
+        if len(parts) != 2 or parts[0] != "uploads":
+            self._json_response({"success": False, "error": "URL upload không hợp lệ."}, 404)
+            return
+        result = PIPELINE_STORE.get_upload_session(
+            parts[1],
+            self.auth_user,
+            is_admin=self.auth_role == "admin",
+        )
+        if not result:
+            self._json_response({"success": False, "error": "Không tìm thấy upload."}, 404)
+            return
+        result["files"] = [
+            {
+                "id": item["id"],
+                "field": item["field_name"],
+                "name": item["original_name"],
+                "size": item["expected_size"],
+                "received": item["received_size"],
+                "status": item["status"],
+            }
+            for item in result.get("files") or []
+        ]
+        self._json_response({"success": True, "upload": result})
+
+    def handle_upload_cancel(self):
+        try:
+            session_id = str((self._read_json_body() or {}).get("upload_id") or "")
+            ok = PIPELINE_STORE.cancel_upload(
+                session_id,
+                self.auth_user,
+                is_admin=self.auth_role == "admin",
+            )
+            self._json_response({"success": ok}, 200 if ok else 404)
+        except Exception as exc:
+            self._json_response({"success": False, "error": str(exc)}, 500)
+
+    def handle_job_create(self):
+        try:
+            body = self._read_json_body()
+            kind = str(body.get("kind") or "")
+            upload_id = str(body.get("upload_id") or "")
+            payload = body.get("payload") if isinstance(body.get("payload"), dict) else {}
+            if kind not in {"personal_video", "listreview_video"}:
+                self._json_response({"success": False, "error": "Loại job không hợp lệ."}, 400)
+                return
+            if self.auth_role == "staff" and kind != "listreview_video":
+                self._json_response({"success": False, "error": "Nhân viên chỉ dùng luồng list-review."}, 403)
+                return
+            if self.auth_role == "news" and kind != "personal_video":
+                self._json_response({"success": False, "error": "Tài khoản tin tức chỉ dùng video thường."}, 403)
+                return
+            job, created = PIPELINE_STORE.create_job_from_upload(
+                session_id=upload_id,
+                owner=self.auth_user,
+                kind=kind,
+                payload=payload,
+                active_limit=MAX_ACTIVE_JOBS_PER_USER,
+                max_attempts=2,
+            )
+            position = PIPELINE_STORE.queue_position(job["id"])
+            self._json_response(
+                {
+                    "success": True,
+                    "queued": True,
+                    "created": created,
+                    "job_id": job["id"],
+                    "position": position,
+                    "job": _job_client_view(job),
+                },
+                202,
+            )
+        except QueueLimitError as exc:
+            self._json_response({"success": False, "error": str(exc)}, 429)
+        except UploadValidationError as exc:
+            self._json_response({"success": False, "error": str(exc)}, 409)
+        except Exception as exc:
+            import traceback
+
+            print(f"[jobs] create lỗi: {exc}\n{traceback.format_exc()}", file=sys.stderr)
+            self._json_response({"success": False, "error": str(exc)}, 500)
+
+    def handle_job_cancel(self):
+        try:
+            job_id = str((self._read_json_body() or {}).get("job_id") or "")
+            existing = PIPELINE_STORE.get_job(job_id)
+            if (
+                existing
+                and str(existing.get("kind") or "").startswith("publish_")
+                and existing.get("status") == "running"
+            ):
+                self._json_response(
+                    {
+                        "success": False,
+                        "error": (
+                            "Không thể hủy publish đang gửi ra nhà cung cấp; "
+                            "hãy chờ hệ thống đối soát để tránh trạng thái mơ hồ."
+                        ),
+                    },
+                    409,
+                )
+                return
+            job = PIPELINE_STORE.cancel_job(
+                job_id,
+                self.auth_user,
+                is_admin=self.auth_role == "admin",
+            )
+            if not job:
+                self._json_response({"success": False, "error": "Không tìm thấy job."}, 404)
+                return
+            if job.get("status") == "cancelled":
+                PIPELINE_STORE.cleanup_job_upload(job_id)
+            self._json_response({"success": True, "job": _job_client_view(job)})
+        except Exception as exc:
+            self._json_response({"success": False, "error": str(exc)}, 500)
+
+    def handle_job_retry(self):
+        try:
+            job_id = str((self._read_json_body() or {}).get("job_id") or "")
+            job = PIPELINE_STORE.retry_job(
+                job_id,
+                self.auth_user,
+                is_admin=self.auth_role == "admin",
+                active_limit=MAX_ACTIVE_JOBS_PER_USER,
+            )
+            if not job:
+                self._json_response(
+                    {"success": False, "error": "Job không thể thử lại."}, 409
+                )
+                return
+            self._json_response({"success": True, "job": _job_client_view(job)})
+        except QueueLimitError as exc:
+            self._json_response({"success": False, "error": str(exc)}, 429)
+        except Exception as exc:
+            self._json_response({"success": False, "error": str(exc)}, 500)
 
     def _serve_index(self):
         """Serve the single-page web UI."""
@@ -1121,23 +2705,20 @@ class AssembleHandler(BaseHTTPRequestHandler):
         self.close_connection = True
 
     def _serve_library(self):
-        """List a user's products (admin/news see all). Reads output/products.json."""
-        from urllib.parse import urlparse, parse_qs
+        """List products from the authenticated user's server-side identity."""
         q = parse_qs(urlparse(self.path).query)
-        user = (q.get("user") or [""])[0]
-        role = (q.get("role") or [""])[0]
         since = float((q.get("since") or ["0"])[0] or 0)
         limit = int((q.get("limit") or ["0"])[0] or 0)
         items = _load_products()
-        if user and role not in ("admin",):
-            items = [p for p in items if p.get("user") == user]
+        if self.auth_role != "admin":
+            items = [p for p in items if p.get("user") == self.auth_user]
         if since:
             items = [p for p in items if p.get("time", 0) >= since]
         items.sort(key=lambda x: x.get("time", 0), reverse=True)
         total = len(items)
         if limit > 0:
             items = items[:limit]
-        self._json_response({"videos": items, "total": total})
+        self._json_response({"videos": [_product_view(item) for item in items], "total": total})
 
     def _serve_stats(self):
         """Admin: count products per user."""
@@ -1189,23 +2770,67 @@ class AssembleHandler(BaseHTTPRequestHandler):
         self.close_connection = True
 
     def handle_login(self):
-        """Check username/password against data/users.json."""
+        """Authenticate against SQLite and issue an opaque HttpOnly session cookie."""
         try:
             data = self._read_json_body()
             u = (data.get("username") or "").strip()
             p = data.get("password") or ""
-            users = _load_users()
-            acc = users.get(u)
-            if not acc or acc.get("password") != p:
-                self._json_response({"ok": False, "error": "Sai tài khoản hoặc mật khẩu"}, 401)
+            if AUTH_STORE.user_count() == 0:
+                self._json_response({
+                    "ok": False,
+                    "error": "Auth database chưa được migrate. Chạy tools/migrate_auth.py trước.",
+                }, 503)
                 return
+            remote_ip = self.client_address[0] if self.client_address else ""
+            acc, retry_after = AUTH_STORE.authenticate(u, p, remote_ip)
+            if not acc:
+                headers = {"Retry-After": str(retry_after)} if retry_after else None
+                self._json_response(
+                    {"ok": False, "error": "Sai tài khoản hoặc mật khẩu"},
+                    429 if retry_after else 401,
+                    headers=headers,
+                )
+                return
+            token, csrf, profile = AUTH_STORE.create_session(acc["username"])
+            max_age = AUTH_STORE.absolute_ttl
+            cookie_headers = [
+                f"dulich_session={token}; Max-Age={max_age}; "
+                f"{self._cookie_flags(http_only=True)}",
+                f"dulich_csrf={csrf}; Max-Age={max_age}; "
+                f"{self._cookie_flags(http_only=False)}",
+            ]
+            _audit(profile["username"], "login")
             self._json_response({
-                "ok": True, "username": u, "role": acc.get("role", "staff"),
-                "name": acc.get("name", u), "hook_style": acc.get("hook_style", "hook_red"),
-                "voice": acc.get("voice", "gtts"),
-            })
+                "ok": True,
+                **profile,
+                "csrf_token": csrf,
+            }, headers={"Set-Cookie": cookie_headers})
         except Exception as e:
             self._json_response({"ok": False, "error": str(e)}, 500)
+
+    def handle_session(self):
+        csrf = self._csrf_cookie()
+        if not AUTH_STORE.csrf_matches(self.auth_session, csrf):
+            self._json_response({"error": "Phiên CSRF không hợp lệ; vui lòng đăng nhập lại."}, 401)
+            return
+        self._json_response({
+            "ok": True,
+            **self.auth_session["profile"],
+            "csrf_token": csrf,
+            "expires_at": self.auth_session["expires_at"],
+        })
+
+    def handle_logout(self):
+        AUTH_STORE.revoke_session(self._session_token())
+        _audit(self.auth_user, "logout")
+        expired = [
+            f"dulich_session=; Max-Age=0; {self._cookie_flags(http_only=True)}",
+            f"dulich_csrf=; Max-Age=0; {self._cookie_flags(http_only=False)}",
+        ]
+        self._json_response(
+            {"success": True},
+            headers={"Set-Cookie": expired},
+        )
 
     def handle_news_research(self):
         """News flow: trả TOPIC + LINK source YouTube để user tự tải về thả vào (không auto-download)."""
@@ -1241,7 +2866,8 @@ class AssembleHandler(BaseHTTPRequestHandler):
                     {"scene_id": "scene_2", "kind": "spot", "label": "NỘI DUNG", "caption": script.get("body", "")},
                     {"scene_id": "scene_3", "kind": "outro", "label": "CTA", "caption": script.get("cta", "")},
                 ]
-                add_draft("tintuc", scenes, "hook_news", "none", "fade", "pil", "", "ai")
+                owner = self.auth_user if self.auth_role == "news" else "tintuc"
+                add_draft(owner, scenes, "hook_news", "none", "fade", "pil", "", "ai")
             except Exception as _e:
                 print(f"[news] lưu draft lỗi: {_e}", file=sys.stderr)
             self._json_response({"success": True, "keyword": keyword, "script": script, "sources": sources})
@@ -1351,84 +2977,12 @@ class AssembleHandler(BaseHTTPRequestHandler):
             self._json_response({"success": False, "error": str(e), "traceback": tb}, 500)
 
     def handle_open_folder(self):
-        """Open Windows Explorer at the directory containing the given file path."""
-        try:
-            data = self._read_json_body()
-            file_path = data.get("path", "")
-
-            # Resolve relative path against pipeline dir
-            if not os.path.isabs(file_path):
-                file_path = str(Path(__file__).parent / file_path)
-
-            file_path = os.path.normpath(file_path)
-            folder = os.path.dirname(file_path) if os.path.isfile(file_path) else file_path
-
-            print(f"[Server] /open-folder: {folder}", file=sys.stderr)
-
-            if not os.path.exists(folder):
-                self._json_response({"success": False, "error": f"Path not found: {folder}"}, 404)
-                return
-
-            import platform
-            if platform.system() == "Windows":
-                # Use /select to highlight the specific file in Explorer
-                if os.path.isfile(file_path):
-                    subprocess.Popen(["explorer", "/select,", file_path])
-                else:
-                    subprocess.Popen(["explorer", folder])
-            elif platform.system() == "Darwin":
-                subprocess.Popen(["open", "-R", file_path])
-            else:
-                subprocess.Popen(["xdg-open", folder])
-
-            self._json_response({"success": True, "folder": folder})
-        except Exception as e:
-            print(f"[Server] /open-folder error: {e}", file=sys.stderr)
-            self._json_response({"success": False, "error": str(e)}, 500)
+        """Removed: server-side folder opening is unsafe and useless through the tunnel."""
+        self._json_response({"error": "Endpoint đã bị vô hiệu hóa."}, 410)
 
     def handle_download_file(self):
-        """Stream a file from the server to the browser for download."""
-        try:
-            data = self._read_json_body()
-            file_path = data.get("path", "")
-
-            # Resolve relative path
-            if not os.path.isabs(file_path):
-                file_path = str(Path(__file__).parent / file_path)
-            file_path = os.path.normpath(file_path)
-
-            print(f"[Server] /download-file: {file_path}", file=sys.stderr)
-
-            if not os.path.isfile(file_path):
-                self._json_response({"error": f"File not found: {file_path}"}, 404)
-                return
-
-            file_size = os.path.getsize(file_path)
-            filename  = os.path.basename(file_path)
-
-            # Detect MIME type
-            ext = os.path.splitext(filename)[1].lower()
-            mime_map = {".mp4": "video/mp4", ".mov": "video/quicktime",
-                        ".wav": "audio/wav", ".mp3": "audio/mpeg",
-                        ".srt": "text/plain"}
-            mime = mime_map.get(ext, "application/octet-stream")
-
-            self.send_response(200)
-            self._cors_headers()
-            self.send_header("Content-Type", mime)
-            self.send_header("Content-Length", str(file_size))
-            self.send_header("Content-Disposition", f'attachment; filename="{filename}"')
-            self.send_header("Connection", "close")
-            self.end_headers()
-
-            with open(file_path, "rb") as f:
-                while chunk := f.read(65536):
-                    self.wfile.write(chunk)
-            self.close_connection = True
-
-        except Exception as e:
-            print(f"[Server] /download-file error: {e}", file=sys.stderr)
-            self._json_response({"error": str(e)}, 500)
+        """Removed: use an authorized /media URL with ?download=1."""
+        self._json_response({"error": "Endpoint đã bị vô hiệu hóa."}, 410)
 
     def handle_preview(self):
         print("[Server] /preview — Nhận request nghe thử...", file=sys.stderr)
@@ -1437,27 +2991,10 @@ class AssembleHandler(BaseHTTPRequestHandler):
             provider = data.get("provider", "mock")
             voice_id = data.get("voice_id", "")
             text = data.get("text", "Xin chào.")
-            
-            # Inject keys
-            el_key = data.get("elevenlabs_api_key", "")
-            if el_key:
-                os.environ["ELEVENLABS_API_KEY"] = el_key
-            vbee_key = data.get("vbee_api_key", "")
-            if vbee_key:
-                os.environ["VBEE_API_KEY"] = vbee_key
-            openai_key = data.get("openai_api_key", "")
-            if openai_key:
-                os.environ["OPENAI_API_KEY"] = openai_key
-            ant_key = data.get("anthropic_api_key", "")
-            if ant_key:
-                os.environ["ANTHROPIC_API_KEY"] = ant_key
-            gemini_key = data.get("gemini_api_key", "")
-            if gemini_key:
-                os.environ["GEMINI_API_KEY"] = gemini_key
-                
+
             from tools.voice_generator import VoiceGenerator
             gen = VoiceGenerator(provider=provider)
-            output_name = f"preview_{provider}_{voice_id}"
+            output_name = f"preview_{provider}_{uuid.uuid4().hex[:12]}"
             
             # Force speed to 1.0 for previews
             audio_path = gen.generate_voice(
@@ -1467,15 +3004,9 @@ class AssembleHandler(BaseHTTPRequestHandler):
                 speed=1.0
             )
             
-            # Resolve path relative to pipeline root (for static serving)
-            rel_path = os.path.relpath(audio_path, str(Path(__file__).parent))
-            # Format with forward slashes for URLs
-            url_path = "/" + rel_path.replace("\\", "/")
-            
             self._json_response({
                 "success": True,
-                "audio_path": audio_path,
-                "url_path": url_path
+                "url_path": _register_temp_media(self.auth_user, audio_path),
             })
         except Exception as e:
             print(f"[Server] /preview error: {e}", file=sys.stderr)
@@ -1492,7 +3023,8 @@ class AssembleHandler(BaseHTTPRequestHandler):
             return
 
         # Extract metadata
-        job_id = fields.get("job_id", f"job_{uuid.uuid4().hex[:8]}")
+        # Never trust a browser-generated id for filesystem or queue identity.
+        legacy_upload_id = f"legacy_{uuid.uuid4().hex}"
         transition = fields.get("transition", "fade")
         voice_mode = fields.get("voice_mode", "mock")
         creator_id = fields.get("creator_id", "lan_anh")
@@ -1504,19 +3036,7 @@ class AssembleHandler(BaseHTTPRequestHandler):
         video_type = fields.get("video_type", "personal")
         voice_id = fields.get("voice_id", "")
 
-        # Inject API keys into environment if provided
-        for key_name in ["elevenlabs_api_key", "vbee_api_key", "openai_api_key", "anthropic_api_key", "gemini_api_key"]:
-            val = fields.get(key_name, "")
-            env_var = key_name.upper()
-            if val:
-                os.environ[env_var] = val
-                print(f"[Server] Key {env_var} set in env (len={len(val)})", file=sys.stderr)
-            else:
-                existing = os.getenv(env_var, "")
-                if existing:
-                    print(f"[Server] Key {env_var} already present in server env (len={len(existing)})", file=sys.stderr)
-                else:
-                    print(f"[Server] Key {env_var} is empty in request and server env", file=sys.stderr)
+        # API keys are server/admin settings only. Never accept per-request keys from staff.
 
         try:
             script = json.loads(fields.get("script", "{}"))
@@ -1528,15 +3048,16 @@ class AssembleHandler(BaseHTTPRequestHandler):
         except Exception:
             scenes_meta = []
 
-        print(f"[Server] Job: {job_id}, {len(scenes_meta)} scene(s), transition={transition}", file=sys.stderr)
+        print(f"[Server] Upload: {legacy_upload_id}, {len(scenes_meta)} scene(s), transition={transition}", file=sys.stderr)
 
         # Save uploaded files to temp dir
-        job_temp = UPLOAD_TEMP_DIR / job_id
+        job_temp = UPLOAD_TEMP_DIR / legacy_upload_id
         job_temp.mkdir(parents=True, exist_ok=True)
 
         scene_uploads = []
         for scene in scenes_meta:
             sid = scene.get("scene_id", "")
+            sid_file = _safe_identifier(sid, "scene")
 
             # Collect all files for this scene: field name == sid, or "{sid}__{idx}".
             # Sort by the numeric suffix so clips concat in drop order.
@@ -1554,7 +3075,7 @@ class AssembleHandler(BaseHTTPRequestHandler):
             for k, fn in enumerate(field_names):
                 filename, file_bytes = files[fn]
                 ext = Path(filename).suffix or ".mp4"
-                dest = job_temp / f"{sid}_{k}{ext}"
+                dest = job_temp / f"{sid_file}_{k}{ext}"
                 with open(str(dest), "wb") as f:
                     f.write(file_bytes)
                 saved_paths.append(str(dest))
@@ -1566,7 +3087,7 @@ class AssembleHandler(BaseHTTPRequestHandler):
             elif len(saved_paths) == 1:
                 scene_uploads.append({"scene_id": sid, "file_path": saved_paths[0]})
             else:
-                concat_dest = str(job_temp / f"{sid}_concat.mp4")
+                concat_dest = str(job_temp / f"{sid_file}_concat.mp4")
                 if _concat_scene_clips(saved_paths, concat_dest):
                     scene_uploads.append({"scene_id": sid, "file_path": concat_dest})
                     print(f"[Server]   ✓ {sid}: nối {len(saved_paths)} clip → {concat_dest}", file=sys.stderr)
@@ -1575,96 +3096,43 @@ class AssembleHandler(BaseHTTPRequestHandler):
                     scene_uploads.append({"scene_id": sid, "file_path": saved_paths[0]})
                     print(f"[Server]   ⚠ {sid}: concat lỗi, dùng clip đầu", file=sys.stderr)
 
-        # Ensure jobs collection
+        # Legacy compatibility: enqueue just like the chunked API.  The request
+        # no longer waits for FFmpeg and the server, not the client, creates id.
         try:
-            from tools.db import get_db, now_utc, new_doc
-            db = get_db()
-            jobs_col = db["jobs"] if hasattr(db, "__getitem__") else None
-            if jobs_col is not None:
-                job_doc = new_doc(
-                    _id=job_id,
-                    status="running",
-                    creator_id=creator_id,
-                    script=script,
-                    scenes=[
-                        {**s, "file_path": next((u["file_path"] for u in scene_uploads if u["scene_id"] == s.get("scene_id")), ""), "uploaded": True}
-                        for s in scenes_meta
-                    ],
-                    voice_provider=voice_mode,
-                    voice_id=voice_id,
-                    hook_style=hook_style,
-                    hook_text=hook_text or script.get("hook", ""),
-                    hook_title=hook_title,
-                    hook_subtitle=hook_subtitle,
-                    template_ratio=template_ratio,
-                    video_type=video_type,
-                    created_at=now_utc().isoformat(),
-                )
-                try:
-                    jobs_col.insert_one(job_doc)
-                except Exception:
-                    jobs_col.update_one({"_id": job_id}, {"$set": job_doc}, upsert=True)
-        except Exception as e:
-            print(f"[Server] Warning: DB error (continuing): {e}", file=sys.stderr)
-
-        # Run assembly (serialized — only one heavy job at a time)
-        try:
-            with _HEAVY_LOCK:
-                # Force reload agents/tools modules so code edits take effect without restart
-                for m in list(sys.modules.keys()):
-                    if m.startswith("agents") or m.startswith("tools"):
-                        sys.modules.pop(m, None)
-
-                from agents.personal_video_agent import run_assemble_video
-                print(f"[Server] Bắt đầu ghép video với FFmpeg...", file=sys.stderr)
-                result = run_assemble_video(
-                    job_id=job_id,
-                    scene_uploads=scene_uploads,
-                    transition=transition,
-                    hook_style=hook_style,
-                    hook_text=hook_text,
-                    hook_title=hook_title,
-                    hook_subtitle=hook_subtitle,
-                    video_type=video_type,
-                    voice_provider=voice_mode,
-                    voice_id=voice_id,
-                )
-            print(f"[Server] ✅ Hoàn tất! Video: {result.get('video_path')}", file=sys.stderr)
-            video_url = _to_output_url(result.get("video_path", ""))
-            # Track product per user (for admin stats + per-user library)
-            try:
-                import time as _t
-                _append_product({
-                    "user": fields.get("user", "") or creator_id,
-                    "topic": fields.get("topic", "") or hook_title,
-                    "hook_style": hook_style,
-                    "video_url": video_url,
-                    "time": _t.time(),
-                })
-            except Exception as _e:
-                print(f"[Server] product log lỗi: {_e}", file=sys.stderr)
+            payload = {
+                "topic": fields.get("topic", "") or hook_title or "Video",
+                "script": script,
+                "scene_uploads": scene_uploads,
+                "transition": transition,
+                "voice_mode": voice_mode,
+                "voice_id": voice_id,
+                "creator_id": creator_id,
+                "template_ratio": template_ratio,
+                "hook_style": hook_style,
+                "hook_text": hook_text,
+                "hook_title": hook_title,
+                "hook_subtitle": hook_subtitle,
+                "video_type": video_type,
+                "legacy_temp_dir": str(job_temp),
+            }
+            job, _ = PIPELINE_STORE.create_job(
+                kind="personal_video",
+                owner=self.auth_user,
+                payload=payload,
+                active_limit=MAX_ACTIVE_JOBS_PER_USER,
+            )
             self._json_response({
                 "success": True,
-                "video_path": result.get("video_path", ""),
-                "video_url": video_url,
-                "audio_path": result.get("audio_path", ""),
-                "job_id": job_id,
-            })
-        except Exception as e:
-            import traceback
-            tb = traceback.format_exc()
-            print(f"[Server] ❌ Lỗi assembly: {e}\n{tb}", file=sys.stderr)
-            self._json_response({
-                "success": False,
-                "error": _friendly_error(e),
-            }, 500)
-        finally:
-            # Cleanup temp upload dir after delay
-            def cleanup():
-                import time
-                time.sleep(60)
-                shutil.rmtree(str(job_temp), ignore_errors=True)
-            threading.Thread(target=cleanup, daemon=True).start()
+                "queued": True,
+                "job_id": job["id"],
+                "position": PIPELINE_STORE.queue_position(job["id"]),
+            }, 202)
+        except QueueLimitError as exc:
+            shutil.rmtree(str(job_temp), ignore_errors=True)
+            self._json_response({"success": False, "error": str(exc)}, 429)
+        except Exception as exc:
+            shutil.rmtree(str(job_temp), ignore_errors=True)
+            self._json_response({"success": False, "error": _friendly_error(exc)}, 500)
 
     def handle_assemble_listreview(self):
         """Luồng nhân viên (list-review, mẫu nv1): intro + N quán (tên+điểm+VO+clip) + outro."""
@@ -1675,8 +3143,8 @@ class AssembleHandler(BaseHTTPRequestHandler):
             self._json_response({"success": False, "error": f"Lỗi đọc request: {e}"}, 400)
             return
 
-        job_id = fields.get("job_id", f"lr_{uuid.uuid4().hex[:8]}")
-        user = fields.get("user", "") or fields.get("creator_id", "nv1")
+        legacy_upload_id = f"legacy_{uuid.uuid4().hex}"
+        user = self.auth_user
         hook_style = fields.get("hook_style", "hook_red")
         voice_provider = fields.get("voice_mode", "gtts")
         voice_id = fields.get("voice_id", "")
@@ -1685,7 +3153,7 @@ class AssembleHandler(BaseHTTPRequestHandler):
         except Exception:
             spec_in = {}
 
-        job_temp = UPLOAD_TEMP_DIR / job_id
+        job_temp = UPLOAD_TEMP_DIR / legacy_upload_id
         job_temp.mkdir(parents=True, exist_ok=True)
 
         def _save_clips(scene_id: str) -> list:
@@ -1694,10 +3162,11 @@ class AssembleHandler(BaseHTTPRequestHandler):
                 return int(tail) if tail.isdigit() else 0
             names = sorted([fn for fn in files if fn == scene_id or fn.startswith(scene_id + "__")], key=_idx)
             out = []
+            safe_scene_id = _safe_identifier(scene_id, "scene")
             for k, fn in enumerate(names):
                 filename, file_bytes = files[fn]
                 ext = Path(filename).suffix or ".mp4"
-                dest = job_temp / f"{scene_id}_{k}{ext}"
+                dest = job_temp / f"{safe_scene_id}_{k}{ext}"
                 with open(str(dest), "wb") as f:
                     f.write(file_bytes)
                 out.append(str(dest))
@@ -1725,7 +3194,7 @@ class AssembleHandler(BaseHTTPRequestHandler):
         badge_mode = badge_mode or "full"
         transition = transition or "none"
         spec = {
-            "job_id": job_id, "hook_style": hook_style,
+            "job_id": legacy_upload_id, "hook_style": hook_style,
             "voice_provider": voice_provider, "voice_id": voice_id,
             "overlay_engine": overlay_engine, "style": style,
             "badge_mode": badge_mode, "transition": transition,
@@ -1764,20 +3233,28 @@ class AssembleHandler(BaseHTTPRequestHandler):
                                  ". Thêm clip cho các cảnh này rồi render lại (đừng để trống)."}, 400)
             return
 
-        # RENDER NỀN: đưa vào hàng đợi tuần tự rồi trả lời ngay — logout vẫn render tiếp.
+        # Legacy compatibility: persist in the same SQLite queue as the new API.
         try:
-            import time as _t
             _topic = intro.get("title", "") or "List review"
-            position = _RENDER_QUEUE.qsize() + 1
-            _job_update(job_id, user=user, topic=_topic, status="queued",
-                        error="", video_url="", time=_t.time())
-            _RENDER_QUEUE.put({"job_id": job_id, "spec": spec, "user": user,
-                               "topic": _topic, "hook_style": hook_style,
-                               "draft_id": fields.get("draft_id", ""),
-                               "temp_dir": job_temp})
-            print(f"[Server] /assemble-listreview → queue {job_id} (vị trí {position})", file=sys.stderr)
+            job, _ = PIPELINE_STORE.create_job(
+                kind="listreview_video",
+                owner=user,
+                payload={
+                    "spec": spec,
+                    "topic": _topic,
+                    "hook_style": hook_style,
+                    "draft_id": fields.get("draft_id", ""),
+                    "legacy_temp_dir": str(job_temp),
+                },
+                active_limit=MAX_ACTIVE_JOBS_PER_USER,
+            )
+            position = PIPELINE_STORE.queue_position(job["id"])
+            print(f"[Server] /assemble-listreview → queue {job['id']} (vị trí {position})", file=sys.stderr)
             self._json_response({"success": True, "queued": True,
-                                 "job_id": job_id, "position": position})
+                                 "job_id": job["id"], "position": position}, 202)
+        except QueueLimitError as e:
+            shutil.rmtree(str(job_temp), ignore_errors=True)
+            self._json_response({"success": False, "error": str(e)}, 429)
         except Exception as e:
             import traceback
             print(f"[Server] ❌ queue lỗi: {e}\n{traceback.format_exc()}", file=sys.stderr)
@@ -1785,29 +3262,47 @@ class AssembleHandler(BaseHTTPRequestHandler):
             self._json_response({"success": False, "error": _friendly_error(e)}, 500)
 
     def handle_render_jobs(self):
-        """GET /render-jobs?user= → trạng thái job render của user (admin: tất cả)."""
-        from urllib.parse import urlparse, parse_qs
-        q = parse_qs(urlparse(self.path).query)
-        user = (q.get("user", [""])[0] or "").strip()
-        role = (q.get("role", [""])[0] or "").strip()
-        with _RENDER_JOBS_LOCK:
-            jobs = [{"job_id": k, **v} for k, v in _RENDER_JOBS.items()
-                    if role == "admin" or v.get("user") == user]
-        jobs.sort(key=lambda j: j.get("time", 0), reverse=True)
-        self._json_response({"success": True, "jobs": jobs[:30],
-                             "queue_len": _RENDER_QUEUE.qsize()})
+        """Return render jobs allowed by the authenticated identity."""
+        owner = None if self.auth_role == "admin" else self.auth_user
+        jobs = PIPELINE_STORE.list_jobs(owner=owner, limit=50)
+        self._json_response({
+            "success": True,
+            "jobs": [_job_client_view(job) for job in jobs],
+            "queue_len": PIPELINE_STORE.queue_length(),
+        })
 
     def handle_assemble_image(self):
         """POST /assemble-image {album, user} → chạy script CLI dựng album ảnh, lưu lại, trả list ảnh PNG."""
         try:
             body = self._read_json_body()
             album = (body.get("album") or "").strip()
-            user = (body.get("user") or "").strip()
             title_prompt = (body.get("title_prompt") or "").strip()
-            res = _generate_album(album, user, title_prompt=title_prompt)
-            self._json_response(res, 200 if res.get("success") else (400 if "hợp lệ" in res.get("error", "") else 500))
-        except subprocess.TimeoutExpired:
-            self._json_response({"success": False, "error": "Quá thời gian (300s)."}, 500)
+            allowed = {item["id"] for item in _albums_for(self.auth_user)}
+            if album not in allowed:
+                self._json_response(
+                    {"success": False, "error": "Bạn không có quyền dùng mẫu album này."},
+                    403,
+                )
+                return
+            job, _ = PIPELINE_STORE.create_job(
+                kind="album_image",
+                owner=self.auth_user,
+                payload={
+                    "album": album,
+                    "topic": f"Album {album}",
+                    "title_prompt": title_prompt[:500],
+                    "auto": False,
+                },
+                active_limit=MAX_ACTIVE_JOBS_PER_USER,
+            )
+            self._json_response({
+                "success": True,
+                "queued": True,
+                "job_id": job["id"],
+                "position": PIPELINE_STORE.queue_position(job["id"]),
+            }, 202)
+        except QueueLimitError as e:
+            self._json_response({"success": False, "error": str(e)}, 429)
         except Exception as e:
             import traceback
             tb = traceback.format_exc()
@@ -1819,7 +3314,7 @@ class AssembleHandler(BaseHTTPRequestHandler):
         → AI tạo scenes chuẩn editor + lưu Kịch bản chờ, trả scenes để nạp thẳng."""
         try:
             b = self._read_json_body()
-            user = (b.get("user") or "").strip() or "nv1"
+            user = self.auth_user
             from tools.script_import import scenes_from_text, scenes_from_link
             if mode == "text":
                 scenes = scenes_from_text(b.get("text") or "")
@@ -1861,7 +3356,8 @@ class AssembleHandler(BaseHTTPRequestHandler):
                 return
             from tools.script_ai import generate_script_ai
             from tools.script_drafts import add_draft
-            sc = generate_script_ai(f"tin tức Đà Lạt: {title}", employee="tintuc")
+            owner = self.auth_user if self.auth_role == "news" else "tintuc"
+            sc = generate_script_ai(f"tin tức Đà Lạt: {title}", employee=owner)
             if not sc:
                 self._json_response({"success": False, "error": "AI không viết được kịch bản (kiểm tra OPENROUTER_KEY)"}, 500)
                 return
@@ -1873,7 +3369,7 @@ class AssembleHandler(BaseHTTPRequestHandler):
                 {"scene_id": "scene_3", "kind": "outro", "label": "CTA",
                  "caption": sc.get("cta", "")},
             ]
-            add_draft("tintuc", scenes, "hook_news", "none", "fade", "pil", "",
+            add_draft(owner, scenes, "hook_news", "none", "fade", "pil", "",
                       f"news:{url}" if url else "news")
             self._json_response({"success": True, "title": sc.get("title", title)})
         except Exception as e:
@@ -1886,55 +3382,41 @@ class AssembleHandler(BaseHTTPRequestHandler):
         AI vẽ lại Y HỆT TỪNG ảnh (Nano Banana Pro), đúng số lượng ảnh trong link, watermark @dalatnow."""
         try:
             b = self._read_json_body()
-            user = (b.get("user") or "").strip() or "admin"
+            user = self.auth_user
             url = (b.get("url") or "").strip()
             if "tiktok.com" not in url:
                 self._json_response({"success": False, "error": "Dán link bài ẢNH TikTok"}, 400)
                 return
 
-            # Chạy NỀN: bài nhiều ảnh mất vài phút (mỗi ảnh ~30-45s) → vượt timeout nginx nếu đồng bộ.
-            # Trả lời ngay, xong tự lưu vào "Album đã lưu" (logout vẫn chạy tiếp).
-            def _work():
-                try:
-                    from tools.ai_image_gen import recreate_all_from_tiktok
-                    with _HEAVY_LOCK:
-                        res = recreate_all_from_tiktok(url, handle="@dalatnow")
-                    if not res.get("success"):
-                        print(f"[Server] recreate-from-link fail: {res.get('error')}", file=sys.stderr)
-                        return
-                    base = Path(__file__).parent
-                    out_dir = base / "output" / "albums" / f"app_aiimg_{uuid.uuid4().hex[:8]}"
-                    out_dir.mkdir(parents=True, exist_ok=True)
-                    images = []
-                    for i, p in enumerate(res["paths"]):
-                        dst = out_dir / f"aiimg_{i:02d}.png"
-                        shutil.copy2(p, dst)
-                        images.append({"name": dst.name, "url": _to_output_url(str(dst))})
-                    dir_rel = str(out_dir.relative_to(base)).replace("\\", "/")
-                    label = f"Tạo lại từ TikTok ({len(images)} ảnh)"
-                    import time as _t
-                    _append_album({"user": user, "album": "aiimg", "label": label, "dir": dir_rel,
-                                   "images": images, "auto": False, "time": _t.time()})
-                    print(f"[Server] recreate-from-link ✓ {len(images)}/{res.get('source_count')} ảnh cho {user}",
-                          file=sys.stderr)
-                except Exception as _e:
-                    import traceback
-                    print(f"[Server] recreate-from-link lỗi: {_e}\n{traceback.format_exc()}", file=sys.stderr)
-
-            threading.Thread(target=_work, daemon=True).start()
-            self._json_response({"success": True, "queued": True})
+            bucket = int(time.time() // 600)
+            idem = "ai-image:" + hashlib.sha256(
+                f"{user}:{url}:{bucket}".encode("utf-8")
+            ).hexdigest()
+            job, created = PIPELINE_STORE.create_job(
+                kind="ai_image_from_link",
+                owner=user,
+                payload={"url": url, "topic": "Tạo lại ảnh TikTok"},
+                idempotency_key=idem,
+                active_limit=MAX_ACTIVE_JOBS_PER_USER,
+            )
+            self._json_response({
+                "success": True,
+                "queued": True,
+                "created": created,
+                "job_id": job["id"],
+                "position": PIPELINE_STORE.queue_position(job["id"]),
+            }, 202)
+        except QueueLimitError as e:
+            self._json_response({"success": False, "error": str(e)}, 429)
         except Exception as e:
             import traceback
             print(f"[Server] ai-image-from-link lỗi: {e}\n{traceback.format_exc()}", file=sys.stderr)
             self._json_response({"success": False, "error": _friendly_error(e)}, 500)
 
     def handle_albums_get(self):
-        """GET /albums?user= → danh sách mẫu album theo tài khoản (admin: tất cả)."""
+        """Return album templates allowed for the authenticated account."""
         try:
-            from urllib.parse import urlparse, parse_qs
-            q = parse_qs(urlparse(self.path).query)
-            user = (q.get("user", [""])[0] or "").strip()
-            self._json_response({"success": True, "albums": _albums_for(user)})
+            self._json_response({"success": True, "albums": _albums_for(self.auth_user)})
         except Exception as e:
             self._json_response({"success": False, "error": str(e)}, 500)
 
@@ -1943,58 +3425,185 @@ class AssembleHandler(BaseHTTPRequestHandler):
         try:
             from urllib.parse import urlparse, parse_qs
             q = parse_qs(urlparse(self.path).query)
-            user = (q.get("user", [""])[0] or "").strip()
-            role = (q.get("role", [""])[0] or "").strip()
             since = float((q.get("since") or ["0"])[0] or 0)
             limit = int((q.get("limit") or ["0"])[0] or 0)
             items = sorted(_load_albums(), key=lambda a: a.get("time", 0), reverse=True)
-            if role != "admin" and user:
-                items = [a for a in items if a.get("user") == user]
+            if self.auth_role != "admin":
+                items = [a for a in items if a.get("user") == self.auth_user]
             if since:
                 items = [a for a in items if a.get("time", 0) >= since]
             total = len(items)
             if limit > 0:
                 items = items[:limit]
-            self._json_response({"success": True, "albums": items, "total": total})
+            self._json_response({
+                "success": True,
+                "albums": [_album_view(item) for item in items],
+                "total": total,
+            })
         except Exception as e:
             self._json_response({"success": False, "error": str(e)}, 500)
 
     def handle_product_status(self):
-        """POST /product-status {kind:'video'|'album', key, status} → đổi trạng thái duyệt/đăng."""
+        """Admin-only status change by opaque resource id."""
         try:
             b = self._read_json_body()
             kind = (b.get("kind") or "video").strip()
-            key = (b.get("key") or "").strip()
+            resource_id = (b.get("id") or "").strip()
             status = (b.get("status") or "").strip()
             ki = int(b.get("zernio_ki") or 0)
             account_id = (b.get("account_id") or "").strip()
+            if kind not in {"video", "album"} or not resource_id:
+                self._json_response({"success": False, "error": "resource id không hợp lệ"}, 400)
+                return
             if status not in ("pending", "posted", "failed", "cancelled"):
                 self._json_response({"success": False, "error": "status không hợp lệ"}, 400)
                 return
-            # Admin duyệt "đã đăng" → đăng TikTok thật qua Zernio key + account đã chọn.
-            if kind == "video" and status == "posted":
-                rec = next((p for p in _load_products() if p.get("video_url") == key), None)
+            # External publish is always a durable background job.  Repeated
+            # clicks/tabs share one idempotency key and therefore one Zernio POST.
+            if status == "posted":
+                rec = _find_product(resource_id) if kind == "video" else _find_album(resource_id)
+                if not rec:
+                    self._json_response({"success": False, "error": "Không tìm thấy nội dung."}, 404)
+                    return
                 owner = (rec or {}).get("user", "")
                 if _is_publish_user(owner):
-                    res = _do_publish(key, _caption_for((rec or {}).get("topic", ""), owner),
-                                      owner, ki=ki, account_id=account_id)
-                    self._json_response({"success": True,
-                                         "posted": bool(res.get("success")),
-                                         "error": res.get("error", "")})
+                    idem = f"publish:{kind}:{resource_id}:{account_id or ki}"
+                    provider_request_id = str(
+                        uuid.uuid5(uuid.NAMESPACE_URL, f"dulich:{idem}")
+                    )
+                    job, created = PIPELINE_STORE.create_job(
+                        kind=f"publish_{kind}",
+                        owner=owner or self.auth_user,
+                        payload={
+                            "resource_id": resource_id,
+                            "topic": (rec or {}).get("topic") or (rec or {}).get("label") or "Đăng bài",
+                            "zernio_ki": ki,
+                            "account_id": account_id,
+                            "requested_by": self.auth_user,
+                            "provider_request_id": provider_request_id,
+                        },
+                        idempotency_key=idem,
+                        max_attempts=2,
+                    )
+                    if (
+                        not created
+                        and rec.get("zernio_post_id")
+                        and rec.get("status") in {"publishing", "unknown", "failed"}
+                    ):
+                        reconciled = _reconcile_publish_resource(
+                            kind,
+                            resource_id,
+                            job=job,
+                        )
+                        job = PIPELINE_STORE.get_job(job["id"]) or job
+                        if reconciled.get("status") == "posted":
+                            self._json_response(
+                                {
+                                    "success": True,
+                                    "posted": True,
+                                    "status": "posted",
+                                    "job_id": job["id"],
+                                    "reconciled": True,
+                                }
+                            )
+                            return
+                        if reconciled.get("status") == "publishing":
+                            self._json_response(
+                                {
+                                    "success": True,
+                                    "queued": False,
+                                    "posted": None,
+                                    "status": "publishing",
+                                    "job_id": job["id"],
+                                    "reconciled": True,
+                                },
+                                202,
+                            )
+                            return
+                    if not created and job["status"] == "unknown":
+                        self._json_response(
+                            {
+                                "success": False,
+                                "status": "unknown",
+                                "job_id": job["id"],
+                                "error": (
+                                    "Chưa xác định Zernio đã nhận bài hay chưa. "
+                                    "Hãy kiểm tra tài khoản TikTok trước khi thử lại."
+                                ),
+                            },
+                            409,
+                        )
+                        return
+                    if not created and job["status"] == "failed":
+                        retried = PIPELINE_STORE.retry_job(
+                            job["id"],
+                            self.auth_user,
+                            is_admin=True,
+                        )
+                        if retried:
+                            job = retried
+                    if job["status"] == "done":
+                        self._json_response({
+                            "success": True,
+                            "posted": rec.get("status") == "posted",
+                            "status": rec.get("status", "publishing"),
+                            "job_id": job["id"],
+                        })
+                        return
+                    if kind == "video":
+                        _set_product_status(resource_id, "publishing")
+                    else:
+                        _set_album_status(resource_id, "publishing")
+                    _audit(
+                        self.auth_user,
+                        "queue_publish",
+                        resource_id,
+                        kind=kind,
+                        job_id=job["id"],
+                        created=created,
+                    )
+                    self._json_response({
+                        "success": True,
+                        "queued": True,
+                        "posted": None,
+                        "status": "publishing",
+                        "job_id": job["id"],
+                    }, 202)
                     return
-            if kind == "album" and status == "posted":
-                rec = next((a for a in _load_albums() if a.get("dir") == key), None)
-                owner = (rec or {}).get("user", "")
-                if _is_publish_user(owner):
-                    res = _do_publish_album(key, owner, ki=ki, account_id=account_id)
-                    self._json_response({"success": True,
-                                         "posted": bool(res.get("success")),
-                                         "error": res.get("error", "")})
-                    return
-            ok = _set_album_status(key, status) if kind == "album" else _set_product_status(key, status)
+            ok = (
+                _set_album_status(resource_id, status)
+                if kind == "album"
+                else _set_product_status(resource_id, status)
+            )
+            if ok:
+                _audit(self.auth_user, "set_status", resource_id, kind=kind, status=status)
             self._json_response({"success": ok})
         except Exception as e:
             self._json_response({"success": False, "error": str(e)}, 500)
+
+    def handle_publish_reconcile(self):
+        try:
+            body = self._read_json_body()
+            kind = str(body.get("kind") or "")
+            resource_id = str(body.get("id") or "")
+            if kind not in {"video", "album"} or not resource_id:
+                self._json_response(
+                    {"success": False, "error": "resource id không hợp lệ"},
+                    400,
+                )
+                return
+            result = _reconcile_publish_resource(kind, resource_id)
+            status = 200 if result.get("success") else 409
+            _audit(
+                self.auth_user,
+                "reconcile_publish",
+                resource_id,
+                kind=kind,
+                provider_status=result.get("status"),
+            )
+            self._json_response(result, status)
+        except Exception as exc:
+            self._json_response({"success": False, "error": str(exc)}, 500)
 
     def handle_news_scrape(self):
         """POST /news-scrape {keyword, hashtags[]} → cào YouTube tin Đà Lạt (video+shorts), lưu pool."""
@@ -2004,8 +3613,12 @@ class AssembleHandler(BaseHTTPRequestHandler):
             hts = b.get("hashtags")
             from tools.news_youtube import scrape_news, save_pool, DEFAULT_KEYWORD
             with _HEAVY_LOCK:
-                res = scrape_news(kw or DEFAULT_KEYWORD, hts if isinstance(hts, list) else None,
-                                  api_key=_user_apify("tintuc"))
+                owner = self.auth_user if self.auth_role == "news" else "tintuc"
+                res = scrape_news(
+                    kw or DEFAULT_KEYWORD,
+                    hts if isinstance(hts, list) else None,
+                    api_key=_user_apify(owner),
+                )
             if res.get("success"):
                 save_pool(res)
             self._json_response(res)
@@ -2023,15 +3636,15 @@ class AssembleHandler(BaseHTTPRequestHandler):
             self._json_response({"success": False, "error": str(e), "items": []}, 500)
 
     def handle_script_drafts_get(self):
-        """GET /script-drafts?user=&role=&only_unused=1 → kịch bản đã tạo, lưu lại (không xoá)."""
+        """Return own drafts, or all drafts for an admin."""
         try:
-            from urllib.parse import urlparse, parse_qs
             q = parse_qs(urlparse(self.path).query)
-            user = (q.get("user", [""])[0] or "").strip()
-            role = (q.get("role", [""])[0] or "").strip()
             only_unused = (q.get("only_unused", ["0"])[0] == "1")
             from tools.script_drafts import list_drafts
-            items = list_drafts(None if role == "admin" else user, only_unused=only_unused)
+            items = list_drafts(
+                None if self.auth_role == "admin" else self.auth_user,
+                only_unused=only_unused,
+            )
             self._json_response({"success": True, "drafts": items})
         except Exception as e:
             self._json_response({"success": False, "error": str(e), "drafts": []}, 500)
@@ -2041,7 +3654,13 @@ class AssembleHandler(BaseHTTPRequestHandler):
         try:
             b = self._read_json_body()
             did = (b.get("id") or "").strip()
-            from tools.script_drafts import mark_used
+            from tools.script_drafts import get_draft, mark_used
+            existing = get_draft(did)
+            if not existing or (
+                self.auth_role != "admin" and existing.get("user") != self.auth_user
+            ):
+                self._json_response({"success": False, "error": "Không tìm thấy kịch bản."}, 404)
+                return
             d = mark_used(did)
             if not d:
                 self._json_response({"success": False, "error": "Không tìm thấy kịch bản."}, 404)
@@ -2054,8 +3673,17 @@ class AssembleHandler(BaseHTTPRequestHandler):
         """POST /script-drafts-delete {id} → xoá 1 kịch bản đã lưu."""
         try:
             b = self._read_json_body()
-            from tools.script_drafts import delete_draft
-            ok = delete_draft((b.get("id") or "").strip())
+            did = (b.get("id") or "").strip()
+            from tools.script_drafts import delete_draft, get_draft
+            existing = get_draft(did)
+            if not existing or (
+                self.auth_role != "admin" and existing.get("user") != self.auth_user
+            ):
+                self._json_response({"success": False, "error": "Không tìm thấy kịch bản."}, 404)
+                return
+            ok = delete_draft(did)
+            if ok:
+                _audit(self.auth_user, "delete_draft", did)
             self._json_response({"success": ok})
         except Exception as e:
             self._json_response({"success": False, "error": str(e)}, 500)
@@ -2084,10 +3712,19 @@ class AssembleHandler(BaseHTTPRequestHandler):
             self._json_response({"success": False, "error": str(e)}, 500)
 
     def handle_album_delete(self):
-        """POST /album-delete {dir} → xoá album đã lưu."""
+        """Delete one album by id; staff can only delete their own album."""
         try:
             body = self._read_json_body()
-            ok = _delete_album(body.get("dir", ""))
+            resource_id = (body.get("id") or "").strip()
+            record = _find_album(resource_id)
+            if not record or (
+                self.auth_role != "admin" and record.get("user") != self.auth_user
+            ):
+                self._json_response({"success": False, "error": "Không tìm thấy album."}, 404)
+                return
+            ok = _delete_album(resource_id)
+            if ok:
+                _audit(self.auth_user, "delete_album", resource_id)
             self._json_response({"success": ok})
         except Exception as e:
             self._json_response({"success": False, "error": str(e)}, 500)
@@ -2124,7 +3761,8 @@ class AssembleHandler(BaseHTTPRequestHandler):
         try:
             from urllib.parse import urlparse, parse_qs
             q = parse_qs(urlparse(self.path).query)
-            employee = (q.get("employee", ["nv1"])[0] or "nv1").strip().lower()
+            requested = (q.get("employee", [""])[0] or "").strip().lower()
+            employee = requested if self.auth_role == "admin" and requested else self.auth_user
             from tools.script_prompts import get_script_prompt, default_persona, DEFAULT_LINK_PROMPT
             rec = get_script_prompt(employee)
             self._json_response({"success": True, "employee": employee,
@@ -2139,10 +3777,8 @@ class AssembleHandler(BaseHTTPRequestHandler):
         """POST /script-prompt {employee, prompt, examples} → lưu prompt viết kịch bản."""
         try:
             body = self._read_json_body()
-            employee = (body.get("employee") or "").strip().lower()
-            if not employee:
-                self._json_response({"success": False, "error": "Thiếu employee"}, 400)
-                return
+            requested = (body.get("employee") or "").strip().lower()
+            employee = requested if self.auth_role == "admin" and requested else self.auth_user
             from tools.script_prompts import set_script_prompt
             set_script_prompt(employee, body.get("prompt", ""), body.get("examples", ""),
                               body.get("link_prompt", ""))
@@ -2160,7 +3796,8 @@ class AssembleHandler(BaseHTTPRequestHandler):
         try:
             from urllib.parse import urlparse, parse_qs
             q = parse_qs(urlparse(self.path).query)
-            employee = (q.get("employee", ["nv1"])[0] or "nv1")
+            requested = (q.get("employee", [""])[0] or "").strip()
+            employee = requested if self.auth_role == "admin" and requested else self.auth_user
             regen = q.get("regen", ["0"])[0] == "1"
             hook_style = (_load_users().get(employee, {}) or {}).get("hook_style", "hook_red")
             from tools.listreview_content import build_prefill
@@ -2230,6 +3867,7 @@ class AssembleHandler(BaseHTTPRequestHandler):
                 rec["apify_key"] = "" if av.lower() == "xoa" else av
             keys[uid] = rec
             _save_user_keys(keys)
+            _audit(self.auth_user, "update_user_keys", uid)
             self._json_response({"success": True})
         except Exception as e:
             self._json_response({"success": False, "error": str(e)}, 500)
@@ -2240,13 +3878,24 @@ class AssembleHandler(BaseHTTPRequestHandler):
         try:
             from urllib.parse import urlparse, parse_qs
             q = parse_qs(urlparse(self.path).query)
-            user = (q.get("user", [""])[0] or "").strip()
+            requested = (q.get("user", [""])[0] or "").strip()
+            user = requested if self.auth_role == "admin" and requested else self.auth_user
             from tools import publisher
-            out = []
-            for ki, key in enumerate(_user_zernio_keys(user)):
-                for a in publisher.list_tiktok_accounts(key):
-                    if a.get("id"):
-                        out.append({"ki": ki, "account_id": a["id"], "name": a.get("name", "TikTok")})
+            keys = _user_zernio_keys(user)
+            digest = hashlib.sha256("|".join(keys).encode("utf-8")).hexdigest()
+            cache_key = f"{user}:{digest}"
+            with _ZERNIO_ACCOUNTS_CACHE_LOCK:
+                cached = _ZERNIO_ACCOUNTS_CACHE.get(cache_key)
+            if cached and time.time() - cached[0] < 300:
+                out = cached[1]
+            else:
+                out = []
+                for ki, key in enumerate(keys):
+                    for a in publisher.list_tiktok_accounts(key):
+                        if a.get("id"):
+                            out.append({"ki": ki, "account_id": a["id"], "name": a.get("name", "TikTok")})
+                with _ZERNIO_ACCOUNTS_CACHE_LOCK:
+                    _ZERNIO_ACCOUNTS_CACHE[cache_key] = (time.time(), out)
             self._json_response({"success": True, "accounts": out})
         except Exception as e:
             self._json_response({"success": False, "error": str(e), "accounts": []}, 500)
@@ -2276,6 +3925,7 @@ class AssembleHandler(BaseHTTPRequestHandler):
             return
         try:
             _update_env(updates)
+            _audit(self.auth_user, "update_settings", changed_keys=sorted(updates.keys()))
             self._json_response({"success": True, "saved": sorted(updates.keys()),
                                  "message": f"Đã lưu {len(updates)} key. Có hiệu lực ngay."})
         except Exception as e:
@@ -2315,6 +3965,12 @@ class AssembleHandler(BaseHTTPRequestHandler):
         try:
             from tools import venues_db
             v = self._read_json_body()
+            if (v or {}).get("id") is not None and self.auth_role != "admin":
+                self._json_response(
+                    {"success": False, "error": "Chỉ admin được sửa địa điểm dùng chung."},
+                    403,
+                )
+                return
             saved = venues_db.save_venue(v or {})
             self._json_response({"success": True, "venue": self._venue_view(saved)})
         except Exception as e:
@@ -2325,6 +3981,8 @@ class AssembleHandler(BaseHTTPRequestHandler):
             from tools import venues_db
             vid = (self._read_json_body() or {}).get("id")
             ok = venues_db.delete_by_id(int(vid)) if vid is not None else False
+            if ok:
+                _audit(self.auth_user, "delete_venue", str(vid))
             self._json_response({"success": ok})
         except Exception as e:
             self._json_response({"success": False, "error": str(e)}, 500)
@@ -2359,12 +4017,17 @@ class AssembleHandler(BaseHTTPRequestHandler):
             from tools import venues_db
             body = self._read_json_body() or {}
             vid, path = int(body.get("id")), body.get("path", "")
+            current = next((v for v in venues_db.get_all() if v["id"] == vid), None)
+            if not current or path not in (current.get("images") or []):
+                self._json_response({"success": False, "error": "Không tìm thấy ảnh."}, 404)
+                return
             venues_db.remove_image(vid, path)
-            # xoá file vật lý nếu nằm trong data/thumbs
-            fp = Path(__file__).parent / path
-            if fp.exists() and THUMB_DIR in fp.parents:
-                try: fp.unlink()
-                except Exception: pass
+            try:
+                fp = _resolve_under(THUMB_DIR, Path(path).name)
+                fp.unlink(missing_ok=True)
+            except (OSError, ValueError):
+                pass
+            _audit(self.auth_user, "delete_venue_image", str(vid))
             venue = next((v for v in venues_db.get_all() if v["id"] == vid), {})
             self._json_response({"success": True, "venue": self._venue_view(venue)})
         except Exception as e:
@@ -2379,8 +4042,9 @@ class AssembleHandler(BaseHTTPRequestHandler):
             w = int((parse_qs(parsed.query).get("w") or ["0"])[0])
         except Exception:
             w = 0
-        fp = base_dir / name
-        if not fp.exists() or not fp.is_file() or base_dir not in fp.parents:
+        try:
+            fp = _resolve_under(Path(base_dir), name)
+        except (OSError, ValueError):
             self.send_response(404); self._cors_headers(); self.end_headers(); return
         serve = fp
         if 0 < w <= 1600:
@@ -2477,10 +4141,12 @@ class AssembleHandler(BaseHTTPRequestHandler):
             iid = int((self._read_json_body() or {}).get("id"))
             rel = album_db.delete_by_id(iid)
             if rel:
-                fp = Path(__file__).parent / rel
-                if fp.exists() and ALBUM_DIR in fp.parents:
-                    try: fp.unlink()
-                    except Exception: pass
+                try:
+                    fp = _resolve_under(ALBUM_DIR, Path(rel).name)
+                    fp.unlink(missing_ok=True)
+                except (OSError, ValueError):
+                    pass
+                _audit(self.auth_user, "delete_shared_image", str(iid))
             self._json_response({"success": True})
         except Exception as e:
             self._json_response({"success": False, "error": str(e)}, 500)
@@ -2488,102 +4154,100 @@ class AssembleHandler(BaseHTTPRequestHandler):
     def _serve_album(self, name: str):
         self._serve_image(ALBUM_DIR, name)
 
+    def handle_album_zip(self):
+        """Download a saved album as one mobile-friendly ZIP response."""
+        resource_id = unquote(urlparse(self.path).path[len("/album-zip/"):])
+        record = _find_album(resource_id)
+        if not record or (
+            self.auth_role != "admin" and record.get("user") != self.auth_user
+        ):
+            self._json_response({"success": False, "error": "Không tìm thấy album."}, 404)
+            return
+        try:
+            import zipfile
+
+            archive = tempfile.SpooledTemporaryFile(max_size=16 * 1024 * 1024)
+            added = 0
+            with zipfile.ZipFile(
+                archive, "w", compression=zipfile.ZIP_DEFLATED, compresslevel=6
+            ) as bundle:
+                for index, image in enumerate(record.get("images") or []):
+                    try:
+                        source = _output_file_from_url(image.get("url", ""))
+                    except (OSError, ValueError):
+                        continue
+                    if source.is_file():
+                        name = Path(image.get("name") or source.name).name
+                        bundle.write(source, arcname=f"{index + 1:02d}_{name}")
+                        added += 1
+            if not added:
+                archive.close()
+                self._json_response({"success": False, "error": "Album không có file ảnh."}, 404)
+                return
+            length = archive.tell()
+            archive.seek(0)
+            safe_name = f"album-{resource_id[:12]}.zip"
+            self.send_response(200)
+            self._cors_headers()
+            self.send_header("Content-Type", "application/zip")
+            self.send_header("Content-Disposition", f'attachment; filename="{safe_name}"')
+            self.send_header("Content-Length", str(length))
+            self.send_header("Cache-Control", "private, no-store")
+            self.send_header("Connection", "close")
+            self.end_headers()
+            while chunk := archive.read(64 * 1024):
+                self.wfile.write(chunk)
+            archive.close()
+            self.close_connection = True
+        except (BrokenPipeError, ConnectionResetError):
+            self.close_connection = True
+        except Exception as exc:
+            self._json_response({"success": False, "error": str(exc)}, 500)
+
     def handle_publish_to_dashboard(self):
-        """Publish content to dashboard via Supabase with Google Drive upload."""
-        print("[Server] /publish-to-dashboard — Đăng nội dung lên Dashboard...", file=sys.stderr)
+        """Queue an idempotent Drive/Supabase publish job."""
         try:
             data = self._read_json_body()
-            
-            # Extract data
-            job_id = data.get("job_id", "")
-            user_id = data.get("user_id", "")
-            title = data.get("title", "")
-            topic = data.get("topic", "")
-            script = data.get("script", {})
-            drive_url = data.get("drive_url", "")
-            local_path = data.get("local_path", "")
-            hook_style = data.get("hook_style", "")
-            hook_text = data.get("hook_text", "")
-            video_type = data.get("video_type", "video")
-            
-            if not job_id:
-                self._json_response({"success": False, "error": "Thiếu job_id"}, 400)
+            resource_id = (data.get("id") or "").strip()
+            record = _find_product(resource_id)
+            if not record:
+                self._json_response({"success": False, "error": "Không tìm thấy video."}, 404)
                 return
-            
-            # Try to upload to Google Drive if local_path exists
-            actual_drive_url = drive_url
-            if local_path and not drive_url:
-                try:
-                    from tools.drive_uploader import get_drive_uploader
-                    uploader = get_drive_uploader()
-                    # Resolve full path
-                    full_path = local_path
-                    if not os.path.isabs(full_path):
-                        full_path = str(Path(__file__).parent / local_path.lstrip("/"))
-                    
-                    if os.path.exists(full_path):
-                        print(f"[Server] Uploading to Google Drive: {full_path}", file=sys.stderr)
-                        upload_result = uploader.upload_video(full_path, job_id)
-                        if "webViewLink" in upload_result:
-                            actual_drive_url = upload_result["webViewLink"]
-                            print(f"[Server] ✓ Uploaded to Drive: {actual_drive_url}", file=sys.stderr)
-                        elif "error" in upload_result:
-                            print(f"[Server] ⚠ Drive upload failed: {upload_result['error']}", file=sys.stderr)
-                    else:
-                        print(f"[Server] ⚠ File not found: {full_path}", file=sys.stderr)
-                except Exception as e:
-                    print(f"[Server] ⚠ Google Drive upload error: {e}", file=sys.stderr)
-            
-            # Save to Supabase
-            sb = _get_supabase()
-            if sb and sb.url:
-                content_data = {
-                    "user_id": user_id if user_id else None,
-                    "content_type": video_type,
-                    "status": "pending",
-                    "title": title,
-                    "topic": topic,
-                    "script": script,
-                    "drive_url": actual_drive_url,
-                    "local_path": local_path,
-                    "hook_style": hook_style,
-                    "hook_text": hook_text,
-                    "job_id": job_id,
-                    "video_type": video_type,
-                }
-                result = sb.create_content(content_data)
-                if result and "id" in result:
-                    print(f"[Server] ✅ Đã đăng lên Dashboard. Content ID: {result['id']}", file=sys.stderr)
-                    self._json_response({
-                        "success": True,
-                        "content_id": result["id"],
-                        "drive_url": actual_drive_url,
-                        "message": "Đã đăng nội dung lên Dashboard thành công"
-                    })
-                else:
-                    print(f"[Server] ❌ Lỗi đăng lên Dashboard: {result}", file=sys.stderr)
-                    self._json_response({"success": False, "error": f"Lỗi Supabase: {result}"}, 500)
-            else:
-                # Fallback: save to local products.json
-                print("[Server] Supabase not configured, saving to local products.json", file=sys.stderr)
-                import time as _t
-                _append_product({
-                    "user": data.get("user", ""),
-                    "topic": topic,
-                    "hook_style": hook_style,
-                    "video_url": drive_url or local_path,
-                    "time": _t.time(),
-                    "status": "pending",
-                })
-                self._json_response({
-                    "success": True,
-                    "message": "Đã lưu vào products.json (Supabase chưa cấu hình)"
-                })
+            job, created = PIPELINE_STORE.create_job(
+                kind="publish_dashboard",
+                owner=record.get("user") or self.auth_user,
+                payload={
+                    "resource_id": resource_id,
+                    "topic": record.get("topic") or "Dashboard",
+                    "script": data.get("script", {}),
+                    "hook_text": data.get("hook_text", ""),
+                    "video_type": data.get("video_type", "video"),
+                    "requested_by": self.auth_user,
+                },
+                idempotency_key=f"dashboard:{resource_id}",
+                max_attempts=2,
+            )
+            if not created and job["status"] == "failed":
+                retried = PIPELINE_STORE.retry_job(
+                    job["id"],
+                    self.auth_user,
+                    is_admin=True,
+                )
+                if retried:
+                    job = retried
+            self._json_response({
+                "success": True,
+                "queued": job["status"] != "done",
+                "created": created,
+                "job_id": job["id"],
+                "status": job["status"],
+                "result": job.get("result") if job["status"] == "done" else {},
+            }, 200 if job["status"] == "done" else 202)
         except Exception as e:
             import traceback
             tb = traceback.format_exc()
             print(f"[Server] /publish-to-dashboard error: {e}\n{tb}", file=sys.stderr)
-            self._json_response({"success": False, "error": str(e), "traceback": tb}, 500)
+            self._json_response({"success": False, "error": str(e)}, 500)
 
 
 def main():
@@ -2631,9 +4295,13 @@ Vui lòng chạy server bằng Python của môi trường ảo (.venv):
     if os.getenv("DISABLE_BACKGROUND_JOBS", "").strip() in ("", "0", "false"):
         _start_news_scheduler()
         _start_daily_scheduler()
+        _start_maintenance_scheduler()
     else:
         print("[Server] Background jobs TẮT (DISABLE_BACKGROUND_JOBS).", file=sys.stderr)
-    _start_render_worker()
+    if os.getenv("DISABLE_JOB_WORKER", "").strip().lower() in {"1", "true", "yes"}:
+        print("[Server] Embedded job worker TẮT; dùng worker.py riêng.", file=sys.stderr)
+    else:
+        _start_render_worker()
     server = ReusableHTTPServer(("127.0.0.1", PORT), AssembleHandler)
     print(f"[Server] Listening at http://localhost:{PORT}", file=sys.stderr)
     print(f"[Server] Press Ctrl+C to stop.", file=sys.stderr)
@@ -2679,6 +4347,53 @@ def _start_news_scheduler():
     print(f"[Server] News scheduler bật (khung {NEWS_SLOTS} giờ).", file=sys.stderr)
 
 
+# ── Bảo trì disk độc lập với tính năng tự tạo nội dung ──────────────────────
+def _maintenance_scheduler(stop_event: threading.Event | None = None):
+    """Clean uploads hourly and archive old output once daily."""
+    stop = stop_event or threading.Event()
+    interval = _env_int("MAINTENANCE_INTERVAL_SECONDS", 3600, 60)
+    archive_hour = min(23, _env_int("MAINTENANCE_HOUR", 4, 0))
+    last_archive_day = ""
+    while not stop.is_set():
+        now = time.localtime()
+        day = f"{now.tm_year:04d}-{now.tm_mon:02d}-{now.tm_mday:02d}"
+        archive_output = now.tm_hour >= archive_hour and day != last_archive_day
+        try:
+            from tools.maintenance import run_maintenance
+
+            result = run_maintenance(
+                PIPELINE_STORE,
+                upload_ttl_hours=_env_int("UPLOAD_SESSION_TTL_HOURS", 24),
+                output_retention_days=_env_int("OUTPUT_RETENTION_DAYS", 5),
+                archive_output=archive_output,
+            )
+            result["publish_reconcile"] = _reconcile_pending_publishes(
+                _env_int("PUBLISH_RECONCILE_BATCH", 20)
+            )
+            if archive_output:
+                last_archive_day = day
+            if (
+                result.get("uploads_removed")
+                or result.get("job_results_removed")
+                or result.get("output")
+            ):
+                print(f"[maintenance] {result}", file=sys.stderr)
+        except Exception as exc:
+            print(f"[maintenance] lỗi: {exc}", file=sys.stderr)
+        stop.wait(interval)
+
+
+def _start_maintenance_scheduler() -> threading.Thread:
+    thread = threading.Thread(
+        target=_maintenance_scheduler,
+        daemon=True,
+        name="disk-maintenance",
+    )
+    thread.start()
+    print("[Server] Disk maintenance bật độc lập.", file=sys.stderr)
+    return thread
+
+
 # ── Tự động mỗi ngày 7h: 5 kịch bản video + 5 album ảnh cho mỗi nv ────────────
 DAILY_AUTO_ENABLED = False   # TẮT TẠM: không tự tạo album + kịch bản. Bật lại = True.
 DAILY_SLOT_HOUR = 7
@@ -2705,11 +4420,21 @@ def _daily_auto_job(only_users: list | None = None):
             n_ok = 0
             for i in range(DAILY_N_ALBUMS):
                 pick = albs[i % len(albs)] if len(albs) > 1 else albs[0]
-                res = _generate_album(pick["id"], uid, auto=True)
-                if res.get("success"):
+                try:
+                    PIPELINE_STORE.create_job(
+                        kind="album_image",
+                        owner=uid,
+                        payload={
+                            "album": pick["id"],
+                            "topic": f"Album tự động {pick['id']}",
+                            "title_prompt": "",
+                            "auto": True,
+                        },
+                        priority=-1,
+                    )
                     n_ok += 1
-                else:
-                    print(f"[daily] album lỗi {uid}: {res.get('error')}", file=sys.stderr)
+                except Exception as exc:
+                    print(f"[daily] queue album lỗi {uid}: {exc}", file=sys.stderr)
             if n_ok:
                 made_albums.append(f"{u.get('name', uid)} ×{n_ok}")
         # 2) kịch bản chờ — 5 cái
@@ -2760,11 +4485,6 @@ def _daily_scheduler():
                 last = slot
                 print("[daily] chạy tự động tạo album + kịch bản...", file=sys.stderr)
                 _daily_auto_job()
-                try:
-                    from tools.storage_cleanup import run as _cleanup_run
-                    _cleanup_run(days=5)
-                except Exception as ce:
-                    print(f"[daily] storage cleanup lỗi: {ce}", file=sys.stderr)
         except Exception as e:
             print(f"[daily] scheduler lỗi: {e}", file=sys.stderr)
         _t.sleep(60)

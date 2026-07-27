@@ -8,21 +8,47 @@ import threading
 import uuid
 from pathlib import Path
 
+from tools.pipeline_store import get_pipeline_store
+
 DATA_DIR = Path(__file__).resolve().parent.parent / "data"
 DRAFTS_FILE = DATA_DIR / "script_drafts.json"
 _LOCK = threading.RLock()
+_STORE = get_pipeline_store()
+
+
+def _ensure_migrated() -> None:
+    if _STORE.resource_migration_done("draft"):
+        return
+    with _LOCK:
+        if _STORE.resource_migration_done("draft"):
+            return
+        try:
+            items = json.loads(DRAFTS_FILE.read_text(encoding="utf-8"))
+            if not isinstance(items, list):
+                items = []
+        except Exception:
+            items = []
+        _STORE.import_resources("draft", items)
+        _STORE.mark_resource_migration_done("draft")
 
 
 def _load() -> list:
-    try:
-        return json.loads(DRAFTS_FILE.read_text(encoding="utf-8"))
-    except Exception:
-        return []
+    _ensure_migrated()
+    return _STORE.list_resources("draft")
 
 
 def _save(items: list) -> None:
-    DRAFTS_FILE.parent.mkdir(parents=True, exist_ok=True)
-    DRAFTS_FILE.write_text(json.dumps(items, ensure_ascii=False, indent=2), encoding="utf-8")
+    """Compatibility helper for old callers; replace the current draft set transactionally."""
+    _ensure_migrated()
+    existing = {item.get("id") for item in _STORE.list_resources("draft")}
+    incoming = {item.get("id") for item in items if item.get("id")}
+    for resource_id in existing - incoming:
+        _STORE.delete_resource("draft", resource_id)
+    for item in items:
+        if not item.get("id"):
+            continue
+        if not _STORE.replace_resource("draft", item):
+            _STORE.insert_resource("draft", item)
 
 
 def _topic_of(scenes: list) -> str:
@@ -42,10 +68,8 @@ def add_draft(employee: str, scenes: list, hook_style: str, badge_mode: str,
         "style": style, "generated_by": generated_by, "used": False,
     }
     with _LOCK:
-        items = _load()
-        items.append(entry)
-        _save(items)
-    return entry
+        _ensure_migrated()
+        return _STORE.insert_resource("draft", entry)
 
 
 def list_drafts(employee: str | None = None, only_unused: bool = False) -> list:
@@ -59,32 +83,19 @@ def list_drafts(employee: str | None = None, only_unused: bool = False) -> list:
 
 def mark_used(draft_id: str) -> dict | None:
     with _LOCK:
-        items = _load()
-        hit = None
-        for d in items:
-            if d.get("id") == draft_id:
-                d["used"] = True
-                hit = d
-        if hit:
-            _save(items)
-        return hit
+        _ensure_migrated()
+        return _STORE.update_resource("draft", draft_id, used=True)
 
 
 def delete_draft(draft_id: str) -> bool:
     with _LOCK:
-        items = _load()
-        kept = [d for d in items if d.get("id") != draft_id]
-        if len(kept) != len(items):
-            _save(kept)
-            return True
-        return False
+        _ensure_migrated()
+        return _STORE.delete_resource("draft", draft_id)
 
 
 def get_draft(draft_id: str) -> dict | None:
-    for d in _load():
-        if d.get("id") == draft_id:
-            return d
-    return None
+    _ensure_migrated()
+    return _STORE.get_resource("draft", draft_id)
 
 
 def recent_texts(employee: str, n: int = 10) -> list[str]:

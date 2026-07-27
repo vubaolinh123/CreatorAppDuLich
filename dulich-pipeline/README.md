@@ -14,6 +14,16 @@ Web app nội bộ cho team làm video/ảnh du lịch Đà Lạt. 1 server Pyth
 ```
 
 Server: `server.py` (ThreadingHTTPServer, port 7788). UI: `web/index.html`.
+Job render/ảnh/publish được lưu trong SQLite WAL (`data/pipeline.sqlite3`) và
+chạy bởi `worker.py`; production tách web và worker thành hai service.
+
+Upload video dùng từng chunk 8 MB, có resume theo offset và kiểm tra bằng ffprobe.
+Mỗi tài khoản có giới hạn riêng, nên một nhân viên không thể chiếm toàn bộ hàng
+đợi của 5 nhân viên còn lại. Dữ liệu video/album/bản nháp được ghi transaction.
+Mỗi job chạy trong process group riêng: hủy hoặc timeout sẽ dừng cả cây
+FFmpeg/Whisper. Disk maintenance chạy độc lập theo giờ/ngày, không phụ thuộc
+tính năng tự tạo nội dung. Publish Zernio lưu post ID, dùng request ID chống
+trùng và đối soát trạng thái trước khi retry.
 
 ## Tính năng
 
@@ -36,6 +46,13 @@ Copy `.env.example` → `.env` rồi điền key (hoặc nhập trong trang Cài
 | `APIFY_API_KEY` | Cào tin YouTube |
 | `ZERNIO_KEY` | Đăng TikTok |
 | `PUBLIC_BASE_URL` | URL công khai (bắt buộc khi deploy để Zernio tải được video) |
+| `MAX_ACTIVE_JOBS_PER_USER` | Số job nặng tối đa mỗi tài khoản (mặc định 2) |
+| `MAX_UPLOAD_JOB_MB` | Tổng dung lượng một phiên upload (mặc định 1536 MB) |
+| `HEAVY_JOB_WORKERS` | Số worker render/ảnh; production mặc định 1 |
+| `NETWORK_JOB_WORKERS` | Số worker publish; production mặc định 2 |
+| `HEAVY_JOB_TIMEOUT_SECONDS` | Timeout toàn bộ cây render, mặc định 1800 giây |
+| `OUTPUT_RETENTION_DAYS` | Số ngày giữ output local trước khi archive Drive |
+| `ZERNIO_API_BASE_URL` | API Zernio dùng để đăng và đối soát trạng thái |
 
 ## Tài khoản
 
@@ -43,7 +60,10 @@ Copy `.env.example` → `.env` rồi điền key (hoặc nhập trong trang Cài
 
 ## Deploy VPS
 
-Xem `deploy/SETUP-VPS.md` (systemd + Cloudflare Tunnel). Disk nhỏ: `tools/storage_cleanup.py` tự đẩy output cũ hơn 5 ngày lên Google Drive rồi mới xóa local (chạy daily trong server).
+Xem `deploy/SETUP-VPS.md` (hai systemd service + Cloudflare Tunnel). Chạy
+`tools/migrate_pipeline.py` trước lần bật worker đầu tiên. Disk nhỏ:
+`tools/storage_cleanup.py` tự đẩy output cũ hơn 5 ngày lên Google Drive rồi mới
+xóa local (chạy daily trong server).
 
 ## Ghi chú
 

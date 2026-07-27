@@ -9,6 +9,8 @@ import threading
 import functools
 from pathlib import Path
 
+from tools.atomic_json import atomic_write_json
+
 DB_PATH = Path(__file__).parent.parent / "data" / "album_images.json"
 ALBUM_DIR = Path(__file__).parent.parent / "data" / "album"
 
@@ -31,9 +33,7 @@ def _load() -> dict:
 
 
 def _save(data: dict) -> None:
-    DB_PATH.parent.mkdir(parents=True, exist_ok=True)
-    with open(DB_PATH, "w", encoding="utf-8") as f:
-        json.dump(data, f, ensure_ascii=False, indent=2)
+    atomic_write_json(DB_PATH, data)
 
 
 def get_all() -> list:

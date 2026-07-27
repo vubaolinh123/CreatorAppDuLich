@@ -1,12 +1,12 @@
 [Unit]
-Description=Da Lat Studio (dulich-pipeline)
-After=network.target
+Description=Da Lat Studio durable render/publish worker
+After=network.target dulich.service
 
 [Service]
 Type=simple
 User=dulich
 WorkingDirectory=/opt/CreatorAppDuLich/dulich-pipeline
-ExecStart=/opt/CreatorAppDuLich/dulich-pipeline/.venv/bin/python -X utf8 server.py
+ExecStart=/opt/CreatorAppDuLich/dulich-pipeline/.venv/bin/python -X utf8 worker.py --queue all
 Restart=always
 RestartSec=5
 KillMode=control-group
@@ -14,7 +14,6 @@ TimeoutStopSec=15
 UMask=0077
 Environment=PYTHONUTF8=1
 Environment=PYTHONIOENCODING=utf-8
-Environment=DISABLE_JOB_WORKER=1
 
 [Install]
 WantedBy=multi-user.target

@@ -1,0 +1,22 @@
+# Optional — chỉ cài khi cần tính năng nâng cao (đều có fallback, thiếu vẫn chạy).
+# Cài thêm: pip install -r requirements-optional.txt
+
+# AI viết kịch bản / agent nâng cao (nv1 AI; nếu không có → dùng nội dung mẫu)
+anthropic>=0.39.0
+openai>=1.0.0
+langgraph>=0.2.0
+langchain>=0.3.0
+langchain-anthropic>=0.3.0
+langchain-core>=0.3.0
+
+# Giọng đọc trả phí (xịn hơn gTTS/Edge)
+elevenlabs>=1.50.0
+
+# Đồng bộ Google Sheets / Drive (optional)
+google-api-python-client>=2.149.0
+google-auth-oauthlib>=1.2.1
+google-auth>=2.35.0
+
+# Khác
+pytrends>=4.9.0       # trend keywords
+motor>=3.5.0          # MongoDB async

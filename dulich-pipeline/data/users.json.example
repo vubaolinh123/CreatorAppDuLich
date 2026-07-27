@@ -1,0 +1,10 @@
+{
+  "_chu_thich": "Chi la metadata mau. Mat khau duoc bam va luu trong data/auth.sqlite3; dung tools/migrate_auth.py de tao database.",
+  "admin": { "role": "admin", "name": "Quan ly" },
+  "nv1": { "role": "staff", "name": "Nhan vien 1", "hook_style": "hook_red",   "voice": "gtts" },
+  "nv2": { "role": "staff", "name": "Nhan vien 2", "hook_style": "hook_green", "voice": "gtts" },
+  "nv3": { "role": "staff", "name": "Nhan vien 3", "hook_style": "hook_brown", "voice": "gtts" },
+  "nv4": { "role": "staff", "name": "Nhan vien 4", "hook_style": "hook_serif", "voice": "gtts" },
+  "nv5": { "role": "staff", "name": "Nhan vien 5", "hook_style": "hook_meo",   "voice": "gtts" },
+  "tintuc": { "role": "news", "name": "Kenh tin tuc Da Lat", "hook_style": "hook_news", "voice": "gtts" }
+}

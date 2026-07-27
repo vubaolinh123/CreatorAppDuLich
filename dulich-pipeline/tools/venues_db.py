@@ -14,6 +14,8 @@ import urllib.request
 from pathlib import Path
 from typing import Optional
 
+from tools.atomic_json import atomic_write_json
+
 DB_PATH    = Path(__file__).parent.parent / "data" / "venues.json"
 THUMB_DIR  = Path(__file__).parent.parent / "data" / "thumbs"
 
@@ -65,9 +67,7 @@ def _load() -> dict:
 
 
 def _save(data: dict) -> None:
-    DB_PATH.parent.mkdir(parents=True, exist_ok=True)
-    with open(DB_PATH, "w", encoding="utf-8") as f:
-        json.dump(data, f, ensure_ascii=False, indent=2)
+    atomic_write_json(DB_PATH, data)
 
 
 # ── CRUD ──────────────────────────────────────────────────────────────────────
