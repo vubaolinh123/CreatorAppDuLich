@@ -111,15 +111,19 @@ def test_sheets_sync_get_queue_single_row(mock_sheets_service):
 from tools.drive_uploader import DriveUploader
 
 
-def test_drive_uploader_no_credentials_returns_empty():
+def test_drive_uploader_no_credentials_returns_explicit_error():
     uploader = DriveUploader()
     with patch.object(DriveUploader, "_get_service", return_value=None):
-        assert uploader.upload_file("path/to/file.mp4", "folder-id") == {}
+        assert uploader.upload_file("path/to/file.mp4", "folder-id") == {
+            "error": "Google Drive service not available"
+        }
         assert uploader.create_subfolder("sub") == ""
 
 
-def test_drive_uploader_upload_success():
+def test_drive_uploader_upload_success_is_private_by_default(tmp_path):
     uploader = DriveUploader()
+    source = tmp_path / "test.mp4"
+    source.write_bytes(b"video")
     mock_file = MagicMock()
     mock_file.get.side_effect = lambda k, default=None: {
         "id": "file-123", "name": "test.mp4", "webViewLink": "http://link"
@@ -129,13 +133,21 @@ def test_drive_uploader_upload_success():
 
     with patch.object(DriveUploader, "_get_service", return_value=mock_service):
         with patch("tools.drive_uploader.MediaFileUpload"):
-            result = uploader.upload_file("/tmp/test.mp4", "folder-abc", "test.mp4")
+            result = uploader.upload_file(str(source), "folder-abc", "test.mp4")
             assert result["id"] == "file-123"
             assert result["name"] == "test.mp4"
+            assert result["public"] is False
+            assert mock_service.permissions().create.call_count == 0
+            assert (
+                mock_service.files().create.call_args.kwargs["supportsAllDrives"]
+                is True
+            )
 
 
-def test_drive_uploader_uses_filename_from_path():
+def test_drive_uploader_uses_filename_from_path(tmp_path):
     uploader = DriveUploader()
+    source = tmp_path / "my-video.mp4"
+    source.write_bytes(b"video")
     mock_service = MagicMock()
     mock_file = MagicMock()
     mock_file.get.return_value = {"id": "f1", "name": "auto.mp4", "webViewLink": "url"}
@@ -143,7 +155,7 @@ def test_drive_uploader_uses_filename_from_path():
 
     with patch.object(DriveUploader, "_get_service", return_value=mock_service):
         with patch("tools.drive_uploader.MediaFileUpload"):
-            uploader.upload_file("/tmp/my-video.mp4", "folder-abc")
+            uploader.upload_file(str(source), "folder-abc")
             call = mock_service.files().create.call_args
             assert call[1]["body"]["name"] == "my-video.mp4"
 

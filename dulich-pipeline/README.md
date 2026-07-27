@@ -56,7 +56,11 @@ Copy `.env.example` → `.env` rồi điền key (hoặc nhập trong trang Cài
 
 ## Tài khoản
 
-`data/users.json` — admin, nv1-5 (Lê/Uyên/Hiền/Vy/Muối), tintuc. Trường `album` là prefix mẫu album của từng người; `publish: "tiktok"` bật đăng bài (đang gắn nv1).
+`data/users.json` chỉ còn metadata của admin, nv1-5
+(Lê/Uyên/Hiền/Vy/Muối) và tintuc. Alias đăng nhập/hash mật khẩu nằm trong
+`data/auth.sqlite3`; nhiều tài khoản nội bộ có thể dùng chung một login name,
+password sẽ ánh xạ về đúng vai trò. Trường `album` là prefix mẫu album của từng
+người; `publish: "tiktok"` bật đăng bài (đang gắn nv1).
 
 ## Deploy VPS
 

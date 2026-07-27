@@ -102,6 +102,7 @@ class AuthStore:
                 """
                 CREATE TABLE IF NOT EXISTS users (
                     username TEXT PRIMARY KEY COLLATE NOCASE,
+                    login_name TEXT NOT NULL COLLATE NOCASE,
                     password_hash TEXT NOT NULL,
                     role TEXT NOT NULL CHECK(role IN ('admin', 'staff', 'news')),
                     profile_json TEXT NOT NULL,
@@ -128,6 +129,20 @@ class AuthStore:
                 );
                 """
             )
+            columns = {
+                row["name"]
+                for row in db.execute("PRAGMA table_info(users)").fetchall()
+            }
+            if "login_name" not in columns:
+                db.execute("ALTER TABLE users ADD COLUMN login_name TEXT")
+                db.execute(
+                    "UPDATE users SET login_name=username "
+                    "WHERE login_name IS NULL OR login_name=''"
+                )
+            db.execute(
+                "CREATE INDEX IF NOT EXISTS users_login_name_idx "
+                "ON users(login_name)"
+            )
 
     @staticmethod
     def public_profile(row: sqlite3.Row | dict[str, Any]) -> dict[str, Any]:
@@ -139,6 +154,7 @@ class AuthStore:
         profile.pop("password", None)
         profile.pop("password_hash", None)
         profile["username"] = row["username"]
+        profile["login_name"] = row["login_name"]
         profile["role"] = row["role"]
         return profile
 
@@ -149,14 +165,15 @@ class AuthStore:
     def users_dict(self) -> dict[str, dict[str, Any]]:
         with self._connect() as db:
             rows = db.execute(
-                "SELECT username, role, profile_json FROM users WHERE active=1 ORDER BY username"
+                "SELECT username, login_name, role, profile_json "
+                "FROM users WHERE active=1 ORDER BY username"
             ).fetchall()
         return {row["username"]: self.public_profile(row) for row in rows}
 
     def get_user(self, username: str) -> dict[str, Any] | None:
         with self._connect() as db:
             row = db.execute(
-                "SELECT username, role, profile_json FROM users "
+                "SELECT username, login_name, role, profile_json FROM users "
                 "WHERE username=? AND active=1",
                 (username,),
             ).fetchone()
@@ -168,20 +185,30 @@ class AuthStore:
         *,
         replace: bool = False,
     ) -> dict[str, int]:
-        prepared: list[tuple[str, str, str, str]] = []
+        prepared: list[tuple[str, str, str, str, str]] = []
         for key, source in users.items():
             record = dict(source or {})
-            username = str(record.get("username") or key).strip()
+            username = str(record.get("account_id") or key).strip()
+            login_name = str(
+                record.get("login_name") or record.get("username") or username
+            ).strip()
             password = str(record.pop("password", "") or "")
             role = str(record.get("role") or "staff").strip()
-            if not username or not password:
+            if not username or not login_name or not password:
                 raise ValueError(f"Account {username or key!r} has no password")
             if role not in {"admin", "staff", "news"}:
                 raise ValueError(f"Account {username!r} has invalid role {role!r}")
             record["username"] = username
+            record["login_name"] = login_name
             record["role"] = role
             prepared.append(
-                (username, hash_password(password), role, json.dumps(record, ensure_ascii=False))
+                (
+                    username,
+                    login_name,
+                    hash_password(password),
+                    role,
+                    json.dumps(record, ensure_ascii=False),
+                )
             )
 
         now = _now()
@@ -189,7 +216,7 @@ class AuthStore:
         with self._connect() as db:
             db.execute("BEGIN IMMEDIATE")
             try:
-                for username, password_hash, role, profile_json in prepared:
+                for username, login_name, password_hash, role, profile_json in prepared:
                     exists = db.execute(
                         "SELECT 1 FROM users WHERE username=?", (username,)
                     ).fetchone()
@@ -197,17 +224,34 @@ class AuthStore:
                         continue
                     if exists:
                         db.execute(
-                            "UPDATE users SET password_hash=?, role=?, profile_json=?, "
+                            "UPDATE users SET login_name=?, password_hash=?, "
+                            "role=?, profile_json=?, "
                             "active=1, updated_at=? WHERE username=?",
-                            (password_hash, role, profile_json, now, username),
+                            (
+                                login_name,
+                                password_hash,
+                                role,
+                                profile_json,
+                                now,
+                                username,
+                            ),
                         )
                         updated += 1
                     else:
                         db.execute(
                             "INSERT INTO users "
-                            "(username,password_hash,role,profile_json,active,created_at,updated_at) "
-                            "VALUES (?,?,?,?,1,?,?)",
-                            (username, password_hash, role, profile_json, now, now),
+                            "(username,login_name,password_hash,role,profile_json,"
+                            "active,created_at,updated_at) "
+                            "VALUES (?,?,?,?,?,1,?,?)",
+                            (
+                                username,
+                                login_name,
+                                password_hash,
+                                role,
+                                profile_json,
+                                now,
+                                now,
+                            ),
                         )
                         inserted += 1
                 db.commit()
@@ -215,6 +259,88 @@ class AuthStore:
                 db.rollback()
                 raise
         return {"inserted": inserted, "updated": updated, "total": self.user_count()}
+
+    def reset_credentials(
+        self,
+        credentials: dict[str, dict[str, str]],
+        *,
+        revoke_sessions: bool = True,
+    ) -> dict[str, int]:
+        """Atomically replace login aliases/passwords without storing plaintext."""
+        prepared: list[tuple[str, str, str]] = []
+        seen_login_passwords: set[tuple[str, str]] = set()
+        for username, values in credentials.items():
+            internal = str(username or "").strip()
+            login_name = str((values or {}).get("login_name") or "").strip()
+            password = str((values or {}).get("password") or "")
+            if not internal or not login_name or len(password) < 10:
+                raise ValueError(
+                    f"Credential {internal or '<empty>'!r} needs login_name "
+                    "and a password of at least 10 characters"
+                )
+            identity = (login_name.lower(), password)
+            if identity in seen_login_passwords:
+                raise ValueError(
+                    "Accounts sharing a login_name must have distinct passwords"
+                )
+            seen_login_passwords.add(identity)
+            prepared.append((internal, login_name, hash_password(password)))
+        if not prepared:
+            raise ValueError("No credentials supplied")
+
+        now = _now()
+        with self._connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            try:
+                known = {
+                    row["username"].lower()
+                    for row in db.execute(
+                        "SELECT username FROM users WHERE active=1"
+                    ).fetchall()
+                }
+                missing = [
+                    username
+                    for username, _, _ in prepared
+                    if username.lower() not in known
+                ]
+                if missing:
+                    raise ValueError(
+                        "Unknown/inactive accounts: " + ", ".join(sorted(missing))
+                    )
+                for username, login_name, password_hash in prepared:
+                    row = db.execute(
+                        "SELECT profile_json FROM users WHERE username=?",
+                        (username,),
+                    ).fetchone()
+                    profile = json.loads(row["profile_json"] or "{}")
+                    profile["username"] = username
+                    profile["login_name"] = login_name
+                    db.execute(
+                        "UPDATE users SET login_name=?, password_hash=?, "
+                        "profile_json=?, updated_at=? WHERE username=?",
+                        (
+                            login_name,
+                            password_hash,
+                            json.dumps(profile, ensure_ascii=False),
+                            now,
+                            username,
+                        ),
+                    )
+                if revoke_sessions:
+                    placeholders = ",".join("?" for _ in prepared)
+                    db.execute(
+                        f"UPDATE sessions SET revoked_at=? "
+                        f"WHERE username IN ({placeholders}) AND revoked_at IS NULL",
+                        [now, *[item[0] for item in prepared]],
+                    )
+                db.commit()
+            except Exception:
+                db.rollback()
+                raise
+        return {
+            "updated": len(prepared),
+            "sessions_revoked": int(bool(revoke_sessions)),
+        }
 
     @staticmethod
     def _failure_bucket(username: str, remote_ip: str) -> str:
@@ -234,6 +360,14 @@ class AuthStore:
         bucket = self._failure_bucket(username, remote_ip)
         with self._connect() as db:
             db.execute("BEGIN IMMEDIATE")
+            alias_count = int(
+                db.execute(
+                    "SELECT COUNT(*) FROM users "
+                    "WHERE login_name=? AND active=1",
+                    (username,),
+                ).fetchone()[0]
+            )
+            failure_limit = LOGIN_MAX_FAILURES + max(0, min(alias_count, 8) - 1)
             row = db.execute(
                 "SELECT failures,window_started,locked_until FROM login_failures "
                 "WHERE bucket=?",
@@ -244,7 +378,7 @@ class AuthStore:
             else:
                 failures, window_started = int(row["failures"]) + 1, int(row["window_started"])
             locked_until = (
-                now + LOGIN_WINDOW_SECONDS if failures >= LOGIN_MAX_FAILURES else 0
+                now + LOGIN_WINDOW_SECONDS if failures >= failure_limit else 0
             )
             db.execute(
                 "INSERT INTO login_failures(bucket,failures,window_started,locked_until) "
@@ -257,23 +391,27 @@ class AuthStore:
         return max(0, locked_until - now)
 
     def authenticate(
-        self, username: str, password: str, remote_ip: str
+        self, login_name: str, password: str, remote_ip: str
     ) -> tuple[dict[str, Any] | None, int]:
-        retry_after = self.login_retry_after(username, remote_ip)
+        retry_after = self.login_retry_after(login_name, remote_ip)
         if retry_after:
             return None, retry_after
         with self._connect() as db:
-            row = db.execute(
-                "SELECT username,password_hash,role,profile_json FROM users "
-                "WHERE username=? AND active=1",
-                (username,),
-            ).fetchone()
-        if not row or not verify_password(password, row["password_hash"]):
-            return None, self._record_login_failure(username, remote_ip)
+            rows = db.execute(
+                "SELECT username,login_name,password_hash,role,profile_json "
+                "FROM users WHERE login_name=? AND active=1 ORDER BY username",
+                (login_name,),
+            ).fetchall()
+        matches = [
+            row for row in rows if verify_password(password, row["password_hash"])
+        ]
+        if len(matches) != 1:
+            return None, self._record_login_failure(login_name, remote_ip)
+        row = matches[0]
         with self._connect() as db:
             db.execute(
                 "DELETE FROM login_failures WHERE bucket=?",
-                (self._failure_bucket(username, remote_ip),),
+                (self._failure_bucket(login_name, remote_ip),),
             )
         return self.public_profile(row), 0
 
@@ -307,7 +445,7 @@ class AuthStore:
         now = _now()
         with self._connect() as db:
             row = db.execute(
-                "SELECT s.*,u.role,u.profile_json,u.active "
+                "SELECT s.*,u.login_name,u.role,u.profile_json,u.active "
                 "FROM sessions s JOIN users u ON u.username=s.username "
                 "WHERE s.token_hash=?",
                 (token_hash,),

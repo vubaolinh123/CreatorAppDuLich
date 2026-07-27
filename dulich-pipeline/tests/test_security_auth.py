@@ -23,6 +23,82 @@ def test_password_hash_is_salted_and_verifiable():
     assert not verify_password("wrong", first)
 
 
+def test_shared_login_alias_maps_password_to_internal_account(tmp_path):
+    store = AuthStore(tmp_path / "auth.sqlite3")
+    store.import_users(
+        {
+            "admin": {
+                "login_name": "appdalatnow",
+                "password": "admin-password",
+                "role": "admin",
+            },
+            "nv1": {
+                "login_name": "appdalatnow",
+                "password": "staff-password",
+                "role": "staff",
+            },
+        }
+    )
+
+    admin, retry = store.authenticate(
+        "appdalatnow", "admin-password", "127.0.0.1"
+    )
+    assert retry == 0
+    assert admin["username"] == "admin"
+    assert admin["login_name"] == "appdalatnow"
+
+    staff, retry = store.authenticate(
+        "appdalatnow", "staff-password", "127.0.0.1"
+    )
+    assert retry == 0
+    assert staff["username"] == "nv1"
+
+
+def test_reset_credentials_is_atomic_and_revokes_existing_sessions(tmp_path):
+    store = AuthStore(tmp_path / "auth.sqlite3")
+    store.import_users(
+        {
+            "admin": {
+                "password": "old-admin-password",
+                "role": "admin",
+            },
+            "nv1": {
+                "password": "old-staff-password",
+                "role": "staff",
+            },
+        }
+    )
+    token, _, _ = store.create_session("admin")
+
+    result = store.reset_credentials(
+        {
+            "admin": {
+                "login_name": "appdalatnow",
+                "password": "new-admin-password",
+            },
+            "nv1": {
+                "login_name": "appdalatnow",
+                "password": "new-staff-password",
+            },
+        }
+    )
+    assert result["updated"] == 2
+    assert store.get_session(token) is None
+    assert store.authenticate("admin", "old-admin-password", "127.0.0.1")[0] is None
+    assert (
+        store.authenticate(
+            "appdalatnow", "new-admin-password", "127.0.0.1"
+        )[0]["username"]
+        == "admin"
+    )
+    assert (
+        store.authenticate(
+            "appdalatnow", "new-staff-password", "127.0.0.1"
+        )[0]["username"]
+        == "nv1"
+    )
+
+
 def test_six_sessions_are_isolated_under_concurrency(tmp_path):
     store = AuthStore(tmp_path / "auth.sqlite3")
     users = {

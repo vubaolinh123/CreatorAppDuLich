@@ -6,6 +6,7 @@ Provides functions to interact with Supabase REST API.
 import os
 import json
 import sys
+from pathlib import Path
 from typing import Optional, Any
 from datetime import datetime, timezone
 
@@ -18,7 +19,8 @@ except ImportError:
 # Load env
 try:
     from dotenv import load_dotenv
-    load_dotenv()
+
+    load_dotenv(Path(__file__).resolve().parent.parent / ".env")
 except Exception:
     pass
 

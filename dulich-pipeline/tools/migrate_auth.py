@@ -13,8 +13,12 @@ except ImportError:  # direct: python tools/migrate_auth.py
 
 
 ROOT = Path(__file__).resolve().parent.parent
-USERS_FILE = ROOT / "data" / "users.json"
-AUTH_DB = ROOT / "data" / "auth.sqlite3"
+USERS_FILE = Path(
+    os.getenv("AUTH_USERS_FILE") or (ROOT / "data" / "users.json")
+).resolve()
+AUTH_DB = Path(
+    os.getenv("AUTH_DB_PATH") or (ROOT / "data" / "auth.sqlite3")
+).resolve()
 
 
 def _local_users() -> dict:

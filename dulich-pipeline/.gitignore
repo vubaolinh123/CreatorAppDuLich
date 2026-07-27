@@ -18,6 +18,7 @@ data/migration-backups/
 data/pipeline-export/
 data/job-uploads/
 data/job-results/
+data/backups/
 
 # ── Output / media sinh ra ───────────────────────────────
 output/

@@ -2,10 +2,15 @@
 
 import os
 from dataclasses import dataclass, field
+from pathlib import Path
 from dotenv import load_dotenv
 
-# Load environment variables from .env
-load_dotenv()
+# Load only this app's environment, never a parent workspace .env.
+_ENV_FILE = Path(
+    os.getenv("PIPELINE_ENV_PATH") or (Path(__file__).parent / ".env")
+).resolve()
+if _ENV_FILE.exists():
+    load_dotenv(_ENV_FILE)
 
 
 @dataclass

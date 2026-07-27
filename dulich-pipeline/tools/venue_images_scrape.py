@@ -120,8 +120,9 @@ def discover_venues(search: str, loai_quan: str, want: int, max_images: int = 8,
 
 
 if __name__ == "__main__":
-    from dotenv import load_dotenv, find_dotenv
-    load_dotenv(find_dotenv(usecwd=True))
+    from dotenv import load_dotenv
+
+    load_dotenv(Path(__file__).resolve().parent.parent / ".env")
     seeding = [v for v in venues_db.get_all() if v.get("loai") == "cần seeding"]
     for v in seeding:
         n = scrape_venue_images(v)

@@ -191,6 +191,26 @@ class PipelineStore:
                 (key, value),
             )
 
+    def health_snapshot(self) -> dict:
+        """Run cheap readiness checks without returning private job payloads."""
+        with self._connect() as conn:
+            quick_check = str(
+                conn.execute("PRAGMA quick_check(1)").fetchone()[0]
+            ).lower()
+            counts = {
+                str(row["status"]): int(row["count"])
+                for row in conn.execute(
+                    "SELECT status, COUNT(*) AS count FROM jobs GROUP BY status"
+                ).fetchall()
+            }
+        return {
+            "database_ok": quick_check == "ok",
+            "queued_jobs": counts.get("queued", 0),
+            "running_jobs": counts.get("running", 0),
+            "unknown_jobs": counts.get("unknown", 0),
+            "failed_jobs": counts.get("failed", 0),
+        }
+
     # ── Durable jobs ──────────────────────────────────────────────────────
 
     @staticmethod

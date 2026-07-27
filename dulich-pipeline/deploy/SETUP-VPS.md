@@ -16,19 +16,27 @@ Lưu ý: KHÔNG cần node_modules / dulich-desktop / dulich-dashboard — chỉ
 
 ## 2. Cấu hình
 - Copy `.env` từ máy local lên `/opt/CreatorAppDuLich/dulich-pipeline/.env` (scp).
-- Copy `credentials.json` (Google Service Account) vào cùng folder.
+- Đặt key Service Account ngoài repository, ví dụ
+  `/opt/CreatorAppDuLich/secrets/drive-service-account.json`, owner `dulich`,
+  quyền `600`.
 - Set `PUBLIC_BASE_URL=https://<domain>` (bắt buộc cho Zernio đăng TikTok).
-- `GOOGLE_DRIVE_FOLDER_ID`: ID folder Drive đã share cho email service account.
+- Service Account không có quota My Drive riêng. Tạo folder trong **Shared
+  Drive**, thêm email Service Account với quyền Content manager, rồi đặt
+  `GOOGLE_DRIVE_FOLDER_ID` và `GOOGLE_DRIVE_SHARED_DRIVE_ID`.
+- Chạy `.venv/bin/python -X utf8 tools/check_drive.py`; chỉ deploy khi thấy
+  `"ok": true` và `"can_add_children": true`.
+- Giữ `GOOGLE_DRIVE_MAKE_PUBLIC=0` để archive/database backup không bị public.
 
 ## 3. systemd
 ```bash
 sudo -u dulich .venv/bin/python -X utf8 tools/migrate_auth.py --source auto --dry-run
 sudo -u dulich .venv/bin/python -X utf8 tools/migrate_auth.py --source auto
 sudo -u dulich .venv/bin/python -X utf8 tools/migrate_pipeline.py
-cp deploy/dulich.service deploy/dulich-worker.service /etc/systemd/system/
+sudo -u dulich .venv/bin/python -X utf8 tools/backup_sqlite.py
+cp deploy/dulich*.service deploy/dulich*.timer /etc/systemd/system/
 systemctl daemon-reload
-systemctl enable --now dulich dulich-worker
-curl http://localhost:7788/health
+systemctl enable --now dulich dulich-worker dulich-backup.timer
+curl --fail http://localhost:7788/health
 systemctl status dulich dulich-worker --no-pager
 ```
 
@@ -39,10 +47,13 @@ worker dành cho publish. Chỉ tăng `HEAVY_JOB_WORKERS` sau khi đo RAM thực
 Mỗi job nằm trong process group riêng; thao tác hủy/timeout sẽ kill cả FFmpeg con.
 
 Các file JSON cũ được backup vào `data/migration-backups/` trước khi import.
-Có thể kiểm tra/khôi phục dữ liệu ở dạng JSON bằng:
+SQLite được snapshot nhất quán hằng ngày và upload Drive ở chế độ riêng tư.
+Có thể chạy/kiểm tra thủ công bằng:
 
 ```bash
 sudo -u dulich .venv/bin/python -X utf8 tools/migrate_pipeline.py --export
+sudo -u dulich .venv/bin/python -X utf8 tools/backup_sqlite.py --upload-drive
+systemctl status dulich-backup.timer --no-pager
 ```
 
 ## 4. Cloudflare Tunnel (public URL, không cần mở port)
@@ -72,13 +83,31 @@ systemctl restart dulich dulich-worker
 bash deploy/deploy.sh
 ```
 
-Script deploy dừng worker trước, backup/import dữ liệu, cài lại hai unit rồi mới
-khởi động. Migration auth chạy idempotent trước migration pipeline; nếu nguồn
-legacy đã scrub nhưng database auth chưa đủ tài khoản, deploy sẽ dừng thay vì
-bật một app không đăng nhập được. Sau deploy phải thấy cả `dulich` và
+Script deploy migrate auth trước khi checkout file người dùng đã scrub, kiểm tra
+fast-forward, backup SQLite, cài unit, rồi yêu cầu cả service lẫn readiness
+`/health` đạt. Nếu pip/migration/service/readiness lỗi, script tự trả code và
+systemd unit về commit trước. Sau deploy phải thấy cả `dulich` và
 `dulich-worker` ở trạng thái active.
 
+## 7. Đặt lại mật khẩu dùng chung login name
+
+Không ghi password vào `.env`, JSON trong repository hoặc command history.
+Chạy tương tác trực tiếp trên VPS:
+
+```bash
+cd /opt/CreatorAppDuLich/dulich-pipeline
+sudo -u dulich .venv/bin/python -X utf8 tools/reset_passwords.py \
+  --interactive \
+  --login-name appdalatnow \
+  --accounts admin,tintuc,nv1,nv2,nv3,nv4,nv5 \
+  --bootstrap-profiles data/users.json
+```
+
+Nhập và xác nhận từng password khi được hỏi. Lệnh đổi atomically cả alias/hash
+và thu hồi mọi phiên đăng nhập cũ.
+
 ## Key cần có trước khi deploy
-1. `credentials.json` service account + share folder Drive cho email SA + `GOOGLE_DRIVE_FOLDER_ID`.
+1. Key Service Account ngoài repo + Shared Drive đã cấp quyền +
+   `GOOGLE_DRIVE_FOLDER_ID`.
 2. `.env` đầy đủ (OPENROUTER, OPENAI, VBEE, APIFY, ZERNIO, PUBLIC_BASE_URL).
 3. Domain trỏ Cloudflare (cho tunnel).

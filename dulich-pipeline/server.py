@@ -39,12 +39,17 @@ if sys.platform.startswith("win"):
 # Add project root to path
 sys.path.insert(0, str(Path(__file__).parent))
 
-# Load .env (keys: OPENROUTER_KEY, VBEE_APP_ID, VBEE_API_KEY, ...) for all handlers.
-_DOTENV_PATH = ""
+# Load only this app's .env. Never walk into a parent project and mutate an
+# unrelated environment file when the pipeline .env has not been created yet.
+_DOTENV_FILE = Path(
+    os.getenv("PIPELINE_ENV_PATH") or (Path(__file__).parent / ".env")
+).resolve()
+_DOTENV_PATH = str(_DOTENV_FILE)
 try:
-    from dotenv import load_dotenv, find_dotenv
-    _DOTENV_PATH = find_dotenv(usecwd=True)   # file .env thực sự đang load (có thể ở thư mục cha)
-    load_dotenv(_DOTENV_PATH)
+    from dotenv import load_dotenv
+
+    if _DOTENV_FILE.exists():
+        load_dotenv(_DOTENV_FILE)
 except Exception:
     pass
 
@@ -60,7 +65,7 @@ PIPELINE_STORE = get_pipeline_store()
 
 # ── Cài đặt API key trong app (trang Settings) ──────────────────────────────
 # Ghi đúng file .env đang được load; nếu chưa có thì dùng .env cạnh server.py.
-ENV_PATH = Path(_DOTENV_PATH) if _DOTENV_PATH else (Path(__file__).parent / ".env")
+ENV_PATH = _DOTENV_FILE
 
 # Thư mục ảnh địa điểm (upload/cào) + kho ảnh chung
 THUMB_DIR = Path(__file__).parent / "data" / "thumbs"
@@ -850,7 +855,35 @@ def run_durable_workers(queue_name: str = "all") -> list[threading.Thread]:
             )
             thread.start()
             threads.append(thread)
+    heartbeat = threading.Thread(
+        target=_worker_process_heartbeat,
+        args=(queue_name, sum(item[2] for item in specs)),
+        daemon=True,
+        name=f"worker-heartbeat-{queue_name}",
+    )
+    heartbeat.start()
+    threads.append(heartbeat)
     return threads
+
+
+def _worker_process_heartbeat(queue_name: str, worker_count: int) -> None:
+    while True:
+        try:
+            PIPELINE_STORE.set_meta(
+                "worker_heartbeat",
+                json.dumps(
+                    {
+                        "timestamp": time.time(),
+                        "pid": os.getpid(),
+                        "queue": queue_name,
+                        "workers": worker_count,
+                    },
+                    separators=(",", ":"),
+                ),
+            )
+        except Exception as exc:
+            print(f"[worker] heartbeat process lỗi: {exc}", file=sys.stderr)
+        time.sleep(10)
 
 
 def _start_render_worker() -> None:
@@ -885,10 +918,6 @@ def _job_client_view(job: dict) -> dict:
         "album_id": result.get("id", "") if job.get("kind") in {"album_image", "ai_image_from_link"} else "",
         "result_status": result.get("status", ""),
     }
-
-# No API keys in this demo → default voice engine is free Microsoft Edge TTS (vi-VN).
-os.environ.setdefault("VOICE_PROVIDER", "edge")
-
 
 def _to_output_url(abs_path: str) -> str:
     """Convert an absolute output file path into a URL servable by GET /output/..."""
@@ -1033,6 +1062,10 @@ from tools.auth_store import AuthStore
 AUTH_STORE = AuthStore(AUTH_DB_FILE)
 AUTH_STORE.cleanup()
 AUDIT_FILE = Path(__file__).parent / "data" / "security_audit.jsonl"
+BACKUP_STATUS_FILE = Path(
+    os.getenv("BACKUP_STATUS_PATH")
+    or (Path(__file__).parent / "data" / "backups" / "status.json")
+)
 _AUDIT_LOCK = threading.Lock()
 _TEMP_MEDIA: dict[str, dict] = {}
 _TEMP_MEDIA_LOCK = threading.Lock()
@@ -1191,6 +1224,110 @@ def _friendly_error(e) -> str:
         cause = "❌ Server gặp lỗi khi xử lý."
     detail = s.strip().splitlines()[-1][:160] if s.strip() else ""
     return f"{cause}" + (f"\nChi tiết: {detail}" if detail else "")
+
+
+def _health_snapshot() -> tuple[dict, int]:
+    now = time.time()
+    checks: dict[str, object] = {}
+    errors: list[str] = []
+    warnings: list[str] = []
+    try:
+        checks["pipeline"] = PIPELINE_STORE.health_snapshot()
+        if not checks["pipeline"]["database_ok"]:
+            errors.append("pipeline_database")
+    except Exception as exc:
+        checks["pipeline"] = {"database_ok": False}
+        errors.append("pipeline_database")
+        print(f"[health] pipeline database lỗi: {exc}", file=sys.stderr)
+
+    try:
+        auth_users = AUTH_STORE.user_count()
+        checks["auth"] = {"database_ok": True, "users": auth_users}
+        if auth_users < 6:
+            errors.append("auth_accounts")
+    except Exception as exc:
+        checks["auth"] = {"database_ok": False, "users": 0}
+        errors.append("auth_database")
+        print(f"[health] auth database lỗi: {exc}", file=sys.stderr)
+
+    try:
+        disk = shutil.disk_usage(PIPELINE_STORE.db_path.parent)
+        checks["disk"] = {
+            "free_bytes": disk.free,
+            "reserve_bytes": UPLOAD_DISK_RESERVE_BYTES,
+        }
+        if disk.free < UPLOAD_DISK_RESERVE_BYTES:
+            errors.append("disk_reserve")
+    except OSError as exc:
+        checks["disk"] = {"free_bytes": 0}
+        errors.append("disk")
+        print(f"[health] disk lỗi: {exc}", file=sys.stderr)
+
+    raw_worker = PIPELINE_STORE.get_meta("worker_heartbeat", "")
+    try:
+        worker = json.loads(raw_worker) if raw_worker else {}
+    except ValueError:
+        worker = {}
+    worker_age = max(0, now - float(worker.get("timestamp") or 0))
+    worker_ok = bool(worker) and worker_age <= _env_int(
+        "WORKER_HEALTH_MAX_AGE_SECONDS", 35
+    )
+    checks["worker"] = {
+        "ok": worker_ok,
+        "age_seconds": round(worker_age, 1) if worker else None,
+        "queue": worker.get("queue", ""),
+        "workers": int(worker.get("workers") or 0),
+    }
+    if not worker_ok:
+        errors.append("worker")
+
+    maintenance_at = float(
+        PIPELINE_STORE.get_meta("maintenance_last_success", "0") or 0
+    )
+    checks["maintenance"] = {
+        "ok": maintenance_at > 0 and now - maintenance_at <= 2 * 86400,
+        "age_seconds": round(max(0, now - maintenance_at), 1)
+        if maintenance_at
+        else None,
+    }
+    if not checks["maintenance"]["ok"]:
+        warnings.append("maintenance")
+
+    try:
+        backup_status = json.loads(
+            BACKUP_STATUS_FILE.read_text(encoding="utf-8")
+        )
+    except Exception:
+        backup_status = {}
+    backup_at = float(backup_status.get("timestamp") or 0)
+    backup_age = max(0, now - backup_at) if backup_at else None
+    local_backup_ok = bool(backup_status.get("ok")) and (
+        backup_age is not None and backup_age <= 2 * 86400
+    )
+    offsite_backup_ok = bool(
+        (backup_status.get("drive") or {}).get("ok")
+    )
+    checks["backup"] = {
+        "local_ok": local_backup_ok,
+        "offsite_ok": offsite_backup_ok,
+        "age_seconds": round(backup_age, 1)
+        if backup_age is not None
+        else None,
+    }
+    if backup_at and not local_backup_ok:
+        errors.append("backup_stale")
+    elif not backup_at:
+        warnings.append("backup_missing")
+    if not offsite_backup_ok:
+        warnings.append("backup_offsite")
+
+    status = "ok" if not errors else "error"
+    return {
+        "status": status,
+        "checks": checks,
+        "errors": errors,
+        "warnings": warnings,
+    }, (200 if not errors else 503)
 
 
 # ── Đăng bài (Zernio TikTok) ────────────────────────────────────────────────
@@ -2317,7 +2454,8 @@ class AssembleHandler(BaseHTTPRequestHandler):
         elif self.path.startswith("/font/"):
             self._serve_font(self.path[len("/font/"):])
         elif self.path == "/health":
-            self._json_response({"status": "ok"})
+            payload, status = _health_snapshot()
+            self._json_response(payload, status)
         elif self.path == "/session":
             self.handle_session()
         elif self.path.startswith("/uploads/"):
@@ -4370,6 +4508,7 @@ def _maintenance_scheduler(stop_event: threading.Event | None = None):
             result["publish_reconcile"] = _reconcile_pending_publishes(
                 _env_int("PUBLISH_RECONCILE_BATCH", 20)
             )
+            PIPELINE_STORE.set_meta("maintenance_last_success", str(time.time()))
             if archive_output:
                 last_archive_day = day
             if (

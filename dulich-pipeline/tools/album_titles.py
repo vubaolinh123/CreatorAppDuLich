@@ -5,10 +5,12 @@ Fail ở bất kỳ bước nào → trả fallback, không chặn render.
 """
 from __future__ import annotations
 import os, json, random, requests
+from pathlib import Path
 
 try:
-    from dotenv import load_dotenv, find_dotenv
-    load_dotenv(find_dotenv(usecwd=True))
+    from dotenv import load_dotenv
+
+    load_dotenv(Path(__file__).resolve().parent.parent / ".env")
 except ImportError:
     pass
 

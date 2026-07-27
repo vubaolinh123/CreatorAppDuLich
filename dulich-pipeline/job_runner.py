@@ -2,10 +2,29 @@
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 from pathlib import Path
 
 from tools.atomic_json import atomic_write_json
+
+
+def reload_job_environment(path: str | Path | None = None) -> str:
+    """Reload the current .env so a long-lived worker never passes stale keys."""
+    try:
+        from dotenv import load_dotenv
+
+        dotenv_path = Path(
+            path
+            or os.getenv("PIPELINE_ENV_PATH")
+            or (Path(__file__).parent / ".env")
+        ).resolve()
+        if dotenv_path.exists():
+            load_dotenv(dotenv_path, override=True)
+            return str(dotenv_path)
+    except Exception:
+        pass
+    return ""
 
 
 def main() -> int:
@@ -13,6 +32,11 @@ def main() -> int:
     parser.add_argument("--job-id", required=True)
     parser.add_argument("--result-file", required=True)
     args = parser.parse_args()
+
+    # The web process can update .env while this long-lived worker is running.
+    # Each isolated job must reload the current file and override inherited,
+    # stale API-key values before importing the pipeline.
+    reload_job_environment()
 
     # Import after arguments/env are ready. Importing server does not start its
     # HTTP server, scheduler, or embedded worker.

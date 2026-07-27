@@ -10,8 +10,19 @@ from pathlib import Path
 import pytest
 
 import server
+from job_runner import reload_job_environment
 from tools.pipeline_store import PipelineStore
 from tools.process_control import popen_group_kwargs, terminate_process_tree
+
+
+def test_isolated_job_reloads_latest_dotenv(tmp_path, monkeypatch):
+    (tmp_path / ".env").write_text(
+        "OPENROUTER_KEY=new-key-from-admin\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("OPENROUTER_KEY", "stale-worker-key")
+    assert reload_job_environment(tmp_path / ".env") == str(tmp_path / ".env")
+    assert os.environ["OPENROUTER_KEY"] == "new-key-from-admin"
 
 
 def test_process_group_can_be_terminated_quickly():
