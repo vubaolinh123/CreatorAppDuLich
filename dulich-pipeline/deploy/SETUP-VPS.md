@@ -50,5 +50,5 @@ bash deploy/deploy.sh
 
 ## Key cần có trước khi deploy
 1. `credentials.json` service account + share folder Drive cho email SA + `GOOGLE_DRIVE_FOLDER_ID`.
-2. `.env` đầy đủ (OPENROUTER, OPENAI, VBEE, APIFY, ZERNIO, telegram_token, GROUP_ID).
+2. `.env` đầy đủ (OPENROUTER, OPENAI, VBEE, APIFY, ZERNIO, PUBLIC_BASE_URL).
 3. Domain trỏ Cloudflare (cho tunnel).

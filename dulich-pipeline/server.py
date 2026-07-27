@@ -163,14 +163,6 @@ def _generate_album(album: str, user: str = "", auto: bool = False,
         _append_album({**rec, "time": _t.time()})
     except Exception as _e:
         print(f"[Server] album log lỗi: {_e}", file=sys.stderr)
-    # Gửi bộ ảnh vào Telegram group để duyệt (chạy nền, không chặn request)
-    try:
-        _paths = [str(f) for f in files]
-        threading.Thread(target=_notify_album,
-                         args=(user, cfg.get("label", album), dir_rel, _paths),
-                         daemon=True).start()
-    except Exception as _e:
-        print(f"[Server] album notify lỗi: {_e}", file=sys.stderr)
     return {"success": True, **rec}
 
 
@@ -295,7 +287,6 @@ def _render_worker():
                                      "video_url": video_url, "thumb_url": thumb_url,
                                      "preview_url": preview_url,
                                      "time": _t.time()})
-                    _notify_publish(job["user"], job["topic"], video_url)
                 except Exception as _e:
                     print(f"[render-queue] product log lỗi: {_e}", file=sys.stderr)
                 # Kịch bản đã render xong → đánh dấu "đã render" (vào Lưu trữ, không xóa)
@@ -453,9 +444,7 @@ def _friendly_error(e) -> str:
     return f"{cause}" + (f"\nChi tiết: {detail}" if detail else "")
 
 
-# ── Đăng bài (Zernio TikTok) + Telegram duyệt ───────────────────────────────
-_TG_PENDING: dict = {}
-_TG_LOCK = threading.Lock()
+# ── Đăng bài (Zernio TikTok) ────────────────────────────────────────────────
 
 # Key Zernio/Apify RIÊNG từng tài khoản (admin nhập ở Cài đặt) — data/user_keys.json
 USER_KEYS_FILE = Path(__file__).parent / "data" / "user_keys.json"
@@ -687,117 +676,6 @@ def _do_publish_album(dir_rel: str, user: str,
         res = {"success": False, "error": str(e)}
     _set_album_status(dir_rel, "posted" if res.get("success") else "failed")
     return res
-
-
-def _notify_publish(user: str, topic: str, video_url: str) -> None:
-    """Gửi FILE video vào Telegram group + nút Duyệt/Hủy (mọi nhân viên; đăng TikTok nếu là nv publish)."""
-    try:
-        from tools import publisher
-        import uuid as _u
-        pid = _u.uuid4().hex[:10]
-        with _TG_LOCK:
-            _TG_PENDING[pid] = {"kind": "video", "video_url": video_url,
-                                "caption": _caption_for(topic, user), "user": user}
-        name = (_load_users().get(user) or {}).get("name", user)
-        txt = (f"🆕 <b>{(topic or 'Video mới')}</b>\nNhân viên: {name}"
-               + ("\nDuyệt để đăng TikTok." if _is_publish_user(user) else "\nDuyệt để đánh dấu đã đăng."))
-        vpath = str(Path(__file__).parent / video_url.lstrip("/")) if video_url else ""
-        r = publisher.send_telegram_video(vpath, txt, buttons=[[
-            {"text": "✅ Duyệt & đăng", "callback_data": f"post:{pid}"},
-            {"text": "✕ Hủy", "callback_data": f"cancel:{pid}"}]])
-        with _TG_LOCK:
-            if pid in _TG_PENDING:
-                _TG_PENDING[pid]["message_id"] = r.get("message_id")
-    except Exception as e:
-        print(f"[pub] notify lỗi: {e}", file=sys.stderr)
-
-
-def _notify_album(user: str, label: str, dir_rel: str, image_paths: list) -> None:
-    """Gửi bộ ảnh album vào Telegram group + nút Duyệt/Hủy."""
-    try:
-        from tools import publisher
-        import uuid as _u
-        pid = _u.uuid4().hex[:10]
-        with _TG_LOCK:
-            _TG_PENDING[pid] = {"kind": "album", "dir": dir_rel, "user": user, "caption": label}
-        name = (_load_users().get(user) or {}).get("name", user)
-        txt = f"🖼 <b>{label}</b>\nNhân viên: {name}\nDuyệt bộ ảnh này?"
-        r = publisher.send_telegram_album(image_paths, txt, buttons=[[
-            {"text": "✅ Duyệt", "callback_data": f"post:{pid}"},
-            {"text": "✕ Hủy", "callback_data": f"cancel:{pid}"}]])
-        with _TG_LOCK:
-            if pid in _TG_PENDING:
-                _TG_PENDING[pid]["message_id"] = r.get("message_id")
-    except Exception as e:
-        print(f"[pub] notify album lỗi: {e}", file=sys.stderr)
-
-
-def _telegram_poller():
-    """Poll callback Telegram: Duyệt → đăng TikTok; Hủy → cancelled."""
-    import time as _t
-    from tools import publisher
-    offset = 0
-    while True:
-        try:
-            for up in publisher.get_updates(offset):
-                offset = up.get("update_id", offset) + 1
-                cb = up.get("callback_query")
-                if not cb:
-                    continue
-                data = cb.get("data", "")
-                cbid = cb.get("id", "")
-                if ":" not in data:
-                    publisher.answer_callback(cbid)
-                    continue
-                act, pid = data.split(":", 1)
-                with _TG_LOCK:
-                    pend = _TG_PENDING.get(pid)
-                if not pend:
-                    publisher.answer_callback(cbid, "Đã xử lý / hết hạn")
-                    continue
-                kind = pend.get("kind", "video")
-                if act == "post":
-                    if kind == "album":
-                        if _is_publish_user(pend["user"]):
-                            res = _do_publish_album(pend["dir"], pend["user"])
-                            ok = res.get("success")
-                            publisher.answer_callback(cbid, "Đã đăng TikTok" if ok else "Đăng lỗi")
-                            publisher.send_telegram(
-                                (f"✅ Đã đăng album TikTok — NV {pend['user']}" if ok
-                                 else f"⚠ Album đăng lỗi: {res.get('error','')} — NV {pend['user']}"))
-                        else:
-                            _set_album_status(pend["dir"], "posted")
-                            publisher.answer_callback(cbid, "Đã duyệt album")
-                            publisher.send_telegram(f"✅ Đã duyệt album <b>{pend.get('caption','')}</b> — NV {pend['user']}")
-                    elif _is_publish_user(pend["user"]):
-                        res = _do_publish(pend["video_url"], pend["caption"], pend["user"])
-                        ok = res.get("success")
-                        publisher.answer_callback(cbid, "Đã đăng TikTok" if ok else "Đăng lỗi")
-                        publisher.send_telegram(
-                            (f"✅ Đã đăng TikTok — NV {pend['user']}" if ok
-                             else f"⚠ Đăng lỗi: {res.get('error','')} — NV {pend['user']}"))
-                    else:
-                        _set_product_status(pend["video_url"], "posted")
-                        publisher.answer_callback(cbid, "Đã duyệt")
-                        publisher.send_telegram(f"✅ Đã duyệt video — NV {pend['user']}")
-                elif act == "cancel":
-                    if kind == "album":
-                        _set_album_status(pend["dir"], "cancelled")
-                    else:
-                        _set_product_status(pend["video_url"], "cancelled")
-                    publisher.answer_callback(cbid, "Đã hủy")
-                    publisher.send_telegram(f"✕ Đã hủy — NV {pend['user']}")
-                with _TG_LOCK:
-                    _TG_PENDING.pop(pid, None)
-        except Exception as e:
-            print(f"[tg] poller lỗi: {e}", file=sys.stderr)
-        _t.sleep(2)
-
-
-def _start_telegram_poller():
-    if os.getenv("telegram_token") or os.getenv("TELEGRAM_TOKEN"):
-        threading.Thread(target=_telegram_poller, daemon=True).start()
-        print("[Server] Telegram poller bật.", file=sys.stderr)
 
 
 # Album ảnh đã tạo — lưu lại như "Tất cả video" (mở lại / xoá / tạo lại).
@@ -2015,7 +1893,7 @@ class AssembleHandler(BaseHTTPRequestHandler):
                 return
 
             # Chạy NỀN: bài nhiều ảnh mất vài phút (mỗi ảnh ~30-45s) → vượt timeout nginx nếu đồng bộ.
-            # Trả lời ngay, xong tự lưu vào "Album đã lưu" + báo Telegram (logout vẫn chạy tiếp).
+            # Trả lời ngay, xong tự lưu vào "Album đã lưu" (logout vẫn chạy tiếp).
             def _work():
                 try:
                     from tools.ai_image_gen import recreate_all_from_tiktok
@@ -2037,7 +1915,6 @@ class AssembleHandler(BaseHTTPRequestHandler):
                     import time as _t
                     _append_album({"user": user, "album": "aiimg", "label": label, "dir": dir_rel,
                                    "images": images, "auto": False, "time": _t.time()})
-                    _notify_album(user, label, dir_rel, [str(out_dir / im["name"]) for im in images])
                     print(f"[Server] recreate-from-link ✓ {len(images)}/{res.get('source_count')} ảnh cho {user}",
                           file=sys.stderr)
                 except Exception as _e:
@@ -2750,10 +2627,9 @@ Vui lòng chạy server bằng Python của môi trường ảo (.venv):
 """, file=sys.stderr)
 
     # DISABLE_BACKGROUND_JOBS=1: chạy nhiều server song song — chỉ 1 server giữ
-    # automation (Telegram poll, daily, news); các server khác vẫn render/web đủ.
+    # automation (daily, news); các server khác vẫn render/web đủ.
     if os.getenv("DISABLE_BACKGROUND_JOBS", "").strip() in ("", "0", "false"):
         _start_news_scheduler()
-        _start_telegram_poller()
         _start_daily_scheduler()
     else:
         print("[Server] Background jobs TẮT (DISABLE_BACKGROUND_JOBS).", file=sys.stderr)
@@ -2812,7 +2688,7 @@ DAILY_N_SCRIPTS = 5
 
 def _daily_auto_job(only_users: list | None = None):
     """7h mỗi ngày: tạo trước 5 album ảnh + 5 kịch bản chờ cho mỗi nv (tin tức: kịch bản),
-    lưu vào 'Ảnh'/'Video' để người dùng vào chỉ việc thả clip. Báo admin qua Telegram."""
+    lưu vào 'Ảnh'/'Video' để người dùng vào chỉ việc thả clip."""
     from tools.script_drafts import add_draft
     users = _load_users()
     made_albums, made_scripts = [], []
@@ -2868,14 +2744,9 @@ def _daily_auto_job(only_users: list | None = None):
         if n_sc:
             made_scripts.append(f"{u.get('name', uid)} ×{n_sc}")
 
-    try:
-        from tools import publisher
-        lines = ["🗓 <b>Tự động hôm nay đã tạo:</b>"]
-        lines.append("🖼 Album: " + (", ".join(made_albums) if made_albums else "không có"))
-        lines.append("📝 Kịch bản chờ: " + (", ".join(made_scripts) if made_scripts else "không có"))
-        publisher.send_telegram("\n".join(lines))
-    except Exception as e:
-        print(f"[daily] telegram báo lỗi: {e}", file=sys.stderr)
+    print("[daily] Tự động hôm nay: album=" + (", ".join(made_albums) if made_albums else "không có")
+          + " | kịch bản chờ=" + (", ".join(made_scripts) if made_scripts else "không có"),
+          file=sys.stderr)
 
 
 def _daily_scheduler():

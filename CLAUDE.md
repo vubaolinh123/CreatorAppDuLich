@@ -24,7 +24,7 @@
     đổi `MODEL` sang `gemini-3-pro-image-preview` nếu cần chữ tiếng Việt chuẩn hơn, ~3.5k/ảnh);
     `tiktok_photos.py` — tải ảnh bài mẫu TikTok (tikwm → yt-dlp → APIFY).
   - `listreview_content.py` (`_TEMPLATES` per-nv), `script_import.py` (kịch bản từ text/link),
-    `publisher.py` (đăng TikTok Zernio + Telegram duyệt), `news_youtube.py` (cào tin APIFY),
+    `publisher.py` (đăng TikTok Zernio), `news_youtube.py` (cào tin APIFY),
     `storage_cleanup.py` (dọn output cũ → Drive), `drive_uploader.py`, `venues_db.py`.
 - `data/` — `users.json`, `venues.json` (thư viện quán), `user_keys.json` (key Zernio/Apify per-nv);
   records: `output/products.json` (video), `output/album_products.json` (album).
@@ -46,7 +46,7 @@
 ## .env & bí mật (KHÔNG commit)
 - `.env`, `credentials.json`, `token.json`, `client_secret.json`, `data/user_keys.json` — đã gitignore.
 - Key đang dùng: `OPENROUTER_KEY`, `OPENAI_API_KEY`, `GEMINI_KEY` (Gemini + Google TTS Chirp),
-  `VBEE_API_KEY`/`VBEE_APP_ID`, `APIFY_API_KEY`, `ZERNIO_KEY`, `telegram_token`, `GROUP_ID`,
+  `VBEE_API_KEY`/`VBEE_APP_ID`, `APIFY_API_KEY`, `ZERNIO_KEY`, `PUBLIC_BASE_URL`,
   `GOOGLE_DRIVE_FOLDER_ID`, `RENDER_WORKERS`.
 
 ## Quy ước

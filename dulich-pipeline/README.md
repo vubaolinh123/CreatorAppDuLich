@@ -20,7 +20,7 @@ Server: `server.py` (ThreadingHTTPServer, port 7788). UI: `web/index.html`.
 - **Video list review**: upload source → AI viết kịch bản → voice (Vbee clone / Edge free) → phụ đề khớp voice (Whisper đọc audio, tách câu theo nghĩa bằng AI) → render ffmpeg.
 - **Ảnh (10 mẫu album)**: mỗi nhân viên có mẫu riêng (le1/2, hien1/2, muoi1/2, vy1/2, uyen1/2). Nội dung + ảnh nền + title đều random từ thư viện địa điểm; title/hook do AI (OpenRouter DeepSeek) viết lại mỗi lần, có ô prompt gợi ý riêng.
 - **Thư viện địa điểm**: `data/venues.json` + ảnh `data/thumbs/` (path tương đối, chạy được cả Mac).
-- **Duyệt qua Telegram**: video/album gửi vào group kèm nút Duyệt/Hủy; nv1 duyệt là đăng TikTok qua Zernio.
+- **Duyệt bài**: admin duyệt video/album trong app; nv1 duyệt là đăng TikTok qua Zernio.
 - **Tin tức**: cào YouTube (APIFY) theo từ khóa/hashtag Đà Lạt, chỉ tin 24h, 3 mốc giờ/ngày.
 - **Admin**: KPI ngày (5 video + 5 ảnh/nv, tin tức 10), duyệt bài, trạng thái đã đăng/đăng lỗi/chưa đăng/hủy.
 
@@ -35,7 +35,6 @@ Copy `.env.example` → `.env` rồi điền key (hoặc nhập trong trang Cài
 | `VBEE_API_KEY` + `VBEE_APP_ID` | Giọng đọc clone tiếng Việt |
 | `APIFY_API_KEY` | Cào tin YouTube |
 | `ZERNIO_KEY` | Đăng TikTok |
-| `telegram_token` + `GROUP_ID` | Duyệt bài qua Telegram |
 | `PUBLIC_BASE_URL` | URL công khai (bắt buộc khi deploy để Zernio tải được video) |
 
 ## Tài khoản
