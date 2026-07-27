@@ -72,6 +72,7 @@ fi
 # Extract the target auth tools before checkout. This migrates legacy plaintext
 # accounts while the old data/users.json is still available.
 preflight_dir="$(mktemp -d /tmp/dulich-preflight.XXXXXX)"
+chmod 0755 "$preflight_dir"
 git show "$target_commit:dulich-pipeline/tools/auth_store.py" \
   > "$preflight_dir/auth_store.py"
 git show "$target_commit:dulich-pipeline/tools/migrate_auth.py" \
