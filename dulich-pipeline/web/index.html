@@ -273,7 +273,7 @@ window.fetch = async function(input, init={}){
 };
 const HOOK_NAMES = { hook_red:"Viền đỏ", hook_green:"Hộp xanh", hook_brown:"Hộp nâu", hook_serif:"Khung vuông", hook_meo:"Khung mèo", hook_news:"Tin tức" };
 const PAGE = 3;
-let currentScenes = [], scenePage = 0, jobs = [], rendering = false, prevTimer = null, hookOverlayUrl = "";
+let currentScenes = [], scenePage = 0, jobs = [], rendering = 0, prevTimer = null, hookOverlayUrl = "";
 let LR_ENGINE = "pil", LR_STYLE = "", LR_BADGE = "full", LR_TRANSITION = "none";
 let newsColor = "pink";
 
@@ -565,6 +565,7 @@ async function deleteAlbumImage(id){
 // ---------- shared clip meta ----------
 function loadClipMeta(file){return new Promise(res=>{const url=URL.createObjectURL(file),v=document.createElement("video");v.preload="metadata";v.muted=true;v.src=url;let done=false;const fin=(d,t)=>{if(done)return;done=true;URL.revokeObjectURL(url);res({dur:d,thumb:t});};v.onloadedmetadata=()=>{try{v.currentTime=Math.min(.15,(v.duration||1)/2);}catch{fin(v.duration||0,"");}};v.onseeked=()=>{let t="";try{const c=document.createElement("canvas");const ar=(v.videoWidth&&v.videoHeight)?v.videoWidth/v.videoHeight:9/16;c.width=120;c.height=Math.round(120/(ar||9/16));c.getContext("2d").drawImage(v,0,0,c.width,c.height);t=c.toDataURL("image/jpeg",.6);}catch{}fin(v.duration||0,t);};v.onerror=()=>fin(0,"");setTimeout(()=>fin(v.duration||0,""),4000);});}
 const UPLOAD_CHUNK_SIZE=8*1024*1024;
+const MAX_PARALLEL_UPLOADS=2;
 const JOB_ABORTERS=new Map();
 function localJobId(prefix){return prefix+"_"+(crypto.randomUUID?crypto.randomUUID():Date.now().toString(36)+"_"+Math.random().toString(36).slice(2));}
 function jobUploadFiles(job){
@@ -578,6 +579,16 @@ async function uploadState(job){
     const j=await (await fetch(API+"/uploads/"+job.uploadId,{cache:"no-store"})).json();
     return j.success?j.upload:null;
   }catch{return null;}
+}
+function renderJobPayload(job){
+  return job.mode==="listreview"
+    ? {topic:job.topic,spec:job.spec,hook_style:job.hookStyle,draft_id:job.draftId||"",
+       voice_mode:job.voiceMode,voice_id:job.voiceId||""}
+    : {topic:job.topic,script:job.script,scenes_meta:job.scenes.map(s=>({scene_id:s.scene_id,
+       description:s.description,min_duration_sec:s.min_duration_sec,type:s.type})),
+       voice_mode:job.voiceMode,voice_id:job.voiceId||"",hook_style:job.hookStyle,
+       hook_title:job.hookTitle,hook_subtitle:job.hookSub,hook_text:job.hookTitle,
+       transition:"fade",template_ratio:"9:16",video_type:"personal"};
 }
 async function sendChunkWithRetry(job,serverFile,file,offset,controller){
   let tries=0;
@@ -606,16 +617,25 @@ async function sendChunkWithRetry(job,serverFile,file,offset,controller){
 async function uploadAndQueue(job){
   const entries=jobUploadFiles(job);
   if(!entries.length)throw new Error("Job chưa có clip.");
+  const kind=job.mode==="listreview"?"listreview_video":"personal_video";
+  const payload=renderJobPayload(job);
+  job.requestId=job.requestId||job.id;
   job.uploadTotal=entries.reduce((sum,x)=>sum+x.file.size,0); job.uploadedBytes=0;
   const controller=new AbortController(); JOB_ABORTERS.set(job.id,controller);
   try{
     let state=await uploadState(job);
     if(!state){
       const init=await (await fetch(API+"/uploads/init",{method:"POST",headers:{"Content-Type":"application/json"},
-        body:JSON.stringify({kind:job.mode==="listreview"?"listreview_video":"personal_video",
+        body:JSON.stringify({kind,request_id:job.requestId,payload,
           files:entries.map(x=>({field:x.field,name:x.file.name,size:x.file.size,type:x.file.type||"application/octet-stream"}))})})).json();
       if(!init.success)throw new Error(init.error||"Không tạo được phiên upload");
-      job.uploadId=init.upload.id; state=init.upload;
+      job.uploadId=init.upload.id;job.serverJob=init.upload.job_id||job.serverJob||"";state=init.upload;
+    }
+    if(state.job_id)job.serverJob=state.job_id;
+    if(state.status==="consumed"||["queued","running","done"].includes(state.job_status)){
+      job.status=state.job_status==="done"?"done":"queued";
+      job.durableQueued=true;job.uploadPct=null;job.progress=60;
+      startJobPolling();renderLibrary();return;
     }
     const remoteFiles=state.files||[];
     if(remoteFiles.length!==entries.length)throw new Error("Danh sách file upload không khớp.");
@@ -630,18 +650,12 @@ async function uploadAndQueue(job){
       headers:{"Content-Type":"application/json"},body:"{}"})).json();
     if(!done.success)throw new Error(done.error||"Upload chưa hoàn tất");
     job.uploadPct=null;job.progress=58;renderLibrary();
-    const payload=job.mode==="listreview"
-      ? {topic:job.topic,spec:job.spec,hook_style:job.hookStyle,draft_id:job.draftId||"",
-         voice_mode:job.voiceMode,voice_id:job.voiceId||""}
-      : {topic:job.topic,script:job.script,scenes_meta:job.scenes.map(s=>({scene_id:s.scene_id,
-         description:s.description,min_duration_sec:s.min_duration_sec,type:s.type})),
-         voice_mode:job.voiceMode,voice_id:job.voiceId||"",hook_style:job.hookStyle,
-         hook_title:job.hookTitle,hook_subtitle:job.hookSub,hook_text:job.hookTitle,
-         transition:"fade",template_ratio:"9:16",video_type:"personal"};
-    const created=await (await fetch(API+"/jobs",{method:"POST",headers:{"Content-Type":"application/json"},
-      body:JSON.stringify({kind:job.mode==="listreview"?"listreview_video":"personal_video",upload_id:job.uploadId,payload})})).json();
+    let created=done;
+    // Fallback tương thích nếu HTML mới được phục vụ trong lúc server cũ chưa restart.
+    if(!created.job_id)created=await (await fetch(API+"/jobs",{method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({kind,upload_id:job.uploadId,payload})})).json();
     if(!created.success)throw new Error(created.error||"Không tạo được job");
-    job.status="queued";job.progress=60;job.serverJob=created.job_id;
+    job.status="queued";job.progress=60;job.serverJob=created.job_id;job.durableQueued=true;
     toast(`🎬 Đã vào hàng render nền (vị trí ${created.position||1}). Có thể logout.`);
     startJobPolling();
   }finally{JOB_ABORTERS.delete(job.id);}
@@ -657,7 +671,7 @@ async function cancelJob(id){
 }
 async function retryLocalJob(id){
   const job=jobs.find(x=>x.id===id);if(!job||job.status!=="error")return;
-  if(job.serverJob){
+  if(job.serverJob&&job.durableQueued){
     try{
       const response=await fetch(API+"/jobs/retry",{method:"POST",headers:{"Content-Type":"application/json"},
         body:JSON.stringify({job_id:job.serverJob})});
@@ -667,6 +681,17 @@ async function retryLocalJob(id){
       toast("Đã đưa job trở lại hàng đợi.");
     }catch(error){job.error=error.message||String(error);renderLibrary();}
     return;
+  }
+  if(job.uploadId){
+    const state=await uploadState(job);
+    if(state&&state.status==="consumed"){
+      job.serverJob=state.job_id||job.serverJob;job.durableQueued=true;
+      job.status="queued";job.error="";job.progress=60;renderLibrary();startJobPolling();
+      return;
+    }
+    if(!state||["cancelled","finished"].includes(state.status)){
+      job.uploadId="";job.serverJob="";job.requestId=localJobId("req");
+    }
   }
   job.status="pending";job.error="";job.progress=0;renderLibrary();renderAll();
 }
@@ -1081,21 +1106,19 @@ function createVideoLR(){
   setTimeout(()=>{ cr.classList.add("hidden"); resetEditor(); }, 2000);
 }
 
-async function renderAll(){
-  if(rendering)return; rendering=true;
-  let job;
-  while((job=jobs.find(j=>j.status==="pending"))){
-    job.status="uploading"; job.progress=5; renderLibrary();
-    try{
-      await uploadAndQueue(job);
-    }catch(e){
+function renderAll(){
+  while(rendering<MAX_PARALLEL_UPLOADS){
+    const job=jobs.find(j=>j.status==="pending");
+    if(!job)return;
+    job.status="uploading";job.progress=5;rendering++;renderLibrary();
+    uploadAndQueue(job).catch(e=>{
       job.uploadPct=null;
       if(e.name==="AbortError"){job.status="cancelled";job.error="Đã hủy";}
       else{job.status="error";job.error=e.message;}
-    }
-    renderLibrary();
+    }).finally(()=>{
+      rendering--;renderLibrary();renderAll();
+    });
   }
-  rendering=false;
 }
 
 // Poll trạng thái render nền (server queue) — cập nhật job local khi xong/lỗi.
@@ -1146,7 +1169,7 @@ function renderVideoPage(){
 let SERVER_RJOBS=[];
 async function fetchServerJobs(){
   try{ const j=await (await fetch(API+"/render-jobs",{cache:"no-store"})).json();
-    SERVER_RJOBS=(j.jobs||[]).filter(x=>(x.status==="queued"||x.status==="rendering")
+    SERVER_RJOBS=(j.jobs||[]).filter(x=>(x.status==="uploading"||x.status==="queued"||x.status==="rendering")
       &&(x.kind==="personal_video"||x.kind==="listreview_video"));
   }catch{ SERVER_RJOBS=[]; }
 }
@@ -1208,7 +1231,7 @@ function renderLibrary(){
   const fbox=document.getElementById("libFilter");
   if(fbox){
     if(SESSION.role==="admin"){
-      const makers=["",...Array.from(new Set(libVideos.filter(v=>!v.archived).map(v=>v.user).filter(Boolean)))];
+      const makers=["",...accountOrder()];
       fbox.innerHTML=`<div style="display:flex;gap:6px;flex-wrap:wrap">`+makers.map(m=>`<button class="${LIB_FILTER===m?'btn':'btn-ghost'} chip" onclick="setLibFilter('${m}')">${m?makerName(m):'Tất cả'}</button>`).join("")+`</div>`;
     } else fbox.innerHTML="";
   }
@@ -1216,7 +1239,9 @@ function renderLibrary(){
     // Job render nền trên server (kể cả sau khi logout/login lại)
     const localIds=new Set(jobs.map(j=>j.serverJob).filter(Boolean));
     SERVER_RJOBS.filter(sj=>!localIds.has(sj.job_id)).forEach(sj=>{
-      cards.push(`<div class="lib-card"><div class="lib-render"><div class="mid"><div class="spin"></div><div>${sj.status==="rendering"?"⏳ Đang render…":"🕓 Chờ render (hàng đợi)"}</div><div class="muted" style="color:#ddd;font-size:11px">${(sj.topic||"").replace(/</g,"&lt;")}</div></div><div class="lib-bar" style="width:${sj.status==="rendering"?70:30}%"></div></div><div class="cap"><span>${(sj.topic||"video").replace(/</g,"&lt;")}${SESSION.role==="admin"&&sj.user?" · "+makerName(sj.user):""}</span></div></div>`);
+      const label=sj.status==="rendering"?"⏳ Đang render…":sj.status==="uploading"?"📤 Đang chờ thiết bị tải file lên":"🕓 Chờ render (hàng đợi)";
+      const pct=sj.status==="rendering"?70:sj.status==="uploading"?10:30;
+      cards.push(`<div class="lib-card"><div class="lib-render"><div class="mid"><div class="spin"></div><div>${label}</div><div class="muted" style="color:#ddd;font-size:11px">${(sj.topic||"").replace(/</g,"&lt;")}</div></div><div class="lib-bar" style="width:${pct}%"></div></div><div class="cap"><span>${(sj.topic||"video").replace(/</g,"&lt;")}${SESSION.role==="admin"&&sj.user?" · "+makerName(sj.user):""}</span></div></div>`);
     });
     jobs.filter(j=>j.status!=="done").forEach(j=>{
       const failed=j.status==="error",cancelled=j.status==="cancelled";
@@ -1331,7 +1356,7 @@ function renderReview(){
   // Bộ lọc: theo nhân viên/tin tức + theo loại video/ảnh — admin duyệt từng mục cho dễ
   const fb=document.getElementById("revFilters");
   if(fb){
-    const users=["",...Array.from(new Set(REVIEW_ITEMS.map(x=>x.user).filter(Boolean)))];
+    const users=["",...accountOrder()];
     fb.innerHTML=
       `<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:6px">`+
       [["today","📅 Hôm nay"],["7d","🗓 7 ngày"],["all","📦 Tất cả"]].map(([k,l])=>`<button class="${REV_RANGE===k?'btn':'btn-ghost'} chip" onclick="setRevRange('${k}')">${l}</button>`).join("")+`</div>`+
@@ -1427,7 +1452,18 @@ async function reconcilePublish(kind,key,btn){
 
 // ---------- TẠO ẢNH (per-nv: mẫu album theo tài khoản + album đã lưu) ----------
 let SAVED_ALBUMS=[], ALB_FILTER="";
-function makerName(u){ return ({nv1:"Lê",nv2:"Uyên",nv3:"Hiền",nv4:"Vy",nv5:"Muối",tintuc:"Tin tức",admin:"Quản lý"})[u]||u||""; }
+const FALLBACK_ROSTER=[
+  {username:"nv1",name:"Lê"},{username:"nv2",name:"Uyên"},
+  {username:"nv3",name:"Hiền"},{username:"nv4",name:"Vy"},
+  {username:"nv5",name:"Muối"},{username:"tintuc",name:"Tin tức"}
+];
+function accountRoster(){return SESSION&&Array.isArray(SESSION.roster)&&SESSION.roster.length?SESSION.roster:FALLBACK_ROSTER;}
+function accountOrder(){return accountRoster().map(x=>x.username);}
+function makerName(u){
+  if(u==="admin")return "Quản lý";
+  const found=accountRoster().find(x=>x.username===u);
+  return found?found.name:(u||"");
+}
 // Bỏ prefix "Tên · " trong label album (vì card đã ghép " - {maker}" phía sau) → "Muối · Album 1" hiện "Album 1".
 function albTitle(s){ s=(s||"").trim(); const m=s.replace(/^[^·]+·\s*/,"").trim(); return m||s; }
 function renderImageGen(){
@@ -1472,7 +1508,7 @@ function renderSavedAlbums(){
   const box=document.getElementById("albSaved"); if(!box)return; box.classList.remove("muted");
   let chips="", list=SAVED_ALBUMS;
   if(SESSION.role==="admin"){
-    const makers=["",...Array.from(new Set(SAVED_ALBUMS.map(a=>a.user).filter(Boolean)))];
+    const makers=["",...accountOrder()];
     chips=`<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px">`+makers.map(m=>`<button class="${ALB_FILTER===m?'btn':'btn-ghost'} chip" onclick="setAlbFilter('${m}')">${m?makerName(m):'Tất cả'}</button>`).join("")+`</div>`;
     if(ALB_FILTER) list=list.filter(a=>a.user===ALB_FILTER);
   }

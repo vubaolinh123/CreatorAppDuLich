@@ -339,10 +339,11 @@ def _env_int(name: str, default: int, minimum: int = 1) -> int:
         return max(minimum, default)
 
 
-MAX_ACTIVE_JOBS_PER_USER = _env_int("MAX_ACTIVE_JOBS_PER_USER", 2)
+MAX_ACTIVE_JOBS_PER_USER = _env_int("MAX_ACTIVE_JOBS_PER_USER", 4)
+MAX_GLOBAL_ACTIVE_JOBS = _env_int("MAX_GLOBAL_ACTIVE_JOBS", 20)
 MAX_UPLOAD_FILE_BYTES = _env_int("MAX_UPLOAD_FILE_MB", 500) * 1024 * 1024
 MAX_UPLOAD_JOB_BYTES = _env_int("MAX_UPLOAD_JOB_MB", 1536) * 1024 * 1024
-MAX_UPLOAD_SESSIONS_PER_USER = _env_int("MAX_UPLOAD_SESSIONS_PER_USER", 2)
+MAX_UPLOAD_SESSIONS_PER_USER = _env_int("MAX_UPLOAD_SESSIONS_PER_USER", 4)
 MAX_UPLOAD_CHUNK_BYTES = _env_int("MAX_UPLOAD_CHUNK_MB", 16) * 1024 * 1024
 UPLOAD_DISK_RESERVE_BYTES = _env_int("UPLOAD_DISK_RESERVE_MB", 2048) * 1024 * 1024
 MAX_LEGACY_MULTIPART_BYTES = _env_int("MAX_LEGACY_MULTIPART_MB", 64) * 1024 * 1024
@@ -1081,6 +1082,68 @@ BACKUP_STATUS_FILE = Path(
 _AUDIT_LOCK = threading.Lock()
 _TEMP_MEDIA: dict[str, dict] = {}
 _TEMP_MEDIA_LOCK = threading.Lock()
+
+# Stable account identity used by auth responses, render authorization and every
+# admin filter.  Do not derive this order from recent content: an employee with
+# zero videos (for example nv4/Vy) must remain visible.
+CANONICAL_ROSTER = (
+    ("nv1", "Lê", "staff", "hook_red"),
+    ("nv2", "Uyên", "staff", "hook_green"),
+    ("nv3", "Hiền", "staff", "hook_brown"),
+    ("nv4", "Vy", "staff", "hook_serif"),
+    ("nv5", "Muối", "staff", "hook_meo"),
+    ("tintuc", "Tin tức", "news", "hook_news"),
+)
+CANONICAL_ACCOUNT_PROFILES = {
+    username: {"username": username, "name": name, "role": role, "hook_style": hook}
+    for username, name, role, hook in CANONICAL_ROSTER
+}
+NEWS_HOOK_STYLES = {"hook_news_green", "hook_news_purple", "hook_news_pink"}
+
+
+def _canonical_profile(profile: dict | None) -> dict:
+    """Overlay stable public identity fields without exposing auth internals."""
+    result = dict(profile or {})
+    username = str(result.get("username") or "")
+    canonical = CANONICAL_ACCOUNT_PROFILES.get(username)
+    if canonical:
+        result.update(canonical)
+    return result
+
+
+def _public_roster() -> list[dict]:
+    users = _load_users()
+    roster = []
+    for username, name, role, hook_style in CANONICAL_ROSTER:
+        if username not in users:
+            continue
+        roster.append(
+            {
+                "username": username,
+                "name": name,
+                "role": role,
+                "hook_style": hook_style,
+            }
+        )
+    return roster
+
+
+def _authoritative_render_payload(owner: str, role: str, kind: str, payload: dict) -> dict:
+    """Bind every render to the authenticated account's canonical hook."""
+    result = dict(payload or {})
+    result.pop("user", None)
+    result.pop("owner", None)
+    result["owner"] = owner
+    if role == "staff":
+        result["hook_style"] = CANONICAL_ACCOUNT_PROFILES.get(owner, {}).get(
+            "hook_style", "hook_red"
+        )
+    elif role == "news":
+        requested = str(result.get("hook_style") or "")
+        result["hook_style"] = (
+            requested if requested in NEWS_HOOK_STYLES else "hook_news_pink"
+        )
+    return result
 
 
 def _audit(actor: str, action: str, target: str = "", **details) -> None:
@@ -2641,16 +2704,62 @@ class AssembleHandler(BaseHTTPRequestHandler):
     def handle_upload_init(self):
         try:
             body = self._read_json_body()
+            kind = str(body.get("kind") or "")
+            payload = body.get("payload")
+            request_id = str(body.get("request_id") or "").strip()
+            reserves_job = payload is not None or bool(request_id)
+            if reserves_job and (not isinstance(payload, dict) or not request_id):
+                self._json_response(
+                    {
+                        "success": False,
+                        "error": "Thiếu payload hoặc mã yêu cầu để giữ chỗ hàng đợi.",
+                    },
+                    400,
+                )
+                return
+            if reserves_job:
+                if self.auth_role == "staff" and kind != "listreview_video":
+                    self._json_response(
+                        {
+                            "success": False,
+                            "error": "Nhân viên chỉ dùng luồng list-review.",
+                        },
+                        403,
+                    )
+                    return
+                if self.auth_role == "news" and kind != "personal_video":
+                    self._json_response(
+                        {
+                            "success": False,
+                            "error": "Tài khoản tin tức chỉ dùng video thường.",
+                        },
+                        403,
+                    )
+                    return
+                payload = _authoritative_render_payload(
+                    self.auth_user, self.auth_role, kind, payload
+                )
             session = PIPELINE_STORE.create_upload_session(
                 owner=self.auth_user,
-                kind=str(body.get("kind") or ""),
+                kind=kind,
                 files=body.get("files") if isinstance(body.get("files"), list) else [],
                 max_file_bytes=MAX_UPLOAD_FILE_BYTES,
                 max_job_bytes=MAX_UPLOAD_JOB_BYTES,
                 max_active_sessions=MAX_UPLOAD_SESSIONS_PER_USER,
                 reserve_free_bytes=UPLOAD_DISK_RESERVE_BYTES,
+                payload=payload if reserves_job else None,
+                idempotency_key=(
+                    f"render-upload:{self.auth_user}:{request_id}"
+                    if reserves_job
+                    else ""
+                ),
+                active_job_limit=MAX_ACTIVE_JOBS_PER_USER,
+                global_active_job_limit=MAX_GLOBAL_ACTIVE_JOBS,
+                max_attempts=2,
             )
             self._json_response({"success": True, "upload": session}, 201)
+        except QueueLimitError as exc:
+            self._json_response({"success": False, "error": str(exc)}, 429)
         except UploadValidationError as exc:
             status = 507 if "dung lượng trống" in str(exc) else 400
             self._json_response({"success": False, "error": str(exc)}, status)
@@ -2694,6 +2803,22 @@ class AssembleHandler(BaseHTTPRequestHandler):
             except UploadValidationError:
                 PIPELINE_STORE.cancel_upload(parts[1], self.auth_user)
                 raise
+            job = PIPELINE_STORE.queue_reserved_upload(parts[1], self.auth_user)
+            if job:
+                result["status"] = "consumed"
+                result["job_id"] = job["id"]
+                result["job_status"] = job["status"]
+                self._json_response(
+                    {
+                        "success": True,
+                        "queued": True,
+                        "job_id": job["id"],
+                        "position": PIPELINE_STORE.queue_position(job["id"]),
+                        "upload": result,
+                        "job": _job_client_view(job),
+                    }
+                )
+                return
             self._json_response({"success": True, "upload": result})
         except UploadValidationError as exc:
             message = str(exc)
@@ -2726,6 +2851,9 @@ class AssembleHandler(BaseHTTPRequestHandler):
             }
             for item in result.get("files") or []
         ]
+        if result.get("job_id"):
+            job = PIPELINE_STORE.get_job(str(result["job_id"]))
+            result["job_status"] = str((job or {}).get("status") or "")
         self._json_response({"success": True, "upload": result})
 
     def handle_upload_cancel(self):
@@ -2755,6 +2883,9 @@ class AssembleHandler(BaseHTTPRequestHandler):
             if self.auth_role == "news" and kind != "personal_video":
                 self._json_response({"success": False, "error": "Tài khoản tin tức chỉ dùng video thường."}, 403)
                 return
+            payload = _authoritative_render_payload(
+                self.auth_user, self.auth_role, kind, payload
+            )
             job, created = PIPELINE_STORE.create_job_from_upload(
                 session_id=upload_id,
                 owner=self.auth_user,
@@ -2943,6 +3074,7 @@ class AssembleHandler(BaseHTTPRequestHandler):
                 )
                 return
             token, csrf, profile = AUTH_STORE.create_session(acc["username"])
+            public_profile = _canonical_profile(profile)
             max_age = AUTH_STORE.absolute_ttl
             cookie_headers = [
                 f"dulich_session={token}; Max-Age={max_age}; "
@@ -2950,10 +3082,11 @@ class AssembleHandler(BaseHTTPRequestHandler):
                 f"dulich_csrf={csrf}; Max-Age={max_age}; "
                 f"{self._cookie_flags(http_only=False)}",
             ]
-            _audit(profile["username"], "login")
+            _audit(public_profile["username"], "login")
             self._json_response({
                 "ok": True,
-                **profile,
+                **public_profile,
+                "roster": _public_roster(),
                 "csrf_token": csrf,
             }, headers={"Set-Cookie": cookie_headers})
         except Exception as e:
@@ -2966,7 +3099,8 @@ class AssembleHandler(BaseHTTPRequestHandler):
             return
         self._json_response({
             "ok": True,
-            **self.auth_session["profile"],
+            **_canonical_profile(self.auth_session["profile"]),
+            "roster": _public_roster(),
             "csrf_token": csrf,
             "expires_at": self.auth_session["expires_at"],
         })

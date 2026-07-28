@@ -15,10 +15,27 @@ def test_mobile_controls_have_touch_targets_and_file_picker():
 
 def test_frontend_uses_resumable_upload_and_server_zip():
     assert 'API+"/uploads/init"' in HTML
+    assert "request_id:job.requestId" in HTML
     assert '"X-Upload-Offset"' in HTML
     assert "AbortController" in HTML
+    assert "MAX_PARALLEL_UPLOADS=2" in HTML
     assert "/album-zip/" in HTML
     assert 'API+"/jobs/retry"' in HTML
+
+
+def test_admin_filters_use_complete_canonical_roster():
+    expected = [
+        '{username:"nv1",name:"Lê"}',
+        '{username:"nv2",name:"Uyên"}',
+        '{username:"nv3",name:"Hiền"}',
+        '{username:"nv4",name:"Vy"}',
+        '{username:"nv5",name:"Muối"}',
+        '{username:"tintuc",name:"Tin tức"}',
+    ]
+    for item in expected:
+        assert item in HTML
+    assert 'const makers=["",...accountOrder()]' in HTML
+    assert 'const users=["",...accountOrder()]' in HTML
 
 
 def test_frontend_exposes_four_vivibe_voices():

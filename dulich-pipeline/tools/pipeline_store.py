@@ -21,9 +21,10 @@ from typing import BinaryIO, Iterable
 
 
 TERMINAL_JOB_STATES = {"done", "failed", "cancelled", "unknown"}
-ACTIVE_JOB_STATES = {"queued", "running"}
+ACTIVE_JOB_STATES = {"uploading", "queued", "running"}
 ALLOWED_VIDEO_EXTENSIONS = {".mp4", ".mov", ".m4v", ".webm"}
 SAFE_FIELD_RE = re.compile(r"^[A-Za-z0-9_-]{1,80}$")
+IDEMPOTENCY_RE = re.compile(r"^[A-Za-z0-9:_-]{8,200}$")
 
 
 class PipelineStoreError(RuntimeError):
@@ -259,7 +260,7 @@ class PipelineStore:
                     count = conn.execute(
                         """
                         SELECT COUNT(*) AS n FROM jobs
-                        WHERE owner=? AND status IN ('queued','running')
+                        WHERE owner=? AND status IN ('uploading','queued','running')
                         """,
                         (owner,),
                     ).fetchone()["n"]
@@ -507,7 +508,7 @@ class PipelineStore:
                     conn.commit()
                     return None
                 now = _now()
-                if row["status"] == "queued":
+                if row["status"] in ("uploading", "queued"):
                     conn.execute(
                         """
                         UPDATE jobs SET status='cancelled', cancel_requested=1,
@@ -552,7 +553,7 @@ class PipelineStore:
                     active = conn.execute(
                         """
                         SELECT COUNT(*) AS n FROM jobs
-                        WHERE owner=? AND id<>? AND status IN ('queued','running')
+                        WHERE owner=? AND id<>? AND status IN ('uploading','queued','running')
                         """,
                         (row["owner"], job_id),
                     ).fetchone()["n"]
@@ -726,6 +727,11 @@ class PipelineStore:
         max_job_bytes: int,
         max_active_sessions: int,
         reserve_free_bytes: int,
+        payload: dict | None = None,
+        idempotency_key: str = "",
+        active_job_limit: int | None = None,
+        global_active_job_limit: int | None = None,
+        max_attempts: int = 2,
     ) -> dict:
         if kind not in {"personal_video", "listreview_video"}:
             raise UploadValidationError("Loại upload không hợp lệ.")
@@ -777,12 +783,55 @@ class PipelineStore:
         if free - total < int(reserve_free_bytes):
             raise UploadValidationError("Server không đủ dung lượng trống cho upload này.")
 
+        idem = str(idempotency_key or "").strip()
+        reserves_job = payload is not None or bool(idem)
+        if reserves_job and (not idem or not IDEMPOTENCY_RE.fullmatch(idem)):
+            raise UploadValidationError("Mã yêu cầu upload không hợp lệ.")
+
         session_id = uuid.uuid4().hex
+        job_id = uuid.uuid4().hex if reserves_job else ""
         now = _now()
         directory = self._upload_dir(session_id)
         with self._connect() as conn:
             conn.execute("BEGIN IMMEDIATE")
             try:
+                if idem:
+                    existing_job = conn.execute(
+                        "SELECT * FROM jobs WHERE idempotency_key=?", (idem,)
+                    ).fetchone()
+                    if existing_job:
+                        existing_session = conn.execute(
+                            "SELECT * FROM upload_sessions WHERE job_id=?",
+                            (existing_job["id"],),
+                        ).fetchone()
+                        if not existing_session:
+                            raise UploadValidationError(
+                                "Job upload cũ không còn phiên file tương ứng."
+                            )
+                        existing_files = conn.execute(
+                            "SELECT * FROM upload_files WHERE session_id=? ORDER BY ordinal",
+                            (existing_session["id"],),
+                        ).fetchall()
+                        conn.commit()
+                        return {
+                            "id": existing_session["id"],
+                            "kind": existing_session["kind"],
+                            "status": existing_session["status"],
+                            "total_size": int(existing_session["total_size"]),
+                            "job_id": existing_job["id"],
+                            "job_status": existing_job["status"],
+                            "created": False,
+                            "files": [
+                                {
+                                    "id": row["id"],
+                                    "field": row["field_name"],
+                                    "name": row["original_name"],
+                                    "size": int(row["expected_size"]),
+                                    "received": int(row["received_size"]),
+                                }
+                                for row in existing_files
+                            ],
+                        }
                 active = conn.execute(
                     """
                     SELECT COUNT(*) AS n FROM upload_sessions
@@ -791,17 +840,42 @@ class PipelineStore:
                     (owner,),
                 ).fetchone()["n"]
                 if int(active) >= int(max_active_sessions):
-                    raise UploadValidationError(
+                    error_type = QueueLimitError if reserves_job else UploadValidationError
+                    raise error_type(
                         f"Tài khoản đang có {active} phiên upload; "
                         f"giới hạn là {max_active_sessions}."
                     )
+                if reserves_job and active_job_limit is not None:
+                    active_jobs = conn.execute(
+                        """
+                        SELECT COUNT(*) AS n FROM jobs
+                        WHERE owner=? AND status IN ('uploading','queued','running')
+                        """,
+                        (owner,),
+                    ).fetchone()["n"]
+                    if int(active_jobs) >= int(active_job_limit):
+                        raise QueueLimitError(
+                            f"Tài khoản đang có {active_jobs} job hoạt động; "
+                            f"giới hạn là {active_job_limit}."
+                        )
+                if reserves_job and global_active_job_limit is not None:
+                    global_active = conn.execute(
+                        """
+                        SELECT COUNT(*) AS n FROM jobs
+                        WHERE status IN ('uploading','queued','running')
+                        """
+                    ).fetchone()["n"]
+                    if int(global_active) >= int(global_active_job_limit):
+                        raise QueueLimitError(
+                            "Hàng đợi toàn hệ thống đang đầy; vui lòng thử lại sau."
+                        )
                 conn.execute(
                     """
                     INSERT INTO upload_sessions(
-                        id, owner, kind, status, total_size, created_at, updated_at
-                    ) VALUES(?, ?, ?, 'uploading', ?, ?, ?)
+                        id, owner, kind, status, total_size, job_id, created_at, updated_at
+                    ) VALUES(?, ?, ?, 'uploading', ?, ?, ?, ?)
                     """,
-                    (session_id, owner, kind, total, now, now),
+                    (session_id, owner, kind, total, job_id or None, now, now),
                 )
                 response_files = []
                 for item in normalized:
@@ -837,6 +911,28 @@ class PipelineStore:
                             "received": 0,
                         }
                     )
+                if reserves_job:
+                    job_payload = dict(payload or {})
+                    job_payload["upload_session_id"] = session_id
+                    conn.execute(
+                        """
+                        INSERT INTO jobs(
+                            id, kind, owner, status, payload_json, result_json,
+                            error, progress, priority, attempts, max_attempts,
+                            created_at, updated_at, idempotency_key
+                        ) VALUES(?, ?, ?, 'uploading', ?, '{}', '', 0, 0, 0, ?, ?, ?, ?)
+                        """,
+                        (
+                            job_id,
+                            kind,
+                            owner,
+                            _json_dump(job_payload),
+                            max(1, int(max_attempts)),
+                            now,
+                            now,
+                            idem,
+                        ),
+                    )
                 directory.mkdir(parents=True, exist_ok=False)
                 conn.commit()
                 return {
@@ -844,6 +940,9 @@ class PipelineStore:
                     "kind": kind,
                     "status": "uploading",
                     "total_size": total,
+                    "job_id": job_id,
+                    "job_status": "uploading" if job_id else "",
+                    "created": True,
                     "files": response_files,
                 }
             except Exception:
@@ -1019,6 +1118,93 @@ class PipelineStore:
                 conn.rollback()
                 raise
 
+    def queue_reserved_upload(self, session_id: str, owner: str) -> dict | None:
+        """Attach validated files and atomically promote a reserved upload job."""
+        with self._connect() as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            try:
+                session = conn.execute(
+                    "SELECT * FROM upload_sessions WHERE id=?", (session_id,)
+                ).fetchone()
+                if not session or session["owner"] != owner:
+                    raise UploadValidationError("Không tìm thấy phiên upload.")
+                if not session["job_id"]:
+                    conn.commit()
+                    return None
+                job = conn.execute(
+                    "SELECT * FROM jobs WHERE id=?", (session["job_id"],)
+                ).fetchone()
+                if not job:
+                    raise UploadValidationError("Không tìm thấy job đã giữ chỗ.")
+                if session["status"] == "consumed":
+                    conn.commit()
+                    return self._job_dict(job)
+                if session["status"] != "ready":
+                    raise UploadValidationError("Upload chưa sẵn sàng để vào hàng đợi.")
+                if job["status"] != "uploading":
+                    raise UploadValidationError(
+                        "Job upload không còn ở trạng thái có thể xếp hàng."
+                    )
+                files = conn.execute(
+                    "SELECT * FROM upload_files WHERE session_id=? ORDER BY ordinal",
+                    (session_id,),
+                ).fetchall()
+                if not files or any(
+                    int(row["received_size"]) != int(row["expected_size"])
+                    for row in files
+                ):
+                    raise UploadValidationError("Upload chưa đủ dữ liệu.")
+                upload_files = []
+                for row in files:
+                    item = dict(row)
+                    resolved = (self.upload_root / item["relative_path"]).resolve()
+                    if resolved.parent != self._upload_dir(session_id):
+                        raise UploadValidationError("Đường dẫn upload không hợp lệ.")
+                    if not resolved.is_file() or resolved.stat().st_size != int(
+                        item["expected_size"]
+                    ):
+                        raise UploadValidationError(
+                            "File upload không còn đầy đủ trên server."
+                        )
+                    upload_files.append(
+                        {
+                            "id": item["id"],
+                            "field": item["field_name"],
+                            "name": item["original_name"],
+                            "content_type": item["content_type"],
+                            "size": item["expected_size"],
+                            "path": str(resolved),
+                        }
+                    )
+                payload = _json_load(job["payload_json"], {})
+                payload["upload_session_id"] = session_id
+                payload["upload_files"] = upload_files
+                now = _now()
+                conn.execute(
+                    """
+                    UPDATE jobs
+                    SET status='queued', payload_json=?, error='', progress=0,
+                        updated_at=?
+                    WHERE id=? AND status='uploading'
+                    """,
+                    (_json_dump(payload), now, job["id"]),
+                )
+                conn.execute(
+                    """
+                    UPDATE upload_sessions
+                    SET status='consumed', updated_at=? WHERE id=?
+                    """,
+                    (now, session_id),
+                )
+                queued = conn.execute(
+                    "SELECT * FROM jobs WHERE id=?", (job["id"],)
+                ).fetchone()
+                conn.commit()
+                return self._job_dict(queued)
+            except Exception:
+                conn.rollback()
+                raise
+
     def consume_upload(self, session_id: str, owner: str, job_id: str) -> dict:
         with self._connect() as conn:
             conn.execute("BEGIN IMMEDIATE")
@@ -1104,7 +1290,7 @@ class PipelineStore:
                 active = conn.execute(
                     """
                     SELECT COUNT(*) AS n FROM jobs
-                    WHERE owner=? AND status IN ('queued','running')
+                    WHERE owner=? AND status IN ('uploading','queued','running')
                     """,
                     (owner,),
                 ).fetchone()["n"]
@@ -1184,13 +1370,25 @@ class PipelineStore:
                 if row["status"] == "consumed":
                     conn.commit()
                     return False
+                now = _now()
                 conn.execute(
                     """
                     UPDATE upload_sessions
                     SET status='cancelled', updated_at=? WHERE id=?
                     """,
-                    (_now(), session_id),
+                    (now, session_id),
                 )
+                if row["job_id"]:
+                    conn.execute(
+                        """
+                        UPDATE jobs
+                        SET status='cancelled', cancel_requested=1,
+                            error='Đã hủy khi đang upload.',
+                            finished_at=?, updated_at=?
+                        WHERE id=? AND status='uploading'
+                        """,
+                        (now, now, row["job_id"]),
+                    )
                 conn.commit()
             except Exception:
                 conn.rollback()
@@ -1200,11 +1398,11 @@ class PipelineStore:
 
     def cleanup_uploads(self, max_age_seconds: int = 24 * 3600) -> int:
         cutoff = _now() - max(3600, int(max_age_seconds))
-        removable: list[str] = []
+        removable: list[tuple[str, str]] = []
         with self._connect() as conn:
             rows = conn.execute(
                 """
-                SELECT s.id
+                SELECT s.id, COALESCE(s.job_id, '') AS job_id
                 FROM upload_sessions AS s
                 LEFT JOIN jobs AS j ON j.id=s.job_id
                 WHERE (
@@ -1218,15 +1416,32 @@ class PipelineStore:
                 """,
                 (cutoff, cutoff),
             ).fetchall()
-            removable = [str(row["id"]) for row in rows]
+            removable = [
+                (str(row["id"]), str(row["job_id"] or "")) for row in rows
+            ]
             if removable:
                 conn.execute("BEGIN IMMEDIATE")
+                now = _now()
+                conn.executemany(
+                    """
+                    UPDATE jobs
+                    SET status='failed',
+                        error='Upload hết hạn trước khi vào hàng đợi; vui lòng chọn lại file.',
+                        finished_at=?, updated_at=?
+                    WHERE id=? AND status='uploading'
+                    """,
+                    [
+                        (now, now, job_id)
+                        for _, job_id in removable
+                        if job_id
+                    ],
+                )
                 conn.executemany(
                     "DELETE FROM upload_sessions WHERE id=?",
-                    [(item,) for item in removable],
+                    [(session_id,) for session_id, _ in removable],
                 )
                 conn.commit()
-        for session_id in removable:
+        for session_id, _ in removable:
             shutil.rmtree(self._upload_dir(session_id), ignore_errors=True)
         return len(removable)
 

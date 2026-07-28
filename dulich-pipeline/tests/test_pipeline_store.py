@@ -173,6 +173,95 @@ def test_chunk_upload_writes_exact_offsets_without_buffering_whole_job(store):
         store.complete_upload(session["id"], "nv1")
 
 
+def test_four_upload_jobs_are_reserved_idempotently_and_queue_after_complete(store):
+    sessions = []
+    for index in range(4):
+        session = store.create_upload_session(
+            owner="nv1",
+            kind="listreview_video",
+            files=[
+                {
+                    "field": f"intro__{index}",
+                    "name": f"clip-{index}.mp4",
+                    "type": "video/mp4",
+                    "size": 4,
+                }
+            ],
+            max_file_bytes=100,
+            max_job_bytes=100,
+            max_active_sessions=4,
+            reserve_free_bytes=0,
+            payload={"topic": f"Video {index}", "hook_style": "hook_red"},
+            idempotency_key=f"render-upload:nv1:req-{index:04d}",
+            active_job_limit=4,
+            global_active_job_limit=20,
+        )
+        assert session["job_status"] == "uploading"
+        sessions.append(session)
+
+    duplicate = store.create_upload_session(
+        owner="nv1",
+        kind="listreview_video",
+        files=[
+            {
+                "field": "intro__0",
+                "name": "clip-0.mp4",
+                "type": "video/mp4",
+                "size": 4,
+            }
+        ],
+        max_file_bytes=100,
+        max_job_bytes=100,
+        max_active_sessions=4,
+        reserve_free_bytes=0,
+        payload={"topic": "Không được ghi đè"},
+        idempotency_key="render-upload:nv1:req-0000",
+        active_job_limit=4,
+        global_active_job_limit=20,
+    )
+    assert duplicate["created"] is False
+    assert duplicate["id"] == sessions[0]["id"]
+    assert duplicate["job_id"] == sessions[0]["job_id"]
+
+    with pytest.raises(QueueLimitError):
+        store.create_upload_session(
+            owner="nv1",
+            kind="listreview_video",
+            files=[
+                {
+                    "field": "intro__5",
+                    "name": "clip-5.mp4",
+                    "type": "video/mp4",
+                    "size": 4,
+                }
+            ],
+            max_file_bytes=100,
+            max_job_bytes=100,
+            max_active_sessions=4,
+            reserve_free_bytes=0,
+            payload={"topic": "Video 5"},
+            idempotency_key="render-upload:nv1:req-0005",
+            active_job_limit=4,
+            global_active_job_limit=20,
+        )
+
+    first = sessions[0]
+    store.append_upload_chunk(
+        session_id=first["id"],
+        file_id=first["files"][0]["id"],
+        owner="nv1",
+        offset=0,
+        length=4,
+        source=io.BytesIO(b"1234"),
+        max_chunk_bytes=8,
+    )
+    assert store.complete_upload(first["id"], "nv1")["status"] == "ready"
+    queued = store.queue_reserved_upload(first["id"], "nv1")
+    assert queued["id"] == first["job_id"]
+    assert queued["status"] == "queued"
+    assert queued["payload"]["upload_files"][0]["field"] == "intro__0"
+
+
 def test_resource_writes_are_transactional_under_threads(store):
     def insert(index):
         return store.insert_resource(

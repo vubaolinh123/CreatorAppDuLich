@@ -46,7 +46,8 @@ Copy `.env.example` → `.env` rồi điền key (hoặc nhập trong trang Cài
 | `APIFY_API_KEY` | Cào tin YouTube |
 | `ZERNIO_KEY` | Đăng TikTok |
 | `PUBLIC_BASE_URL` | URL công khai (bắt buộc khi deploy để Zernio tải được video) |
-| `MAX_ACTIVE_JOBS_PER_USER` | Số job nặng tối đa mỗi tài khoản (mặc định 2) |
+| `MAX_ACTIVE_JOBS_PER_USER` | Số job giữ chỗ/upload/chờ/chạy tối đa mỗi tài khoản (mặc định 4) |
+| `MAX_GLOBAL_ACTIVE_JOBS` | Tổng job video đang hoạt động toàn hệ thống (mặc định 20) |
 | `MAX_UPLOAD_JOB_MB` | Tổng dung lượng một phiên upload (mặc định 1536 MB) |
 | `HEAVY_JOB_WORKERS` | Số worker render/ảnh; production mặc định 1 |
 | `NETWORK_JOB_WORKERS` | Số worker publish; production mặc định 2 |

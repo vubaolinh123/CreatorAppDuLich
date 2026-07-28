@@ -324,12 +324,28 @@ def test_publish_reconcile_is_admin_only_and_requires_provider_id(secured_server
 def test_streaming_upload_creates_server_owned_durable_job(secured_server):
     port = secured_server
     nv1 = login(port, "nv1", "pw1")
+    status, _, session = request(port, "GET", "/session", headers=nv1)
+    assert status == 200
+    assert session["username"] == "nv1"
+    assert session["name"] == "Lê"
+    assert session["hook_style"] == "hook_red"
+    assert [item["username"] for item in session["roster"]] == ["nv1", "nv2"]
     status, _, data = request(
         port,
         "POST",
         "/uploads/init",
         body={
             "kind": "listreview_video",
+            "request_id": "test-render-request-1",
+            "payload": {
+                "topic": "Test",
+                "hook_style": "hook_meo",
+                "spec": {
+                    "intro": {"scene_id": "intro", "vo": "hello"},
+                    "spots": [],
+                    "outro": {"scene_id": "outro", "vo": ""},
+                },
+            },
             "files": [
                 {
                     "field": "intro__0",
@@ -343,6 +359,9 @@ def test_streaming_upload_creates_server_owned_durable_job(secured_server):
     )
     assert status == 201 and data["success"]
     upload_id = data["upload"]["id"]
+    job_id = data["upload"]["job_id"]
+    assert len(job_id) == 32
+    assert data["upload"]["job_status"] == "uploading"
     file_id = data["upload"]["files"][0]["id"]
 
     connection = HTTPConnection("127.0.0.1", port, timeout=5)
@@ -370,38 +389,24 @@ def test_streaming_upload_creates_server_owned_durable_job(secured_server):
         body={},
         headers=nv1,
     )
-    assert status == 200 and data["upload"]["status"] == "ready"
-    status, _, data = request(
-        port,
-        "POST",
-        "/jobs",
-        body={
-            "kind": "listreview_video",
-            "upload_id": upload_id,
-            "payload": {
-                "topic": "Test",
-                "spec": {
-                    "intro": {"scene_id": "intro", "vo": "hello"},
-                    "spots": [],
-                    "outro": {"scene_id": "outro", "vo": ""},
-                },
-            },
-        },
-        headers=nv1,
-    )
-    assert status == 202 and data["queued"] is True
-    assert len(data["job_id"]) == 32
+    assert status == 200 and data["upload"]["status"] == "consumed"
+    assert data["queued"] is True
+    assert data["job_id"] == job_id
     assert data["job_id"] != upload_id
+    stored = server.PIPELINE_STORE.get_job(job_id)
+    assert stored["owner"] == "nv1"
+    assert stored["payload"]["owner"] == "nv1"
+    assert stored["payload"]["hook_style"] == "hook_red"
     status, _, listed = request(port, "GET", "/render-jobs", headers=nv1)
     assert status == 200
-    assert listed["jobs"][0]["job_id"] == data["job_id"]
+    assert listed["jobs"][0]["job_id"] == job_id
 
     nv2 = login(port, "nv2", "pw2")
     status, _, _ = request(
         port,
         "POST",
         "/jobs/cancel",
-        body={"job_id": data["job_id"]},
+        body={"job_id": job_id},
         headers=nv2,
     )
     assert status == 404
@@ -409,7 +414,7 @@ def test_streaming_upload_creates_server_owned_durable_job(secured_server):
         port,
         "POST",
         "/jobs/cancel",
-        body={"job_id": data["job_id"]},
+        body={"job_id": job_id},
         headers=nv1,
     )
     assert status == 200
