@@ -47,6 +47,13 @@ DEFAULT_REFS = {
 }
 
 
+def _feature_enabled() -> bool:
+    return (
+        os.getenv("ENABLE_GEMINI_AI_IMAGE", "").strip().lower()
+        in {"1", "true", "yes"}
+    )
+
+
 # Quy tắc chữ — điểm mấu chốt để không sai chính tả (headline brush hay bịa chữ nhất).
 _TEXT_RULE = (
     "\n\nQUY TẮC CHỮ (QUAN TRỌNG NHẤT — đọc kỹ):\n"
@@ -138,6 +145,8 @@ def _title_ok(intended: str, ocr: str) -> bool:
 def generate_infographic(spec: dict, out_name: str = "", size: str = "2K", verify: bool = True) -> dict:
     """Gọi Nano Banana Pro → PNG trong output/ai_images/. Trả {success, path|error}.
     verify=True: OCR lại tiêu đề, nếu sai chính tả thì render lại (tối đa 2 lần)."""
+    if not _feature_enabled():
+        return {"success": False, "error": "Tính năng tạo ảnh bằng Gemini đang tạm dừng."}
     import requests
     key = os.getenv("GEMINI_API_KEY") or os.getenv("GEMINI_KEY")
     if not key:
@@ -205,6 +214,8 @@ def _resize_1080(png_path: str) -> None:
 
 def spec_from_reference_images(image_paths: list[str]) -> dict | None:
     """Gemini đọc bài mẫu (ảnh) → spec {title, subtitle, tagline, palette, category, items}."""
+    if not _feature_enabled():
+        return None
     import requests
     key = os.getenv("GEMINI_API_KEY") or os.getenv("GEMINI_KEY")
     if not key or not image_paths:
@@ -378,6 +389,8 @@ def recreate_all_from_tiktok(url: str, handle: str = "@dalatnow", max_imgs: int 
     use_my_venues=True: trang có list quán thì THAY bằng quán thư viện của mình (seeding ĐẦU), giữ bố cục;
     trang bìa/mẹo thì vẽ lại y hệt. False: vẽ lại y hệt toàn bộ.
     Trả {success, paths:[...], count, source_count, seeded_pages, errors}."""
+    if not _feature_enabled():
+        return {"success": False, "error": "Tính năng tạo ảnh bằng Gemini đang tạm dừng."}
     import shutil
     from tools.tiktok_photos import download_photos
     key = os.getenv("GEMINI_API_KEY") or os.getenv("GEMINI_KEY")

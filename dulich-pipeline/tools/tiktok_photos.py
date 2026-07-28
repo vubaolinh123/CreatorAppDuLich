@@ -50,7 +50,7 @@ def _via_ytdlp(url: str, tmp: Path, max_imgs: int) -> list[str]:
 
 def _via_apify(url: str, tmp: Path, max_imgs: int) -> list[str]:
     import requests
-    tok = os.getenv("APIFY_API_KEY") or os.getenv("APIFY_TOKEN")
+    tok = os.getenv("APIFY_KEY_VIETCHINH")
     if not tok:
         return []
     r = requests.post(

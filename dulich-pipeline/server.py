@@ -67,6 +67,13 @@ PIPELINE_STORE = get_pipeline_store()
 # Ghi đúng file .env đang được load; nếu chưa có thì dùng .env cạnh server.py.
 ENV_PATH = _DOTENV_FILE
 
+# Gemini image recreation is paused by default. Re-enable only through an
+# explicit production configuration change after its API key is restored.
+AI_IMAGE_FROM_LINK_ENABLED = (
+    os.getenv("ENABLE_GEMINI_AI_IMAGE", "").strip().lower()
+    in {"1", "true", "yes"}
+)
+
 # Thư mục ảnh địa điểm (upload/cào) + kho ảnh chung
 THUMB_DIR = Path(__file__).parent / "data" / "thumbs"
 ALBUM_DIR = Path(__file__).parent / "data" / "album"
@@ -213,6 +220,11 @@ def _generate_album(
 
 def _generate_ai_album_from_link(user: str, url: str, job_id: str = "") -> dict:
     """Create and persist a recreated TikTok carousel for one durable job."""
+    if not AI_IMAGE_FROM_LINK_ENABLED:
+        return {
+            "success": False,
+            "error": "Tính năng tạo lại ảnh bằng Gemini đang tạm dừng.",
+        }
     if job_id:
         existing = _find_album(job_id)
         if existing:
@@ -1332,7 +1344,7 @@ def _health_snapshot() -> tuple[dict, int]:
 
 # ── Đăng bài (Zernio TikTok) ────────────────────────────────────────────────
 
-# Key Zernio/Apify RIÊNG từng tài khoản (admin nhập ở Cài đặt) — data/user_keys.json
+# Key Zernio riêng từng tài khoản (admin nhập ở Cài đặt) — data/user_keys.json
 USER_KEYS_FILE = Path(__file__).parent / "data" / "user_keys.json"
 _USER_KEYS_LOCK = threading.Lock()
 
@@ -1372,8 +1384,9 @@ def _user_zernio(user: str, ki: int = 0) -> str:
 
 
 def _user_apify(user: str) -> str:
-    k = ((_load_user_keys().get(user) or {}).get("apify_key") or "").strip()
-    return k or (os.getenv("APIFY_API_KEY") or "").strip()
+    # One centrally managed Apify key only; never fall back to deleted or
+    # per-user keys.
+    return (os.getenv("APIFY_KEY_VIETCHINH") or "").strip()
 
 
 def _is_publish_user(user: str) -> bool:
@@ -3518,6 +3531,15 @@ class AssembleHandler(BaseHTTPRequestHandler):
     def handle_ai_image_from_link(self):
         """POST /ai-image-from-link {user, url} — bài ảnh carousel TikTok mẫu →
         AI vẽ lại Y HỆT TỪNG ảnh (Nano Banana Pro), đúng số lượng ảnh trong link, watermark @dalatnow."""
+        if not AI_IMAGE_FROM_LINK_ENABLED:
+            self._json_response(
+                {
+                    "success": False,
+                    "error": "Tính năng tạo lại ảnh bằng Gemini đang tạm dừng.",
+                },
+                503,
+            )
+            return
         try:
             b = self._read_json_body()
             user = self.auth_user
@@ -3869,8 +3891,11 @@ class AssembleHandler(BaseHTTPRequestHandler):
 
     def handle_venues_scrape_all(self):
         """POST /venues-scrape-all → cào APIFY cho các quán có < 8 ảnh (chạy tuần tự)."""
-        if not (os.getenv("APIFY_API_KEY") or os.getenv("APIFY_TOKEN")):
-            self._json_response({"success": False, "error": "Thiếu APIFY_API_KEY (vào Cài đặt nhập key)."}, 400)
+        if not _user_apify(self.auth_user):
+            self._json_response(
+                {"success": False, "error": "Thiếu APIFY_KEY_VIETCHINH."},
+                400,
+            )
             return
         try:
             from tools import venues_db
@@ -3954,7 +3979,7 @@ class AssembleHandler(BaseHTTPRequestHandler):
             self._json_response({"success": False, "error": str(e)}, 500)
 
     def handle_user_keys_get(self):
-        """GET /user-keys → nv staff: số key Zernio đã có; tin tức: Apify. Không trả giá trị key."""
+        """GET /user-keys → số key Zernio theo nhân viên. Không trả giá trị key."""
         keys = _load_user_keys()
         users = _load_users()
         items = []
@@ -3968,12 +3993,11 @@ class AssembleHandler(BaseHTTPRequestHandler):
             zk = [x for x in zk if (x or "").strip()]
             items.append({"user": uid, "name": u.get("name", uid),
                           "role": u.get("role", "staff"),
-                          "zernio_count": len(zk),
-                          "apify_set": bool((k.get("apify_key") or "").strip())})
+                          "zernio_count": len(zk)})
         self._json_response({"success": True, "items": items})
 
     def handle_user_keys_save(self):
-        """POST /user-keys {user, zernio_keys?: [..], apify_key?}. Ô ẩn (•) giữ key cũ theo index."""
+        """POST /user-keys {user, zernio_keys?: [..]}. Ô ẩn (•) giữ key cũ theo index."""
         try:
             data = self._read_json_body()
             uid = (data.get("user") or "").strip()
@@ -3999,10 +4023,9 @@ class AssembleHandler(BaseHTTPRequestHandler):
                     elif v:
                         newk.append(v)
                 rec["zernio_keys"] = newk
-            # apify: chỉ dùng cho kênh tin tức
-            av = (data.get("apify_key") or "").strip()
-            if av and not (set(av) <= {"•", "*"}):
-                rec["apify_key"] = "" if av.lower() == "xoa" else av
+            # Per-user Apify keys are retired; APIFY_KEY_VIETCHINH is the
+            # single source of truth.
+            rec.pop("apify_key", None)
             keys[uid] = rec
             _save_user_keys(keys)
             _audit(self.auth_user, "update_user_keys", uid)

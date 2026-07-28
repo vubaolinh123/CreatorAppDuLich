@@ -369,19 +369,13 @@ async function renderSettings(){
         </div>`;
       });
     }
-    // ── Key theo từng tài khoản (Zernio đăng TikTok + Apify tin tức) ──
+    // ── Key Zernio theo từng tài khoản ──
     try{
       const rk=await fetch(API+"/user-keys",{cache:"no-store"}); const jk=await rk.json();
       html+=`<div style="margin:22px 0 8px;font-weight:800;color:var(--pine)">Key theo tài khoản</div>
-        <div class="muted" style="font-size:12px;margin-bottom:10px">NV có key Zernio → admin duyệt là đăng thẳng TikTok (1 key có thể có 2 tài khoản TikTok, lúc đăng chọn). Ô có sẵn (••) = giữ key cũ; để trống = bỏ. Bấm "➕ Thêm key" nếu nv có nhiều tài khoản Zernio. Apify chỉ dùng cho kênh Tin tức.</div>`;
+        <div class="muted" style="font-size:12px;margin-bottom:10px">NV có key Zernio → admin duyệt là đăng thẳng TikTok (1 key có thể có 2 tài khoản TikTok, lúc đăng chọn). Ô có sẵn (••) = giữ key cũ; để trống = bỏ. Bấm "➕ Thêm key" nếu nv có nhiều tài khoản Zernio.</div>`;
       (jk.items||[]).forEach(it=>{
-        if(it.role==="news"){
-          html+=`<div style="display:flex;gap:8px;align-items:center;margin-bottom:9px;flex-wrap:wrap">
-            <b style="min-width:80px">${it.name}</b>
-            <input data-ukey="apify_key" data-user="${it.user}" type="password" autocomplete="off" placeholder="Apify key (cào tin)" style="flex:1;min-width:180px">
-            ${it.apify_set?`<span class="chip chip-hook">đã có</span>`:`<span class="chip" style="background:#eee;color:#999">chưa có</span>`}
-          </div>`;
-        } else {
+        if(it.role!=="news"){
           const n=Math.max(it.zernio_count||0,1);
           let rows="";
           for(let i=0;i<n;i++){
@@ -415,13 +409,7 @@ function addZernioKey(u){
 async function saveSettings(){
   const payload={};
   document.querySelectorAll("#setbox input[data-key]").forEach(i=>{ const v=i.value.trim(); if(v) payload[i.getAttribute("data-key")]=v; });
-  // Apify per-nv (chỉ tin tức)
   const perUser={};
-  document.querySelectorAll("#setbox input[data-ukey]").forEach(i=>{
-    const v=i.value.trim(); if(!v)return;
-    const u=i.getAttribute("data-user");
-    (perUser[u]=perUser[u]||{user:u})[i.getAttribute("data-ukey")]=v;
-  });
   // Zernio keys (mảng theo thứ tự ô; ô để trống mà là placeholder cũ → gửi '•' để giữ)
   document.querySelectorAll("#setbox [id^='zbox-']").forEach(box=>{
     const u=box.id.slice(5);
@@ -432,7 +420,7 @@ async function saveSettings(){
     });
     (perUser[u]=perUser[u]||{user:u}).zernio_keys=arr;
   });
-  const hasUser=Object.values(perUser).some(o=>o.zernio_keys?.some(x=>x&&x!=="••")||o.apify_key);
+  const hasUser=Object.values(perUser).some(o=>o.zernio_keys?.some(x=>x&&x!=="••"));
   if(!Object.keys(payload).length && !hasUser){ toast("Chưa nhập key mới nào"); return; }
   try{
     if(Object.keys(payload).length){
@@ -1445,14 +1433,10 @@ function renderImageGen(){
         <div class="muted">Chọn mẫu album → tạo. Ảnh tạo ra tự lưu ở "Album đã lưu" bên dưới (mở lại / tải / xoá / tạo lại).</div></div>
       <button class="btn-ghost" onclick="renderHome()">← Trang chủ</button>
     </div>
-    <div class="card" style="margin-bottom:16px">
-      <h2 class="sec">🪄 Tạo lại bài ảnh TikTok (AI)</h2>
-      <div class="muted" style="margin-bottom:8px">Dán link bài ẢNH TikTok → AI vẽ lại tất cả ảnh, <b>THAY list quán bằng quán thư viện của mình</b> (seeding lên đầu), giữ bố cục + tiêu đề; trang bìa/mẹo vẽ y hệt. Watermark @dalatnow. Lưu thành 1 album. Bài nhiều ảnh lâu hơn (~30-45s/ảnh). ⚠ Đang dùng model rẻ (~1k/ảnh) — chữ/tên quán có thể sai, kiểm tra trước khi đăng.</div>
-      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
-        <input id="aiimgLink" placeholder="https://www.tiktok.com/@.../photo/..." style="flex:1;min-width:220px">
-        <button class="btn" id="aiimgBtn" onclick="aiImageFromLink()">🪄 Tạo lại</button>
-      </div>
-      <div id="aiimgStatus" class="muted" style="margin-top:6px;font-size:12px"></div>
+    <div class="card" style="margin-bottom:16px;opacity:.72">
+      <h2 class="sec">🪄 Tạo lại bài ảnh TikTok (AI) · Tạm dừng</h2>
+      <div class="muted" style="margin-bottom:8px">Tính năng tạo ảnh bằng Gemini đang tạm dừng. Các mẫu album dựng sẵn bên dưới vẫn hoạt động bình thường.</div>
+      <button class="btn-ghost" id="aiimgBtn" disabled>Đang tạm dừng</button>
     </div>
     <div class="card" style="margin-bottom:16px"><h2 class="sec">Mẫu album</h2><div id="albTpls" class="muted">Đang tải…</div></div>
     <div class="card"><h2 class="sec">📁 Album đã lưu</h2><div id="albSaved" class="muted">Đang tải…</div></div>`;

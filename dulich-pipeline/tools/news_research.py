@@ -15,9 +15,9 @@ OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
 
 
 def _apify(actor: str, inp: dict, timeout: int = 300):
-    tok = os.getenv("APIFY_API_KEY")
+    tok = os.getenv("APIFY_KEY_VIETCHINH")
     if not tok:
-        print("[news] thiếu APIFY_API_KEY"); return []
+        print("[news] thiếu APIFY_KEY_VIETCHINH"); return []
     try:
         import requests
         r = requests.post(APIFY_SYNC.format(actor=actor, tok=tok), json=inp, timeout=timeout)
@@ -117,7 +117,7 @@ def research_auto() -> dict:
         cfg = {"channels": [], "results_per_channel": 5}
     vids = discover(cfg.get("channels", []), int(cfg.get("results_per_channel", 5)))
     if not vids:
-        return {"success": False, "error": "Không cào được video từ APIFY (kiểm tra APIFY_API_KEY/credit)."}
+        return {"success": False, "error": "Không cào được video từ APIFY (kiểm tra APIFY_KEY_VIETCHINH/credit)."}
     top = vids[0]
     detail = scrape_tiktok(top["url"]) or {}
     content = (top.get("text") or "") + "\n" + (detail.get("subtitle") or "")
