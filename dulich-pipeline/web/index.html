@@ -945,7 +945,7 @@ function pageScene(d){
   const ed=document.getElementById("editor");if(ed)ed.scrollIntoView({behavior:"smooth",block:"start"});
 }
 
-function clipPickerLabel(){return matchMedia("(pointer:coarse)").matches?"+ Bấm để chọn clip":"+ Kéo-thả / bấm thêm clip";}
+function clipPickerLabel(){return (matchMedia("(pointer:coarse)").matches||navigator.maxTouchPoints>0)?"+ Bấm để chọn clip":"+ Kéo-thả / bấm thêm clip";}
 function renderSceneInputs(){
   renderPager(); const box=document.getElementById("scenes"); if(!box)return; box.innerHTML="";
   const start=scenePage*PAGE;
