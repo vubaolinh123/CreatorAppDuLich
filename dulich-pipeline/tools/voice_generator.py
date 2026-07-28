@@ -45,6 +45,16 @@ VBEE_STANDARD_VOICES = {
 
 VBEE_API_URL = "https://api.vbee.vn/v1/tts"  # Realtime (sync) API
 
+# Public, verified voices from https://www.vivibe.app/voice-library.
+# Short aliases are sent by the web UI; every ID can be overridden in .env.
+VIVIBE_STANDARD_VOICES = {
+    "thu_review": "orBfJ4Q68FyVbckjJgDvkj",
+    "trinh_review": "uCMfUVPwStduZMyFC7iuQv",
+    "my_review": "vcXEe1p3FxPfpswf3BhwbG",
+    "adam_3": "5r2MVjMfzwsSDzTpaLjbY9",
+}
+VIVIBE_API_URL = "https://api.lucylab.io/json-rpc"
+
 
 def _split_for_tts(text: str, limit: int = 280) -> list[str]:
     """Split text into <=limit-char chunks at sentence/space boundaries (Vbee sync caps ~300)."""
@@ -159,6 +169,26 @@ class VoiceGenerator:
         self._el_client: Optional[ElevenLabs] = None
         self._vbee_key: str = os.getenv("VBEE_API_KEY", "")
         self._vbee_app_id: str = os.getenv("VBEE_APP_ID", "")
+        self._vivibe_key: str = os.getenv("API_VIVIBE_KEY", "")
+        self._vivibe_url: str = os.getenv("VIVIBE_API_URL", VIVIBE_API_URL)
+        self._vivibe_voices = {
+            "thu_review": os.getenv(
+                "VIVIBE_VOICE_THU_REVIEW_ID",
+                VIVIBE_STANDARD_VOICES["thu_review"],
+            ),
+            "trinh_review": os.getenv(
+                "VIVIBE_VOICE_TRINH_REVIEW_ID",
+                VIVIBE_STANDARD_VOICES["trinh_review"],
+            ),
+            "my_review": os.getenv(
+                "VIVIBE_VOICE_MY_REVIEW_ID",
+                VIVIBE_STANDARD_VOICES["my_review"],
+            ),
+            "adam_3": os.getenv(
+                "VIVIBE_VOICE_ADAM_3_ID",
+                VIVIBE_STANDARD_VOICES["adam_3"],
+            ),
+        }
         self._el_key: str = os.getenv("ELEVENLABS_API_KEY", "")
 
         if provider == "elevenlabs" and ELEVENLABS_AVAILABLE and self._el_key:
@@ -204,6 +234,19 @@ class VoiceGenerator:
             if path:
                 return path
             print("[Voice] gTTS thất bại — fallback sang Edge TTS.")
+            path = self._edge_generate(text, voice_id, output_name, speed)
+            if path:
+                return path
+
+        # Vivibe / LucyLab community voices
+        if self.provider in ("vivibe", "lucylab"):
+            if self._vivibe_key:
+                path = self._vivibe_generate(text, voice_id, output_name, speed)
+                if path:
+                    return path
+                print("[Voice] Vivibe thất bại — fallback sang Edge TTS.")
+            else:
+                print("[Voice] Thiếu API_VIVIBE_KEY — fallback Edge TTS (free).")
             path = self._edge_generate(text, voice_id, output_name, speed)
             if path:
                 return path
@@ -353,6 +396,123 @@ class VoiceGenerator:
         if len(a.content) < 500:
             return None
         return a.content
+
+    # ── Vivibe / LucyLab JSON-RPC ───────────────────────────────────────────
+
+    def _vivibe_generate(
+        self,
+        text: str,
+        voice_id: str,
+        output_name: str,
+        speed: float = 1.0,
+    ) -> Optional[str]:
+        if not self._vivibe_key or not REQUESTS_AVAILABLE:
+            return None
+
+        resolved_voice_id = self._vivibe_voices.get(
+            voice_id or "thu_review",
+            voice_id or self._vivibe_voices["thu_review"],
+        )
+        output_path = OUTPUT_DIR / f"{output_name}.mp3"
+        sp = max(0.5, min(2.0, float(speed)))
+        parts = _split_sentences_vi(text)
+        tmp = OUTPUT_DIR / f"{output_name}_vivibe_parts"
+
+        try:
+            if len(parts) <= 1:
+                data = self._vivibe_once(
+                    parts[0] if parts else text,
+                    resolved_voice_id,
+                    sp,
+                )
+                if not data:
+                    return None
+                output_path.write_bytes(data)
+            else:
+                segment_files = []
+                tmp.mkdir(parents=True, exist_ok=True)
+                for index, sentence in enumerate(parts):
+                    data = self._vivibe_once(sentence, resolved_voice_id, sp)
+                    if not data:
+                        print(
+                            f"[Voice] ⚠ Vivibe rớt câu {index}: {sentence[:40]!r}",
+                            file=sys.stderr,
+                        )
+                        return None
+                    segment_path = tmp / f"{index:02d}.mp3"
+                    segment_path.write_bytes(data)
+                    segment_files.append(segment_path)
+                if not _concat_mp3(segment_files, output_path):
+                    return None
+
+            print(
+                f"[Voice] ✓ Vivibe TTS saved: {output_path} "
+                f"(voice={resolved_voice_id}, {len(parts)} câu)",
+                file=sys.stderr,
+            )
+            return str(output_path.resolve())
+        except Exception as exc:
+            print(f"[Voice] ⚠ Vivibe lỗi: {exc}", file=sys.stderr)
+            return None
+        finally:
+            if tmp.exists():
+                import shutil as _sh
+
+                _sh.rmtree(tmp, ignore_errors=True)
+
+    def _vivibe_once(
+        self,
+        text: str,
+        voice_id: str,
+        speed: float,
+    ) -> Optional[bytes]:
+        """Generate one short Vivibe segment and return its MP3 bytes."""
+        headers = {
+            "Authorization": f"Bearer {self._vivibe_key}",
+            "X-API-Key": self._vivibe_key,
+            "Content-Type": "application/json",
+        }
+        response = _requests.post(
+            self._vivibe_url,
+            headers=headers,
+            timeout=120,
+            json={
+                "method": "tts",
+                "input": {
+                    "text": text,
+                    "userVoiceId": voice_id,
+                    "speed": speed,
+                },
+            },
+        )
+        if response.status_code not in (200, 201):
+            print(
+                f"[Voice] ⚠ Vivibe submit {response.status_code}: "
+                f"{response.text[:200]}",
+                file=sys.stderr,
+            )
+            return None
+
+        payload = response.json()
+        if payload.get("error"):
+            print(
+                f"[Voice] ⚠ Vivibe API lỗi: {str(payload['error'])[:200]}",
+                file=sys.stderr,
+            )
+            return None
+        audio_url = (payload.get("result") or {}).get("url")
+        if not audio_url:
+            print(
+                f"[Voice] ⚠ Vivibe không trả audio URL: {str(payload)[:200]}",
+                file=sys.stderr,
+            )
+            return None
+
+        audio = _requests.get(audio_url, timeout=120)
+        audio.raise_for_status()
+        if len(audio.content) < 500:
+            return None
+        return audio.content
 
     # ── ElevenLabs ───────────────────────────────────────────────────────────
 

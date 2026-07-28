@@ -19,3 +19,21 @@ def test_frontend_uses_resumable_upload_and_server_zip():
     assert "AbortController" in HTML
     assert "/album-zip/" in HTML
     assert 'API+"/jobs/retry"' in HTML
+
+
+def test_frontend_exposes_four_vivibe_voices():
+    expected = {
+        "vivibe:thu_review",
+        "vivibe:trinh_review",
+        "vivibe:my_review",
+        "vivibe:adam_3",
+    }
+    assert 'v.startsWith("vivibe:")' in HTML
+    for value in expected:
+        assert f'value="{value}"' in HTML
+
+
+def test_gemini_image_button_is_paused():
+    assert "Tạo lại bài ảnh TikTok (AI) · Tạm dừng" in HTML
+    assert 'id="aiimgBtn" disabled' in HTML
+    assert 'onclick="aiImageFromLink()"' not in HTML

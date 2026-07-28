@@ -677,6 +677,7 @@ function voicePickMode(){
   const v=(document.getElementById("voicePick")||{}).value||"";
   if(!v) return {mode:(SESSION.voice||"gtts"), id:""};
   if(v.startsWith("chirp:")) return {mode:"chirp", id:v.slice(6)};
+  if(v.startsWith("vivibe:")) return {mode:"vivibe", id:v.slice(7)};
   return {mode:"vbee", id:v};
 }
 
@@ -890,6 +891,10 @@ function openEditor(){
           <option value="chirp:Kore">Google HD · Nữ Kore (nhanh)</option>
           <option value="chirp:Puck">Google HD · Nam Puck (nhanh)</option>
           <option value="chirp:Charon">Google HD · Nam Charon (nhanh)</option>
+          <option value="vivibe:thu_review">Vivibe · Thư Review (nữ miền Nam)</option>
+          <option value="vivibe:trinh_review">Vivibe · Trinh Review</option>
+          <option value="vivibe:my_review">Vivibe · My Review (nữ miền Nam)</option>
+          <option value="vivibe:adam_3">Vivibe · Adam 3 (nam miền Nam)</option>
           <option value="c_lamdong_female_giongmenmendalatnow_zero_shot_review_vc">Vbee · Giọng Mèn Mén</option>
           <option value="c_gialai_female_giongchauanh01_advertise_vc">Vbee · Giọng Châu Anh</option>
           <option value="c_lamdong_male_giongnamtramamdala_zero_shot_education_vc">Vbee · Giọng Nam Trầm</option>

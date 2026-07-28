@@ -199,6 +199,87 @@ def test_voice_generator_clone_no_client(monkeypatch):
     assert voice_id.startswith("mock_clone_")
 
 
+def test_voice_generator_vivibe_uses_configured_voice(monkeypatch, tmp_path):
+    submit_calls = []
+
+    class SubmitResponse:
+        status_code = 200
+        text = ""
+
+        @staticmethod
+        def json():
+            return {"result": {"url": "https://cdn.example/vivibe.mp3"}}
+
+    class AudioResponse:
+        content = b"vivibe-audio" * 100
+
+        @staticmethod
+        def raise_for_status():
+            return None
+
+    def fake_post(url, **kwargs):
+        submit_calls.append((url, kwargs))
+        return SubmitResponse()
+
+    monkeypatch.setenv("API_VIVIBE_KEY", "test-vivibe-key")
+    monkeypatch.setenv("VIVIBE_VOICE_THU_REVIEW_ID", "configured-voice-id")
+    monkeypatch.setenv("VIVIBE_VOICE_TRINH_REVIEW_ID", "trinh-voice-id")
+    monkeypatch.setenv("VIVIBE_VOICE_MY_REVIEW_ID", "my-voice-id")
+    monkeypatch.setenv("VIVIBE_VOICE_ADAM_3_ID", "adam-voice-id")
+    monkeypatch.setattr("tools.voice_generator.OUTPUT_DIR", tmp_path)
+    monkeypatch.setattr("tools.voice_generator._requests.post", fake_post)
+    monkeypatch.setattr(
+        "tools.voice_generator._requests.get",
+        lambda url, **kwargs: AudioResponse(),
+    )
+
+    gen = VoiceGenerator(provider="vivibe")
+    assert gen._vivibe_voices == {
+        "thu_review": "configured-voice-id",
+        "trinh_review": "trinh-voice-id",
+        "my_review": "my-voice-id",
+        "adam_3": "adam-voice-id",
+    }
+    audio_path = gen.generate_voice(
+        "Xin chào Đà Lạt",
+        "thu_review",
+        "test_vivibe_audio",
+        speed=1.2,
+    )
+
+    assert Path(audio_path).read_bytes() == AudioResponse.content
+    assert len(submit_calls) == 1
+    url, request = submit_calls[0]
+    assert url == "https://api.lucylab.io/json-rpc"
+    assert request["headers"]["Authorization"] == "Bearer test-vivibe-key"
+    assert request["headers"]["X-API-Key"] == "test-vivibe-key"
+    assert request["json"]["method"] == "tts"
+    assert request["json"]["input"] == {
+        "text": "Xin chào Đà Lạt",
+        "userVoiceId": "configured-voice-id",
+        "speed": 1.2,
+    }
+
+
+def test_voice_generator_vivibe_without_key_falls_back_to_edge(monkeypatch):
+    monkeypatch.delenv("API_VIVIBE_KEY", raising=False)
+    monkeypatch.setattr(
+        VoiceGenerator,
+        "_edge_generate",
+        lambda self, *args, **kwargs: "edge-fallback.mp3",
+    )
+    monkeypatch.setattr(
+        VoiceGenerator,
+        "_vivibe_generate",
+        lambda self, *args, **kwargs: pytest.fail(
+            "Vivibe API must not be called without a key"
+        ),
+    )
+
+    gen = VoiceGenerator(provider="vivibe")
+    assert gen.generate_voice("Xin chào", "thu_review") == "edge-fallback.mp3"
+
+
 def test_voice_generator_edge_tts(monkeypatch):
     # Mock edge_tts.Communicate
     class MockCommunicateStream:
