@@ -1,54 +1,32 @@
-from pathlib import Path
-
 import generate_hien21113 as template
+from tools.venue_picker import VenuePicker
 
 
-class _Picker:
-    def __init__(self):
-        self.calls = []
+def test_album_has_seven_images_and_only_slide_02_is_hotel():
+    for seed in range(1, 21):
+        venues = template._select_venues(VenuePicker(seed=seed))
+        hotel_indexes = [
+            index
+            for index, venue in enumerate(venues)
+            if venue.get("loai_quan") == template.HOTEL_CATEGORY
+        ]
 
-    def image(self, venue):
-        self.calls.append(venue)
-        return "random.jpg"
-
-
-def _venues():
-    return [
-        {"name": "Cover"},
-        {"name": "Venue 1"},
-        {"name": "Venue 2"},
-        {"name": "Anmai Boutique Hotel"},
-        {"name": "Venue 4"},
-    ]
+        assert len(venues) == 7
+        assert hotel_indexes == [template.HOTEL_SLIDE_NUMBER]
 
 
-def test_slide_02_is_always_pinned_without_duplicate():
-    venues = template._pin_slide_02(_venues())
+def test_slide_02_prioritizes_seeding_hotels():
+    for seed in range(1, 21):
+        hotel = template._select_venues(VenuePicker(seed=seed))[2]
 
-    assert venues[2] == template.PINNED_SLIDE_VENUE
-    assert sum(
-        venue["name"] == template.PINNED_SLIDE_VENUE["name"]
-        for venue in venues
-    ) == 1
-    assert venues[3]["name"] == "Venue 2"
+        assert hotel["loai_quan"] == template.HOTEL_CATEGORY
+        assert hotel["loai"] == "cần seeding"
 
 
-def test_slide_02_uses_fixed_image_and_skips_random_picker():
-    picker = _Picker()
+def test_slide_02_hotel_changes_between_seeds():
+    hotel_names = {
+        template._select_venues(VenuePicker(seed=seed))[2]["name"]
+        for seed in range(1, 31)
+    }
 
-    background = template._slide_background(
-        template.PINNED_SLIDE_NUMBER,
-        template.PINNED_SLIDE_VENUE,
-        picker,
-    )
-
-    assert Path(background).resolve() == template.PINNED_SLIDE_IMAGE.resolve()
-    assert picker.calls == []
-
-
-def test_other_slides_remain_random():
-    picker = _Picker()
-    venue = {"name": "Venue 1"}
-
-    assert template._slide_background(1, venue, picker) == "random.jpg"
-    assert picker.calls == [venue]
+    assert len(hotel_names) > 1
