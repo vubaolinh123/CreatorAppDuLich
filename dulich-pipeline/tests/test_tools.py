@@ -208,7 +208,20 @@ def test_voice_generator_vivibe_uses_configured_voice(monkeypatch, tmp_path):
 
         @staticmethod
         def json():
-            return {"result": {"url": "https://cdn.example/vivibe.mp3"}}
+            return {"result": {"projectExportId": "export-123"}}
+
+    class StatusResponse:
+        status_code = 200
+        text = ""
+
+        @staticmethod
+        def json():
+            return {
+                "result": {
+                    "state": "completed",
+                    "url": "https://cdn.example/vivibe.mp3",
+                }
+            }
 
     class AudioResponse:
         content = b"vivibe-audio" * 100
@@ -219,7 +232,9 @@ def test_voice_generator_vivibe_uses_configured_voice(monkeypatch, tmp_path):
 
     def fake_post(url, **kwargs):
         submit_calls.append((url, kwargs))
-        return SubmitResponse()
+        if kwargs["json"]["method"] == "ttsLongText":
+            return SubmitResponse()
+        return StatusResponse()
 
     monkeypatch.setenv("API_VIVIBE_KEY", "test-vivibe-key")
     monkeypatch.setenv("VIVIBE_VOICE_THU_REVIEW_ID", "configured-voice-id")
@@ -248,16 +263,21 @@ def test_voice_generator_vivibe_uses_configured_voice(monkeypatch, tmp_path):
     )
 
     assert Path(audio_path).read_bytes() == AudioResponse.content
-    assert len(submit_calls) == 1
+    assert len(submit_calls) == 2
     url, request = submit_calls[0]
     assert url == "https://api.lucylab.io/json-rpc"
     assert request["headers"]["Authorization"] == "Bearer test-vivibe-key"
     assert request["headers"]["X-API-Key"] == "test-vivibe-key"
-    assert request["json"]["method"] == "tts"
+    assert request["json"]["method"] == "ttsLongText"
     assert request["json"]["input"] == {
         "text": "Xin chào Đà Lạt",
         "userVoiceId": "configured-voice-id",
         "speed": 1.2,
+    }
+    _, status_request = submit_calls[1]
+    assert status_request["json"] == {
+        "method": "getExportStatus",
+        "input": {"projectExportId": "export-123"},
     }
 
 

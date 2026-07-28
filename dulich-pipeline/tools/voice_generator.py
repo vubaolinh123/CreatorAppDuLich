@@ -415,50 +415,21 @@ class VoiceGenerator:
         )
         output_path = OUTPUT_DIR / f"{output_name}.mp3"
         sp = max(0.5, min(2.0, float(speed)))
-        parts = _split_sentences_vi(text)
-        tmp = OUTPUT_DIR / f"{output_name}_vivibe_parts"
 
         try:
-            if len(parts) <= 1:
-                data = self._vivibe_once(
-                    parts[0] if parts else text,
-                    resolved_voice_id,
-                    sp,
-                )
-                if not data:
-                    return None
-                output_path.write_bytes(data)
-            else:
-                segment_files = []
-                tmp.mkdir(parents=True, exist_ok=True)
-                for index, sentence in enumerate(parts):
-                    data = self._vivibe_once(sentence, resolved_voice_id, sp)
-                    if not data:
-                        print(
-                            f"[Voice] ⚠ Vivibe rớt câu {index}: {sentence[:40]!r}",
-                            file=sys.stderr,
-                        )
-                        return None
-                    segment_path = tmp / f"{index:02d}.mp3"
-                    segment_path.write_bytes(data)
-                    segment_files.append(segment_path)
-                if not _concat_mp3(segment_files, output_path):
-                    return None
-
+            data = self._vivibe_once(text, resolved_voice_id, sp)
+            if not data:
+                return None
+            output_path.write_bytes(data)
             print(
                 f"[Voice] ✓ Vivibe TTS saved: {output_path} "
-                f"(voice={resolved_voice_id}, {len(parts)} câu)",
+                f"(voice={resolved_voice_id})",
                 file=sys.stderr,
             )
             return str(output_path.resolve())
         except Exception as exc:
             print(f"[Voice] ⚠ Vivibe lỗi: {exc}", file=sys.stderr)
             return None
-        finally:
-            if tmp.exists():
-                import shutil as _sh
-
-                _sh.rmtree(tmp, ignore_errors=True)
 
     def _vivibe_once(
         self,
@@ -466,7 +437,9 @@ class VoiceGenerator:
         voice_id: str,
         speed: float,
     ) -> Optional[bytes]:
-        """Generate one short Vivibe segment and return its MP3 bytes."""
+        """Generate one Vivibe export and return its MP3 bytes."""
+        import time as _time
+
         headers = {
             "Authorization": f"Bearer {self._vivibe_key}",
             "X-API-Key": self._vivibe_key,
@@ -477,7 +450,7 @@ class VoiceGenerator:
             headers=headers,
             timeout=120,
             json={
-                "method": "tts",
+                "method": "ttsLongText",
                 "input": {
                     "text": text,
                     "userVoiceId": voice_id,
@@ -500,10 +473,74 @@ class VoiceGenerator:
                 file=sys.stderr,
             )
             return None
-        audio_url = (payload.get("result") or {}).get("url")
+
+        submit_result = payload.get("result") or {}
+        audio_url = submit_result.get("url")
+        export_id = submit_result.get("projectExportId")
+        if not audio_url and not export_id:
+            print(
+                f"[Voice] ⚠ Vivibe không trả projectExportId: {str(payload)[:200]}",
+                file=sys.stderr,
+            )
+            return None
+
+        timeout_seconds = max(
+            15.0,
+            min(600.0, float(os.getenv("VIVIBE_EXPORT_TIMEOUT_SECONDS", "180"))),
+        )
+        poll_seconds = max(
+            0.5,
+            min(10.0, float(os.getenv("VIVIBE_POLL_INTERVAL_SECONDS", "2"))),
+        )
+        deadline = _time.monotonic() + timeout_seconds
+        while not audio_url and _time.monotonic() < deadline:
+            status_response = _requests.post(
+                self._vivibe_url,
+                headers=headers,
+                timeout=30,
+                json={
+                    "method": "getExportStatus",
+                    "input": {"projectExportId": export_id},
+                },
+            )
+            if status_response.status_code not in (200, 201):
+                print(
+                    f"[Voice] ⚠ Vivibe status {status_response.status_code}: "
+                    f"{status_response.text[:200]}",
+                    file=sys.stderr,
+                )
+                return None
+
+            status_payload = status_response.json()
+            if status_payload.get("error"):
+                print(
+                    f"[Voice] ⚠ Vivibe status lỗi: "
+                    f"{str(status_payload['error'])[:200]}",
+                    file=sys.stderr,
+                )
+                return None
+
+            status = status_payload.get("result") or {}
+            state = str(status.get("state", "")).lower()
+            audio_url = (
+                status.get("url")
+                or status.get("mp3Url")
+                or status.get("audioUrl")
+            )
+            if audio_url:
+                break
+            if state in ("failed", "canceled", "cancelled", "error"):
+                print(
+                    f"[Voice] ⚠ Vivibe export {state}: "
+                    f"{str(status.get('error', ''))[:200]}",
+                    file=sys.stderr,
+                )
+                return None
+            _time.sleep(poll_seconds)
+
         if not audio_url:
             print(
-                f"[Voice] ⚠ Vivibe không trả audio URL: {str(payload)[:200]}",
+                f"[Voice] ⚠ Vivibe timeout chờ audio ({timeout_seconds:.0f}s).",
                 file=sys.stderr,
             )
             return None
