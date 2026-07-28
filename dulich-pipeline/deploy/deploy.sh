@@ -60,8 +60,10 @@ target_commit="$(git rev-parse FETCH_HEAD)"
 git merge-base --is-ancestor "$previous_commit" "$target_commit"
 
 dirty_tracked="$(
-  git status --porcelain --untracked-files=no |
-    grep -vE '^.. dulich-pipeline/(data/users\.json|output/)' || true
+  git status --porcelain --untracked-files=no -- \
+    . \
+    ':(exclude)dulich-pipeline/data/users.json' \
+    ':(exclude)dulich-pipeline/output/**'
 )"
 if [[ -n "$dirty_tracked" ]]; then
   echo "Refusing deploy: production has unexpected tracked changes:" >&2
