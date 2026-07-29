@@ -1,36 +1,40 @@
 """
-generate_le2.py — Tạo album le2 từ spec.json trong output folder.
+generate_le2.py — Tạo album Lê 2 từ spec ổn định trong data/album_specs.
 Usage: python -X utf8 generate_le2.py [--spec path/to/spec.json] [--out path]
 
-Mặc định đọc spec từ output/albums/le2-demo/2026-06-21_spec.json
-và xuất PNG vào cùng folder đó.
+Mặc định đọc spec từ data/album_specs/le2.json và xuất PNG vào
+output/albums/le2-demo. Thư mục output có thể được archive/xóa tự động,
+vì vậy không được dùng nó để lưu input bắt buộc của template.
 """
 from __future__ import annotations
 import sys, json, argparse
 from pathlib import Path
-sys.path.insert(0, str(Path(__file__).parent))
+
+ROOT = Path(__file__).parent
+DEFAULT_SPEC_PATH = ROOT / "data" / "album_specs" / "le2.json"
+DEFAULT_OUTPUT_DIR = ROOT / "output" / "albums" / "le2-demo"
+
+sys.path.insert(0, str(ROOT))
 from tools.mle23_renderer import render_cover, render_venue_list
 
 
-def main():
+def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--spec",
-        default=str(
-            Path(__file__).parent / "output" / "albums" / "le2-demo" / "2026-06-21_spec.json"
-        ),
+        default=str(DEFAULT_SPEC_PATH),
     )
     parser.add_argument("--out", default="")
     parser.add_argument("--seed", type=int, default=None)
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
     import random
     if args.seed is not None:
         random.seed(args.seed)
 
     spec_path = Path(args.spec)
     if not spec_path.exists():
-        print(f"[ERROR] Spec không tồn tại: {spec_path}")
-        return
+        print(f"[ERROR] Spec không tồn tại: {spec_path}", file=sys.stderr)
+        return 2
 
     with open(spec_path, encoding="utf-8") as f:
         spec = json.load(f)
@@ -72,7 +76,7 @@ def main():
             s["bg_venue"] = ""
             s["bg_image"] = VenuePicker.album_cover_bg()
 
-    out_dir = Path(args.out) if args.out else spec_path.parent
+    out_dir = Path(args.out) if args.out else DEFAULT_OUTPUT_DIR
     out_dir.mkdir(parents=True, exist_ok=True)
 
     slides_spec = spec.get("slides", {})
@@ -116,7 +120,8 @@ def main():
     print(f"\n✓ {len(paths)} slides:")
     for s in paths:
         print(f"  file:///{Path(s).as_posix()}")
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())
