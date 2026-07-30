@@ -489,14 +489,36 @@ def build_caption_png(text: str, out_path: str, max_w: int = 980):
 # FFmpeg helpers
 # ─────────────────────────────────────────────────────────────────────────────
 
+OVERLOAD_MARKER = "MÁY QUÁ TẢI"
+
+
+def _cpu_pressure() -> str:
+    """Tải máy lúc ffmpeg hết giờ — để phân biệt máy thiếu CPU với source nặng.
+
+    Đo bằng load average chứ không đếm job: hàm này chạy trong process con của
+    `job_runner.py`, không nhìn thấy `_HEAVY_LOCK` bên server."""
+    try:
+        load1 = os.getloadavg()[0]
+        cpus = os.cpu_count() or 1
+    except (OSError, AttributeError):   # Windows không có getloadavg
+        return ""
+    state = OVERLOAD_MARKER if load1 > cpus * 1.3 else "máy bình thường"
+    return f"{state} (tải {load1:.1f} trên {cpus} nhân)"
+
+
 def _run(cmd, cwd=None, timeout=240):
     # KHÔNG ép -threads: decode 4K HEVC cần full thread (ép 2 làm chậm gấp đôi trên VPS);
     # ffmpeg + OS tự chia CPU khi nhiều segment chạy song song.
     try:
         r = subprocess.run(cmd, capture_output=True, text=True, cwd=cwd, timeout=timeout)
     except subprocess.TimeoutExpired as e:
-        print(f"[list_review] ffmpeg TIMEOUT ({timeout}s): {' '.join(str(c) for c in cmd)}", file=sys.stderr)
-        raise RuntimeError(f"ffmpeg quá thời gian ({timeout}s) — có thể do source lỗi/quá nặng.") from e
+        pressure = _cpu_pressure()
+        print(f"[list_review] ffmpeg TIMEOUT ({timeout}s) {pressure}: "
+              f"{' '.join(str(c) for c in cmd)}", file=sys.stderr)
+        # Giữ nguyên cụm "quá thời gian": `server._is_transient_render_err` dò
+        # đúng chuỗi này để xếp vào lỗi tạm thời và tự thử lại 1 lần.
+        detail = f" — {pressure}" if pressure else " — có thể do source lỗi/quá nặng."
+        raise RuntimeError(f"ffmpeg quá thời gian ({timeout}s){detail}") from e
     if r.returncode != 0:
         print(f"[list_review] ffmpeg lỗi (rc={r.returncode}): {' '.join(str(c) for c in cmd)}\n{r.stderr}", file=sys.stderr)
         raise RuntimeError(f"ffmpeg lỗi: {' '.join(str(c) for c in cmd[:6])}...\n{r.stderr[-1500:]}")

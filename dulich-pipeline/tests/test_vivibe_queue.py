@@ -279,6 +279,57 @@ def test_whisper_prompt_result_is_kept_when_valid(monkeypatch, tmp_path):
     assert len(calls) == 1
 
 
+def test_overload_marker_matches_across_modules():
+    """server.py holds its own copy so the web process need not import PIL."""
+    import server
+
+    assert server.OVERLOAD_MARKER == list_review_render.OVERLOAD_MARKER
+
+
+@pytest.mark.parametrize(
+    "load, cpus, overloaded",
+    [
+        (14.2, 8, True),    # 3 jobs starving each other
+        (3.1, 8, False),    # idle box, a genuinely heavy clip
+        (10.0, 8, False),   # just under the 1.3x threshold (10.4)
+        (10.5, 8, True),    # just over it
+    ],
+)
+def test_cpu_pressure_flags_only_real_contention(monkeypatch, load, cpus, overloaded):
+    # raising=False: getloadavg does not exist on Windows, where the tests run.
+    monkeypatch.setattr(
+        list_review_render.os, "getloadavg", lambda: (load, load, load), raising=False
+    )
+    monkeypatch.setattr(list_review_render.os, "cpu_count", lambda: cpus)
+
+    text = list_review_render._cpu_pressure()
+
+    assert (list_review_render.OVERLOAD_MARKER in text) is overloaded
+    assert f"{load:.1f}" in text and str(cpus) in text
+
+
+def test_cpu_pressure_is_silent_without_loadavg(monkeypatch):
+    """No load average (Windows) → say nothing rather than guess."""
+    monkeypatch.delattr(list_review_render.os, "getloadavg", raising=False)
+
+    assert list_review_render._cpu_pressure() == ""
+
+
+def test_timeout_message_separates_overload_from_heavy_clip():
+    """Staff must not go swap clips when the real cause is a starved machine."""
+    import server
+
+    overload = f"ffmpeg quá thời gian (240s) — {server.OVERLOAD_MARKER} (tải 14.2 trên 8 nhân)"
+    heavy = "ffmpeg quá thời gian (240s) — máy bình thường (tải 3.1 trên 8 nhân)"
+
+    assert "thiếu CPU" in server._friendly_error(overload)
+    assert "quá nặng" in server._friendly_error(heavy)
+    assert server._friendly_error(overload) != server._friendly_error(heavy)
+    # Both stay retryable: _is_transient_render_err keys off "quá thời gian".
+    assert server._is_transient_render_err(overload)
+    assert server._is_transient_render_err(heavy)
+
+
 def test_list_review_stops_if_any_vivibe_segment_fails(monkeypatch, tmp_path):
     monkeypatch.setattr(
         list_review_render,

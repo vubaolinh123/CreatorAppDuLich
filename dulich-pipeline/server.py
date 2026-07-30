@@ -348,6 +348,10 @@ MAX_UPLOAD_CHUNK_BYTES = _env_int("MAX_UPLOAD_CHUNK_MB", 16) * 1024 * 1024
 UPLOAD_DISK_RESERVE_BYTES = _env_int("UPLOAD_DISK_RESERVE_MB", 15360) * 1024 * 1024
 MAX_LEGACY_MULTIPART_BYTES = _env_int("MAX_LEGACY_MULTIPART_MB", 64) * 1024 * 1024
 
+# Cùng chuỗi với tools.list_review_render.OVERLOAD_MARKER; một test khoá hai bên
+# khớp nhau. Không import trực tiếp để tiến trình web khỏi nạp PIL lúc khởi động.
+OVERLOAD_MARKER = "MÁY QUÁ TẢI"
+
 
 def _validate_uploaded_media(upload: dict) -> None:
     """Reject renamed/corrupt files before they can consume a render worker."""
@@ -1282,9 +1286,15 @@ def _friendly_error(e) -> str:
     """Đổi lỗi kỹ thuật thành thông báo ngắn dễ hiểu (kèm 1 dòng chi tiết cuối)."""
     s = str(e or "")
     low = s.lower()
-    if "quá thời gian" in low or "timeout" in low:
-        cause = ("⏱ Render lâu quá — server đang bận (nhiều clip cùng lúc) hoặc clip quá nặng. "
-                 "Hệ thống đã tự thử lại 1 lần; thử render lại sau ít phút.")
+    if OVERLOAD_MARKER in s:
+        # Đo được tải máy lúc hỏng → nói thẳng, đừng để nhân viên đi đổi clip vô ích.
+        cause = ("🔥 Máy đang thiếu CPU vì render quá nhiều clip cùng lúc — không phải "
+                 "clip của bạn hỏng. Đợi bớt việc rồi bấm render lại. "
+                 "Nếu gặp thường xuyên, báo quản lý giảm số clip chạy song song "
+                 "hoặc nâng cấu hình máy chủ.")
+    elif "quá thời gian" in low or "timeout" in low:
+        cause = ("⏱ Render lâu quá — clip có thể quá nặng (4K/quá dài). "
+                 "Hệ thống đã tự thử lại 1 lần; thử clip nhẹ hơn hoặc render lại sau ít phút.")
     elif "ffmpeg" in low and ("not found" in low or "winerror 2" in low or "no such file" in low):
         cause = "⚙ Chưa cài FFmpeg (hoặc chưa có trong PATH)."
     elif "ffmpeg" in low or "moov atom" in low or "invalid data" in low:
