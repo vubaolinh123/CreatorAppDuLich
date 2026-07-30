@@ -220,6 +220,14 @@ def test_listreview_legacy_spec_voice_is_preserved(monkeypatch):
     assert rendered["voice_id"].startswith("c_lamdong_female")
 
 
+def test_vivibe_reads_at_natural_speed():
+    """1.08 rushes ViVibe enough that Whisper drops words and captions fall back."""
+    assert list_review_render._vo_speed("vivibe") == 1.0
+    assert list_review_render._vo_speed("lucylab") == 1.0
+    assert list_review_render._vo_speed("chirp") == 1.08
+    assert list_review_render._vo_speed("") == 1.08
+
+
 def test_list_review_stops_if_any_vivibe_segment_fails(monkeypatch, tmp_path):
     monkeypatch.setattr(
         list_review_render,

@@ -560,6 +560,12 @@ def _concat_with_xfade(segs: list[str], out_path: Path, work: Path,
           "-c:a", "aac", "-b:a", "160k", str(out_path)], cwd=str(work), timeout=480)
 
 
+def _vo_speed(provider: str) -> float:
+    """ViVibe đọc nhanh sẵn ở tốc độ gốc; 1.08 làm giọng hụt hơi và Whisper nghe
+    sót chữ → `_valid_timings` loại timing → phụ đề rơi về chia đều."""
+    return 1.0 if (provider or "").lower() in {"vivibe", "lucylab"} else 1.08
+
+
 def _render_segment(kind: str, seg: dict, idx: int, work: Path,
                     hook_style: str, voice_provider: str, voice_id: str,
                     html_png: str | None = None, badge_mode: str = "full") -> str | None:
@@ -574,7 +580,8 @@ def _render_segment(kind: str, seg: dict, idx: int, work: Path,
     # 1) Voiceover
     vg = VoiceGenerator(provider=voice_provider or "gtts")
     vo_path = vg.generate_voice(text=vo_text, voice_id=voice_id or "",
-                                output_name=f"lr_{work.name}_{kind}{idx}", speed=1.08)
+                                output_name=f"lr_{work.name}_{kind}{idx}",
+                                speed=_vo_speed(voice_provider))
     if not vo_path or not os.path.exists(vo_path):
         raise RuntimeError(f"Không tạo được giọng cho segment {kind}{idx}.")
     dur = max(1.2, _ffprobe_dur(vo_path))
