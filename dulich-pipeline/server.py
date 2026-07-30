@@ -564,6 +564,12 @@ def _execute_durable_job(job: dict) -> dict:
 
         spec = _hydrate_listreview_spec(payload) if payload.get("upload_files") else payload["spec"]
         spec["job_id"] = job["id"]
+        # The web UI sends the picked voice beside `spec`, not inside it. Without
+        # this the renderer falls back to gTTS and silently ships a Google voice.
+        spec["voice_provider"] = (
+            payload.get("voice_mode") or spec.get("voice_provider") or "gtts"
+        )
+        spec["voice_id"] = payload.get("voice_id") or spec.get("voice_id") or ""
         with _HEAVY_LOCK:
             result = render_list_review(spec)
         return _render_product_from_result(job, result, payload)

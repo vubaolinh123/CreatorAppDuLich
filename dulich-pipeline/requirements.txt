@@ -8,6 +8,7 @@ Pillow>=10.0.0        # vẽ overlay/caption (PIL)
 playwright>=1.49.0    # render overlay HTML nv2/nv3 + quét tin tức (Chromium)
 requests>=2.31.0      # gọi API (OpenRouter/APIFY/Vbee… — đều optional)
 python-dotenv>=1.0.1  # đọc .env
+filelock>=3.13.0      # khóa chung API ViVibe giữa thread/process
 pydantic>=2.10.0      # schema/config
 pymongo>=4.8.0        # DB (tự fallback file mock nếu không có Mongo)
 google-api-python-client

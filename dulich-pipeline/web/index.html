@@ -699,7 +699,11 @@ async function retryLocalJob(id){
 // ---------- STAFF / NEWS create flow ----------
 function curHookStyle(){ return SESSION.role==="news" ? ("hook_news_"+newsColor) : SESSION.hook_style; }
 function voicePickMode(){
-  const v=(document.getElementById("voicePick")||{}).value||"";
+  const el=document.getElementById("voicePick");
+  const v=(el||{}).value||"";
+  // openEditor() rebuilds the select from scratch after every video, so remember
+  // the pick — otherwise video #2 silently drops back to the free Google voice.
+  if(el) try{ localStorage.setItem("voicePick",v); }catch{}
   if(!v) return {mode:(SESSION.voice||"gtts"), id:""};
   if(v.startsWith("chirp:")) return {mode:"chirp", id:v.slice(6)};
   if(v.startsWith("vivibe:")) return {mode:"vivibe", id:v.slice(7)};
@@ -941,6 +945,9 @@ function openEditor(){
     <button id="navLeft" class="navarrow l" onclick="pageScene(-1)" title="Scene trước">‹</button>
     <button id="navRight" class="navarrow r" onclick="pageScene(1)" title="Scene sau">›</button>`;
   renderSceneInputs(); updateHookOverlay(); renderPreview();
+  const _vpEl=document.getElementById("voicePick");
+  let _lastVoice=""; try{ _lastVoice=localStorage.getItem("voicePick")||""; }catch{}
+  if(_vpEl&&_lastVoice&&[..._vpEl.options].some(o=>o.value===_lastVoice)) _vpEl.value=_lastVoice;
   document.getElementById("editor").scrollIntoView({behavior:"smooth"});
 }
 function resetEditor(){ currentScenes=[]; scenePage=0; const e=document.getElementById("editor"); if(e){ e.classList.add("hidden"); e.innerHTML=""; } }

@@ -8,11 +8,16 @@ Providers:
 
 from __future__ import annotations
 
+import hashlib
 import os
+import subprocess
 import sys
+import tempfile
 import wave
 from pathlib import Path
 from typing import Optional
+
+from filelock import FileLock, Timeout as FileLockTimeout
 
 # ── ElevenLabs (optional) ─────────────────────────────────────────────────────
 try:
@@ -54,6 +59,30 @@ VIVIBE_STANDARD_VOICES = {
     "adam_3": "5r2MVjMfzwsSDzTpaLjbY9",
 }
 VIVIBE_API_URL = "https://api.lucylab.io/json-rpc"
+
+
+class VoiceGenerationError(RuntimeError):
+    """An explicitly selected voice provider could not produce valid audio."""
+
+
+def _env_float(name: str, default: float, minimum: float, maximum: float) -> float:
+    try:
+        value = float(os.getenv(name, str(default)))
+    except (TypeError, ValueError):
+        value = default
+    return max(minimum, min(maximum, value))
+
+
+def _vivibe_lock_path(api_key: str) -> Path:
+    """Return one shared, non-secret lock path for every process using this key."""
+    root = Path(__file__).resolve().parent.parent
+    lock_dir = Path(
+        os.getenv("VIVIBE_LOCK_DIR")
+        or (root / "data" / "provider-locks")
+    )
+    lock_dir.mkdir(parents=True, exist_ok=True)
+    key_hash = hashlib.sha256(api_key.encode("utf-8")).hexdigest()[:24]
+    return lock_dir / f"vivibe-{key_hash}.lock"
 
 
 def _split_for_tts(text: str, limit: int = 280) -> list[str]:
@@ -240,16 +269,16 @@ class VoiceGenerator:
 
         # Vivibe / LucyLab community voices
         if self.provider in ("vivibe", "lucylab"):
-            if self._vivibe_key:
-                path = self._vivibe_generate(text, voice_id, output_name, speed)
-                if path:
-                    return path
-                print("[Voice] Vivibe thất bại — fallback sang Edge TTS.")
-            else:
-                print("[Voice] Thiếu API_VIVIBE_KEY — fallback Edge TTS (free).")
-            path = self._edge_generate(text, voice_id, output_name, speed)
+            if not self._vivibe_key:
+                raise VoiceGenerationError(
+                    "Thiếu API_VIVIBE_KEY; không thể tạo đúng giọng ViVibe đã chọn."
+                )
+            path = self._vivibe_generate(text, voice_id, output_name, speed)
             if path:
                 return path
+            raise VoiceGenerationError(
+                "ViVibe không trả âm thanh; không dùng Edge TTS thay thế."
+            )
 
         # Google Cloud TTS Chirp 3 HD — giọng Việt tự nhiên, tạo ~2-3s (nhanh hơn Vbee nhiều)
         if self.provider == "chirp":
@@ -405,9 +434,11 @@ class VoiceGenerator:
         voice_id: str,
         output_name: str,
         speed: float = 1.0,
-    ) -> Optional[str]:
+    ) -> str:
         if not self._vivibe_key or not REQUESTS_AVAILABLE:
-            return None
+            raise VoiceGenerationError(
+                "Thiếu API_VIVIBE_KEY hoặc thư viện requests cho ViVibe."
+            )
 
         resolved_voice_id = self._vivibe_voices.get(
             voice_id or "thu_review",
@@ -415,29 +446,107 @@ class VoiceGenerator:
         )
         output_path = OUTPUT_DIR / f"{output_name}.mp3"
         sp = max(0.5, min(2.0, float(speed)))
-
+        lock_path = _vivibe_lock_path(self._vivibe_key)
+        wait_seconds = _env_float(
+            "VIVIBE_LOCK_TIMEOUT_SECONDS", 900.0, 1.0, 3600.0
+        )
+        lock = FileLock(str(lock_path))
+        wait_started = __import__("time").monotonic()
+        print(
+            f"[Voice] ViVibe chờ khóa dùng chung (voice={resolved_voice_id})",
+            file=sys.stderr,
+        )
         try:
-            data = self._vivibe_once(text, resolved_voice_id, sp)
-            if not data:
-                return None
-            output_path.write_bytes(data)
-            print(
-                f"[Voice] ✓ Vivibe TTS saved: {output_path} "
-                f"(voice={resolved_voice_id})",
-                file=sys.stderr,
+            with lock.acquire(timeout=wait_seconds, poll_interval=0.25):
+                waited = __import__("time").monotonic() - wait_started
+                print(
+                    f"[Voice] ViVibe đã tới lượt sau {waited:.1f}s "
+                    f"(voice={resolved_voice_id})",
+                    file=sys.stderr,
+                )
+                data = self._vivibe_once(text, resolved_voice_id, sp)
+                self._write_vivibe_mp3(data, output_path)
+        except FileLockTimeout as exc:
+            raise VoiceGenerationError(
+                f"ViVibe timeout chờ lượt sau {wait_seconds:.0f} giây."
+            ) from exc
+        print(
+            f"[Voice] ✓ Vivibe TTS saved: {output_path} "
+            f"(voice={resolved_voice_id})",
+            file=sys.stderr,
+        )
+        return str(output_path.resolve())
+
+    @staticmethod
+    def _write_vivibe_mp3(data: bytes, output_path: Path) -> None:
+        """Atomically normalize ViVibe audio (currently WAV) to a real MP3."""
+        if not data or len(data) < 500:
+            raise VoiceGenerationError("ViVibe trả file âm thanh rỗng hoặc quá nhỏ.")
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        raw_path = ""
+        encoded_path = ""
+        try:
+            with tempfile.NamedTemporaryFile(
+                prefix="vivibe-raw-",
+                suffix=".audio",
+                dir=output_path.parent,
+                delete=False,
+            ) as raw_file:
+                raw_file.write(data)
+                raw_path = raw_file.name
+            with tempfile.NamedTemporaryFile(
+                prefix=f".{output_path.stem}-",
+                suffix=".mp3",
+                dir=output_path.parent,
+                delete=False,
+            ) as encoded_file:
+                encoded_path = encoded_file.name
+            result = subprocess.run(
+                [
+                    "ffmpeg",
+                    "-y",
+                    "-v",
+                    "error",
+                    "-i",
+                    raw_path,
+                    "-vn",
+                    "-codec:a",
+                    "libmp3lame",
+                    "-b:a",
+                    "192k",
+                    encoded_path,
+                ],
+                capture_output=True,
+                text=True,
+                timeout=120,
             )
-            return str(output_path.resolve())
-        except Exception as exc:
-            print(f"[Voice] ⚠ Vivibe lỗi: {exc}", file=sys.stderr)
-            return None
+            encoded = Path(encoded_path)
+            if result.returncode != 0 or not encoded.is_file() or encoded.stat().st_size < 500:
+                raise VoiceGenerationError(
+                    "Không chuyển được âm thanh ViVibe sang MP3: "
+                    + (result.stderr or "file đầu ra không hợp lệ")[-300:]
+                )
+            os.replace(encoded_path, output_path)
+            encoded_path = ""
+        except FileNotFoundError as exc:
+            raise VoiceGenerationError(
+                "Thiếu FFmpeg nên không thể chuẩn hóa âm thanh ViVibe sang MP3."
+            ) from exc
+        finally:
+            for temporary in (raw_path, encoded_path):
+                if temporary:
+                    try:
+                        os.unlink(temporary)
+                    except OSError:
+                        pass
 
     def _vivibe_once(
         self,
         text: str,
         voice_id: str,
         speed: float,
-    ) -> Optional[bytes]:
-        """Generate one Vivibe export and return its MP3 bytes."""
+    ) -> bytes:
+        """Generate one ViVibe export while the caller holds the shared key lock."""
         import time as _time
 
         headers = {
@@ -445,52 +554,73 @@ class VoiceGenerator:
             "X-API-Key": self._vivibe_key,
             "Content-Type": "application/json",
         }
-        response = _requests.post(
-            self._vivibe_url,
-            headers=headers,
-            timeout=120,
-            json={
-                "method": "ttsLongText",
-                "input": {
-                    "text": text,
-                    "userVoiceId": voice_id,
-                    "speed": speed,
-                },
-            },
+        busy_seconds = _env_float(
+            "VIVIBE_BUSY_RETRY_SECONDS", 180.0, 0.0, 900.0
         )
-        if response.status_code not in (200, 201):
-            print(
-                f"[Voice] ⚠ Vivibe submit {response.status_code}: "
-                f"{response.text[:200]}",
-                file=sys.stderr,
+        busy_deadline = _time.monotonic() + busy_seconds
+        while True:
+            response = _requests.post(
+                self._vivibe_url,
+                headers=headers,
+                timeout=120,
+                json={
+                    "method": "ttsLongText",
+                    "input": {
+                        "text": text,
+                        "userVoiceId": voice_id,
+                        "speed": speed,
+                    },
+                },
             )
-            return None
+            if response.status_code not in (200, 201):
+                raise VoiceGenerationError(
+                    f"ViVibe submit lỗi HTTP {response.status_code}: "
+                    f"{response.text[:200]}"
+                )
 
-        payload = response.json()
-        if payload.get("error"):
-            print(
-                f"[Voice] ⚠ Vivibe API lỗi: {str(payload['error'])[:200]}",
-                file=sys.stderr,
+            payload = response.json()
+            error = payload.get("error")
+            if not error:
+                break
+            message = (
+                str(error.get("message") or error)
+                if isinstance(error, dict)
+                else str(error)
             )
-            return None
+            if (
+                "export in progress" in message.lower()
+                and _time.monotonic() < busy_deadline
+            ):
+                remaining = busy_deadline - _time.monotonic()
+                sleep_seconds = min(
+                    _env_float(
+                        "VIVIBE_POLL_INTERVAL_SECONDS", 2.0, 0.5, 10.0
+                    ),
+                    max(0.0, remaining),
+                )
+                print(
+                    "[Voice] ViVibe còn export bên ngoài app; "
+                    f"đợi {sleep_seconds:.1f}s rồi thử lại.",
+                    file=sys.stderr,
+                )
+                if sleep_seconds:
+                    _time.sleep(sleep_seconds)
+                continue
+            raise VoiceGenerationError(f"ViVibe API lỗi: {message[:240]}")
 
         submit_result = payload.get("result") or {}
         audio_url = submit_result.get("url")
         export_id = submit_result.get("projectExportId")
         if not audio_url and not export_id:
-            print(
-                f"[Voice] ⚠ Vivibe không trả projectExportId: {str(payload)[:200]}",
-                file=sys.stderr,
+            raise VoiceGenerationError(
+                "ViVibe không trả projectExportId: " + str(payload)[:200]
             )
-            return None
 
-        timeout_seconds = max(
-            15.0,
-            min(600.0, float(os.getenv("VIVIBE_EXPORT_TIMEOUT_SECONDS", "180"))),
+        timeout_seconds = _env_float(
+            "VIVIBE_EXPORT_TIMEOUT_SECONDS", 180.0, 15.0, 600.0
         )
-        poll_seconds = max(
-            0.5,
-            min(10.0, float(os.getenv("VIVIBE_POLL_INTERVAL_SECONDS", "2"))),
+        poll_seconds = _env_float(
+            "VIVIBE_POLL_INTERVAL_SECONDS", 2.0, 0.5, 10.0
         )
         deadline = _time.monotonic() + timeout_seconds
         while not audio_url and _time.monotonic() < deadline:
@@ -504,21 +634,17 @@ class VoiceGenerator:
                 },
             )
             if status_response.status_code not in (200, 201):
-                print(
-                    f"[Voice] ⚠ Vivibe status {status_response.status_code}: "
-                    f"{status_response.text[:200]}",
-                    file=sys.stderr,
+                raise VoiceGenerationError(
+                    f"ViVibe status lỗi HTTP {status_response.status_code}: "
+                    f"{status_response.text[:200]}"
                 )
-                return None
 
             status_payload = status_response.json()
             if status_payload.get("error"):
-                print(
-                    f"[Voice] ⚠ Vivibe status lỗi: "
-                    f"{str(status_payload['error'])[:200]}",
-                    file=sys.stderr,
+                raise VoiceGenerationError(
+                    "ViVibe status lỗi: "
+                    + str(status_payload["error"])[:200]
                 )
-                return None
 
             status = status_payload.get("result") or {}
             state = str(status.get("state", "")).lower()
@@ -530,25 +656,21 @@ class VoiceGenerator:
             if audio_url:
                 break
             if state in ("failed", "canceled", "cancelled", "error"):
-                print(
-                    f"[Voice] ⚠ Vivibe export {state}: "
-                    f"{str(status.get('error', ''))[:200]}",
-                    file=sys.stderr,
+                raise VoiceGenerationError(
+                    f"ViVibe export {state}: "
+                    f"{str(status.get('error', ''))[:200]}"
                 )
-                return None
             _time.sleep(poll_seconds)
 
         if not audio_url:
-            print(
-                f"[Voice] ⚠ Vivibe timeout chờ audio ({timeout_seconds:.0f}s).",
-                file=sys.stderr,
+            raise VoiceGenerationError(
+                f"ViVibe timeout chờ audio ({timeout_seconds:.0f}s)."
             )
-            return None
 
         audio = _requests.get(audio_url, timeout=120)
         audio.raise_for_status()
         if len(audio.content) < 500:
-            return None
+            raise VoiceGenerationError("ViVibe trả file âm thanh quá nhỏ.")
         return audio.content
 
     # ── ElevenLabs ───────────────────────────────────────────────────────────

@@ -576,8 +576,7 @@ def _render_segment(kind: str, seg: dict, idx: int, work: Path,
     vo_path = vg.generate_voice(text=vo_text, voice_id=voice_id or "",
                                 output_name=f"lr_{work.name}_{kind}{idx}", speed=1.08)
     if not vo_path or not os.path.exists(vo_path):
-        print(f"[list_review] VO lỗi segment {kind}{idx}", file=sys.stderr)
-        return None
+        raise RuntimeError(f"Không tạo được giọng cho segment {kind}{idx}.")
     dur = max(1.2, _ffprobe_dur(vo_path))
     print(f"[perf] {kind}{idx} VO: {_pt.time()-_t0:.1f}s", file=sys.stderr); _t1 = _pt.time()
 
@@ -661,6 +660,7 @@ def render_list_review(spec: dict) -> dict:
     hook_style = spec.get("hook_style", "hook_red")
     vp = spec.get("voice_provider", "gtts")
     vid = spec.get("voice_id", "")
+    print(f"[list_review] job={job_id} voice_provider={vp} voice_id={vid!r}", file=sys.stderr)
 
     engine = (spec.get("overlay_engine") or "pil").lower()
     style = (spec.get("style") or "").lower()
@@ -676,15 +676,17 @@ def render_list_review(spec: dict) -> dict:
         # Render các segment SONG SONG (3 luồng) — phần lớn thời gian là chờ API
         # (Vbee/Whisper); file mỗi segment đều có suffix riêng nên không đụng nhau.
         tasks = []
-        if spec.get("intro"):
+        if (spec.get("intro") or {}).get("vo", "").strip():
             tasks.append(("intro", spec["intro"], 0, ov.get("intro")))
         for i, spot in enumerate(spec.get("spots", []), start=1):
-            tasks.append(("spot", spot, i, ov.get(f"spot{i}")))
-        if spec.get("outro"):
+            if (spot.get("vo") or "").strip():
+                tasks.append(("spot", spot, i, ov.get(f"spot{i}")))
+        if (spec.get("outro") or {}).get("vo", "").strip():
             tasks.append(("outro", spec["outro"], 99, ov.get("outro")))
 
         from concurrent.futures import ThreadPoolExecutor
         results: dict = {}
+        errors: dict = {}
         with ThreadPoolExecutor(max_workers=min(3, max(1, len(tasks)))) as ex:
             futs = {ex.submit(_render_segment, kind, seg, idx, work, hook_style,
                               vp, vid, html_png=png, badge_mode=badge_mode): order
@@ -695,8 +697,24 @@ def render_list_review(spec: dict) -> dict:
                 except Exception as e:
                     print(f"[list_review] segment {order} lỗi: {e}", file=sys.stderr)
                     results[order] = None
+                    errors[order] = str(e)
         segs = [results[o] for o in sorted(results) if results[o]]
 
+        if vp in {"vivibe", "lucylab"} and (
+            errors or len(segs) != len(tasks)
+        ):
+            detail = "; ".join(
+                f"segment {order}: {message}"
+                for order, message in sorted(errors.items())
+            )
+            return {
+                "success": False,
+                "error": (
+                    "ViVibe không tạo đủ giọng cho mọi segment; "
+                    "video đã dừng để tránh dùng sai giọng."
+                    + (f" {detail}" if detail else "")
+                ),
+            }
         if not segs:
             return {"success": False, "error": "Không render được segment nào (thiếu VO?)."}
 
