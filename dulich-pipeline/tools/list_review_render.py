@@ -193,7 +193,36 @@ def _chunk_caption(text: str, words_per_line: int = 7) -> list[str]:
     return [l for l in lines if l]
 
 
-def _word_timings(vo_path: str, vo_text: str) -> list[dict] | None:
+def _whisper_words(vo_path: str, prompt: str) -> list[dict] | None:
+    """Một lượt gọi Whisper; trả về word timestamps hoặc None."""
+    key = os.getenv("OPENAI_API_KEY")
+    if not key or key.startswith("your-"):
+        return None
+    data = {"model": "whisper-1", "language": "vi",
+            "response_format": "verbose_json",
+            "timestamp_granularities[]": "word"}
+    if prompt:
+        data["prompt"] = prompt
+    try:
+        import requests
+        with open(vo_path, "rb") as f:
+            r = requests.post(
+                "https://api.openai.com/v1/audio/transcriptions",
+                headers={"Authorization": f"Bearer {key}"},
+                files={"file": (Path(vo_path).name, f, "audio/mpeg")},
+                data=data,
+                timeout=120)
+        if r.status_code != 200:
+            print(f"[list_review] whisper {r.status_code}: {r.text[:200]}", file=sys.stderr)
+            return None
+        return [{"word": w.get("word", ""), "start": float(w.get("start", 0)), "end": float(w.get("end", 0))}
+                for w in (r.json().get("words") or [])]
+    except Exception as e:
+        print(f"[list_review] whisper lỗi: {e}", file=sys.stderr)
+        return None
+
+
+def _word_timings(vo_path: str, vo_text: str, dur: float = 0.0) -> list[dict] | None:
     """Timing từng từ của file VO để phụ đề khớp giọng.
     1) Edge TTS đã ghi sẵn <vo>.words.json. 2) gtts/vbee → Whisper OpenAI (word timestamps).
     Không có → None (fallback chia đều)."""
@@ -206,32 +235,19 @@ def _word_timings(vo_path: str, vo_text: str) -> list[dict] | None:
                 return words
         except Exception:
             pass
-    key = os.getenv("OPENAI_API_KEY")
-    if not key or key.startswith("your-"):
-        return None
-    try:
-        import requests
-        with open(vo_path, "rb") as f:
-            r = requests.post(
-                "https://api.openai.com/v1/audio/transcriptions",
-                headers={"Authorization": f"Bearer {key}"},
-                files={"file": (Path(vo_path).name, f, "audio/mpeg")},
-                data={"model": "whisper-1", "language": "vi",
-                      "response_format": "verbose_json",
-                      "timestamp_granularities[]": "word",
-                      # prompt = kịch bản gốc → Whisper bám đúng chữ
-                      "prompt": (vo_text or "")[:800]},
-                timeout=120)
-        if r.status_code != 200:
-            print(f"[list_review] whisper {r.status_code}: {r.text[:200]}", file=sys.stderr)
-            return None
-        words = [{"word": w.get("word", ""), "start": float(w.get("start", 0)), "end": float(w.get("end", 0))}
-                 for w in (r.json().get("words") or [])]
-        if words:
+    # prompt = kịch bản gốc → Whisper bám đúng chữ. Nhưng với tiếng Việt nó thỉnh
+    # thoảng trượt hẳn sang câu outro YouTube ("Hãy subscribe cho kênh…") và trả về
+    # timing của câu bịa đó. Đọc lại KHÔNG prompt gỡ được, nên thử lần lượt.
+    for prompt in ((vo_text or "")[:800], ""):
+        words = _whisper_words(vo_path, prompt)
+        if not words:
+            continue
+        if dur <= 0 or _valid_timings(words, vo_text, dur):
             wp.write_text(_json.dumps(words, ensure_ascii=False), encoding="utf-8")  # cache
             return words
-    except Exception as e:
-        print(f"[list_review] whisper lỗi: {e}", file=sys.stderr)
+        if prompt:
+            print(f"[list_review] whisper lệch kịch bản ({Path(vo_path).name}) "
+                  f"→ đọc lại không prompt", file=sys.stderr)
     return None
 
 
@@ -381,7 +397,7 @@ def _no_overlap(cues: list[tuple[str, float, float]],
 def _timed_cues(vo_path: str, vo_text: str, dur: float) -> list[tuple[str, float, float]]:
     """Cue phụ đề (text, start, end). Ưu tiên timing thật (words.json/Whisper);
     fallback chia đều như cũ."""
-    words = _word_timings(vo_path, vo_text)
+    words = _word_timings(vo_path, vo_text, dur)
     if words and not _valid_timings(words, vo_text, dur):
         # Whisper bịa/thiếu (vd đoạn nhạc) → bỏ cache hỏng, dùng fallback
         print(f"[list_review] words không khớp audio ({Path(vo_path).name}) → chia đều", file=sys.stderr)

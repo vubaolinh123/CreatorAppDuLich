@@ -228,6 +228,57 @@ def test_vivibe_reads_at_natural_speed():
     assert list_review_render._vo_speed("") == 1.08
 
 
+def test_whisper_hallucination_retries_without_prompt(monkeypatch, tmp_path):
+    """Whisper slips into a canned YouTube outro; the no-prompt retry recovers it."""
+    vo_text = "Muốn đi Đà Lạt cho đáng thì sáng chịu khó dậy sớm một chút nha"
+    hallucination = [
+        {"word": w, "start": i * 0.1, "end": i * 0.1 + 0.09}
+        for i, w in enumerate("Hãy subscribe cho kênh Ghiền Mì Gõ".split())
+    ]
+    real = [
+        {"word": w, "start": i * 0.6, "end": i * 0.6 + 0.55}
+        for i, w in enumerate(vo_text.split())
+    ]
+    calls: list[str] = []
+
+    def fake_whisper(path, prompt):
+        calls.append(prompt)
+        return hallucination if prompt else real
+
+    monkeypatch.setattr(list_review_render, "_whisper_words", fake_whisper)
+    mp3 = tmp_path / "seg.mp3"
+    mp3.write_bytes(b"audio")
+
+    words = list_review_render._word_timings(str(mp3), vo_text, dur=8.0)
+
+    assert words == real
+    assert len(calls) == 2 and calls[0] and calls[1] == ""
+    assert mp3.with_suffix(".words.json").is_file()
+
+
+def test_whisper_prompt_result_is_kept_when_valid(monkeypatch, tmp_path):
+    """A good prompted read must not trigger a second, slower call."""
+    vo_text = "Trưa thì đừng có ngồi lì trong quán cà phê nữa nha bạn"
+    good = [
+        {"word": w, "start": i * 0.6, "end": i * 0.6 + 0.55}
+        for i, w in enumerate(vo_text.split())
+    ]
+    calls: list[str] = []
+
+    def fake_whisper(path, prompt):
+        calls.append(prompt)
+        return good
+
+    monkeypatch.setattr(list_review_render, "_whisper_words", fake_whisper)
+    mp3 = tmp_path / "seg.mp3"
+    mp3.write_bytes(b"audio")
+
+    words = list_review_render._word_timings(str(mp3), vo_text, dur=7.0)
+
+    assert words == good
+    assert len(calls) == 1
+
+
 def test_list_review_stops_if_any_vivibe_segment_fails(monkeypatch, tmp_path):
     monkeypatch.setattr(
         list_review_render,
