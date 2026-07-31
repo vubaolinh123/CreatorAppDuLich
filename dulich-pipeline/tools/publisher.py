@@ -192,7 +192,10 @@ def retry_zernio_post(post_id: str, api_key: str | None = None) -> dict:
 
 
 def list_tiktok_accounts(api_key: str | None = None) -> list:
-    """Danh sách tài khoản TikTok dưới 1 key Zernio → [{id, name}]. 1 key có thể có nhiều acc."""
+    """Tài khoản TikTok dưới 1 key Zernio → [{id, handle, name}].
+
+    `handle` (@username) là thứ admin dùng để nhận ra kênh; `displayName` có thể
+    là bất cứ gì ("Thành chưa đổi tên") nên chỉ dùng làm chú thích."""
     key = api_key or os.getenv("ZERNIO_KEY")
     if not key:
         return []
@@ -201,9 +204,15 @@ def list_tiktok_accounts(api_key: str | None = None) -> list:
         r = requests.get(ZERNIO_ACCOUNTS, headers={"Authorization": f"Bearer {key}"}, timeout=20)
         out = []
         for a in (r.json() or {}).get("accounts", []):
-            if a.get("platform") == "tiktok":
-                out.append({"id": a.get("_id") or a.get("accountId") or "",
-                            "name": a.get("displayName") or a.get("username") or a.get("name") or "TikTok"})
+            if a.get("platform") != "tiktok":
+                continue
+            username = (a.get("username") or "").strip().lstrip("@")
+            display = (a.get("displayName") or a.get("name") or "").strip()
+            out.append({
+                "id": a.get("_id") or a.get("accountId") or "",
+                "handle": f"@{username}" if username else "",
+                "name": display or (f"@{username}" if username else "TikTok"),
+            })
         return out
     except Exception as e:
         print(f"[pub] list_tiktok_accounts lỗi: {e}")

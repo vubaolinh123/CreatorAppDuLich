@@ -202,6 +202,35 @@ def test_listreview_voice_reaches_renderer_without_uploads(monkeypatch):
     assert rendered["voice_id"] == "Aoede"
 
 
+def test_listreview_payload_hook_style_reaches_renderer(monkeypatch):
+    """The hook frame rides beside `spec` exactly like the voice does."""
+    payload = {
+        "spec": {"intro": {"vo": "Mở đầu"}, "spots": [], "outro": {"vo": "Hết"}},
+        "voice_mode": "vivibe",
+        "hook_style": "hook_green",
+    }
+
+    rendered = _run_listreview_job(monkeypatch, payload)
+
+    assert rendered["hook_style"] == "hook_green"
+
+
+def test_listreview_legacy_spec_hook_style_is_preserved(monkeypatch):
+    """Old queued jobs carry the frame inside spec and no hook_style; keep it."""
+    payload = {
+        "spec": {
+            "hook_style": "hook_brown",
+            "intro": {"vo": "Mở đầu"},
+            "spots": [],
+            "outro": {"vo": "Hết"},
+        }
+    }
+
+    rendered = _run_listreview_job(monkeypatch, payload)
+
+    assert rendered["hook_style"] == "hook_brown"
+
+
 def test_listreview_legacy_spec_voice_is_preserved(monkeypatch):
     """Old queued jobs carry the voice inside spec and no voice_mode; keep it."""
     payload = {
@@ -222,10 +251,18 @@ def test_listreview_legacy_spec_voice_is_preserved(monkeypatch):
 
 def test_vivibe_reads_at_natural_speed():
     """1.08 rushes ViVibe enough that Whisper drops words and captions fall back."""
-    assert list_review_render._vo_speed("vivibe") == 1.0
-    assert list_review_render._vo_speed("lucylab") == 1.0
-    assert list_review_render._vo_speed("chirp") == 1.08
-    assert list_review_render._vo_speed("") == 1.08
+    assert list_review_render._vo_speed("vivibe", "trinh_review") == 1.0
+    assert list_review_render._vo_speed("lucylab", "adam_3") == 1.0
+    assert list_review_render._vo_speed("chirp", "Aoede") == 1.08
+    assert list_review_render._vo_speed("", "") == 1.08
+
+
+def test_thu_review_reads_slower_than_the_other_vivibe_voices():
+    """Thu Review outpaces the rest; an empty id lands on it by default too."""
+    assert list_review_render._vo_speed("vivibe", "thu_review") == 0.9
+    assert list_review_render._vo_speed("vivibe", "") == 0.9
+    assert list_review_render._vo_speed("vivibe", "THU_REVIEW") == 0.9
+    assert list_review_render._vo_speed("vivibe", "my_review") == 1.0
 
 
 def test_whisper_hallucination_retries_without_prompt(monkeypatch, tmp_path):
@@ -277,6 +314,34 @@ def test_whisper_prompt_result_is_kept_when_valid(monkeypatch, tmp_path):
 
     assert words == good
     assert len(calls) == 1
+
+
+def test_tiktok_accounts_expose_the_handle(monkeypatch):
+    """Admin picks a channel by @handle; displayName can be anything at all."""
+    from tools import publisher
+
+    class Response:
+        @staticmethod
+        def json():
+            return {"accounts": [
+                {"platform": "tiktok", "_id": "a1",
+                 "displayName": "Thành chưa đổi tên", "username": "thanhdt7999"},
+                {"platform": "tiktok", "_id": "a2", "username": "@geraki1233"},
+                {"platform": "tiktok", "_id": "a3", "displayName": "No Handle"},
+                {"platform": "instagram", "_id": "skip", "username": "nope"},
+            ]}
+
+    monkeypatch.setattr(publisher, "ZERNIO_ACCOUNTS", "https://x/accounts")
+    monkeypatch.setattr("requests.get", lambda *a, **k: Response())
+
+    out = publisher.list_tiktok_accounts("key")
+
+    assert [a["id"] for a in out] == ["a1", "a2", "a3"]
+    assert out[0]["handle"] == "@thanhdt7999"
+    assert out[0]["name"] == "Thành chưa đổi tên"
+    assert out[1]["handle"] == "@geraki1233"      # leading @ not doubled
+    assert out[2]["handle"] == ""                 # no username → picker shows name
+    assert out[2]["name"] == "No Handle"
 
 
 def test_overload_marker_matches_across_modules():

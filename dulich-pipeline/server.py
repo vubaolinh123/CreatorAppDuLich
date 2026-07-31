@@ -574,6 +574,11 @@ def _execute_durable_job(job: dict) -> dict:
             payload.get("voice_mode") or spec.get("voice_provider") or "gtts"
         )
         spec["voice_id"] = payload.get("voice_id") or spec.get("voice_id") or ""
+        # Same story as the voice: the hook frame rides beside `spec`, so without
+        # this every staff member's video renders with the default red frame.
+        spec["hook_style"] = (
+            payload.get("hook_style") or spec.get("hook_style") or "hook_red"
+        )
         with _HEAVY_LOCK:
             result = render_list_review(spec)
         return _render_product_from_result(job, result, payload)
@@ -4197,14 +4202,19 @@ class AssembleHandler(BaseHTTPRequestHandler):
             cache_key = f"{user}:{digest}"
             with _ZERNIO_ACCOUNTS_CACHE_LOCK:
                 cached = _ZERNIO_ACCOUNTS_CACHE.get(cache_key)
-            if cached and time.time() - cached[0] < 300:
+            # 60s, not 300s: connecting a channel inside Zernio leaves the key
+            # unchanged, so the digest is stale too and a long cache makes the
+            # new channel look like it never arrived.
+            if cached and time.time() - cached[0] < 60:
                 out = cached[1]
             else:
                 out = []
                 for ki, key in enumerate(keys):
                     for a in publisher.list_tiktok_accounts(key):
                         if a.get("id"):
-                            out.append({"ki": ki, "account_id": a["id"], "name": a.get("name", "TikTok")})
+                            out.append({"ki": ki, "account_id": a["id"],
+                                        "handle": a.get("handle", ""),
+                                        "name": a.get("name", "TikTok")})
                 with _ZERNIO_ACCOUNTS_CACHE_LOCK:
                     _ZERNIO_ACCOUNTS_CACHE[cache_key] = (time.time(), out)
             self._json_response({"success": True, "accounts": out})

@@ -598,10 +598,15 @@ def _concat_with_xfade(segs: list[str], out_path: Path, work: Path,
           "-c:a", "aac", "-b:a", "160k", str(out_path)], cwd=str(work), timeout=480)
 
 
-def _vo_speed(provider: str) -> float:
+def _vo_speed(provider: str, voice_id: str = "") -> float:
     """ViVibe đọc nhanh sẵn ở tốc độ gốc; 1.08 làm giọng hụt hơi và Whisper nghe
-    sót chữ → `_valid_timings` loại timing → phụ đề rơi về chia đều."""
-    return 1.0 if (provider or "").lower() in {"vivibe", "lucylab"} else 1.08
+    sót chữ → `_valid_timings` loại timing → phụ đề rơi về chia đều.
+
+    Thư Review còn nhanh hơn ba giọng ViVibe kia nên hạ thêm một nấc. voice_id
+    rỗng cũng tính là Thư Review vì `_vivibe_generate` mặc định rơi về giọng đó."""
+    if (provider or "").lower() not in {"vivibe", "lucylab"}:
+        return 1.08
+    return 0.9 if (voice_id or "").strip().lower() in {"", "thu_review"} else 1.0
 
 
 def _render_segment(kind: str, seg: dict, idx: int, work: Path,
@@ -619,7 +624,7 @@ def _render_segment(kind: str, seg: dict, idx: int, work: Path,
     vg = VoiceGenerator(provider=voice_provider or "gtts")
     vo_path = vg.generate_voice(text=vo_text, voice_id=voice_id or "",
                                 output_name=f"lr_{work.name}_{kind}{idx}",
-                                speed=_vo_speed(voice_provider))
+                                speed=_vo_speed(voice_provider, voice_id))
     if not vo_path or not os.path.exists(vo_path):
         raise RuntimeError(f"Không tạo được giọng cho segment {kind}{idx}.")
     dur = max(1.2, _ffprobe_dur(vo_path))
@@ -705,7 +710,8 @@ def render_list_review(spec: dict) -> dict:
     hook_style = spec.get("hook_style", "hook_red")
     vp = spec.get("voice_provider", "gtts")
     vid = spec.get("voice_id", "")
-    print(f"[list_review] job={job_id} voice_provider={vp} voice_id={vid!r}", file=sys.stderr)
+    print(f"[list_review] job={job_id} voice_provider={vp} voice_id={vid!r} "
+          f"hook_style={hook_style}", file=sys.stderr)
 
     engine = (spec.get("overlay_engine") or "pil").lower()
     style = (spec.get("style") or "").lower()
