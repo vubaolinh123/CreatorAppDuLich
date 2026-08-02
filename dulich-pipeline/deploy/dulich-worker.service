@@ -11,6 +11,9 @@ Restart=always
 RestartSec=5
 KillMode=control-group
 TimeoutStopSec=15
+# 1024 is the inherited default; a leaked SQLite handle per queue poll ate it
+# in ~509 calls and wedged the queue for a day. Headroom on top of the fix.
+LimitNOFILE=16384
 UMask=0077
 Environment=PYTHONUTF8=1
 Environment=PYTHONIOENCODING=utf-8

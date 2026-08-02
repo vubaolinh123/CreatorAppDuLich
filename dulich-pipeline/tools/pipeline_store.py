@@ -7,6 +7,7 @@ cross-thread and cross-process access without a long-lived global connection.
 """
 from __future__ import annotations
 
+import contextlib
 import io
 import json
 import os
@@ -86,9 +87,26 @@ class PipelineStore:
         conn.execute("PRAGMA synchronous=NORMAL")
         return conn
 
+    @contextlib.contextmanager
+    def _session(self):
+        """One connection per operation, always closed.
+
+        `with conn:` only commits or rolls back — it does NOT close. Relying on
+        it leaked a connection (and its -wal handle) per call; the worker polls
+        the queue several times a second, so it hit the 1024-descriptor limit
+        after ~509 calls and then failed every query with "unable to open
+        database file" until restarted. See the 2026-08-02 outage.
+        """
+        conn = self._connect()
+        try:
+            with conn:
+                yield conn
+        finally:
+            conn.close()
+
     def _init_schema(self) -> None:
         with self._schema_lock:
-            with self._connect() as conn:
+            with self._session() as conn:
                 conn.executescript(
                     """
                     CREATE TABLE IF NOT EXISTS pipeline_meta (
@@ -176,14 +194,14 @@ class PipelineStore:
     # ── General metadata ──────────────────────────────────────────────────
 
     def get_meta(self, key: str, default: str = "") -> str:
-        with self._connect() as conn:
+        with self._session() as conn:
             row = conn.execute(
                 "SELECT value FROM pipeline_meta WHERE key=?", (key,)
             ).fetchone()
         return str(row["value"]) if row else default
 
     def set_meta(self, key: str, value: str) -> None:
-        with self._connect() as conn:
+        with self._session() as conn:
             conn.execute(
                 """
                 INSERT INTO pipeline_meta(key, value) VALUES(?, ?)
@@ -194,7 +212,7 @@ class PipelineStore:
 
     def health_snapshot(self) -> dict:
         """Run cheap readiness checks without returning private job payloads."""
-        with self._connect() as conn:
+        with self._session() as conn:
             quick_check = str(
                 conn.execute("PRAGMA quick_check(1)").fetchone()[0]
             ).lower()
@@ -246,7 +264,7 @@ class PipelineStore:
             raise PipelineStoreError("Thiếu loại job hoặc tài khoản.")
         idem = (idempotency_key or "").strip() or None
         now = _now()
-        with self._connect() as conn:
+        with self._session() as conn:
             conn.execute("BEGIN IMMEDIATE")
             try:
                 if idem:
@@ -298,7 +316,7 @@ class PipelineStore:
                 raise
 
     def get_job(self, job_id: str) -> dict | None:
-        with self._connect() as conn:
+        with self._session() as conn:
             row = conn.execute("SELECT * FROM jobs WHERE id=?", (job_id,)).fetchone()
         return self._job_dict(row)
 
@@ -328,12 +346,12 @@ class PipelineStore:
             sql += " WHERE " + " AND ".join(where)
         sql += " ORDER BY created_at DESC LIMIT ?"
         args.append(max(1, min(int(limit), 500)))
-        with self._connect() as conn:
+        with self._session() as conn:
             rows = conn.execute(sql, args).fetchall()
         return [self._job_dict(row) for row in rows]
 
     def queue_length(self) -> int:
-        with self._connect() as conn:
+        with self._session() as conn:
             row = conn.execute(
                 "SELECT COUNT(*) AS n FROM jobs WHERE status='queued'"
             ).fetchone()
@@ -341,7 +359,7 @@ class PipelineStore:
 
     def queue_position(self, job_id: str) -> int:
         """Return a stable, approximate position suitable for user feedback."""
-        with self._connect() as conn:
+        with self._session() as conn:
             row = conn.execute(
                 "SELECT created_at, status FROM jobs WHERE id=?", (job_id,)
             ).fetchone()
@@ -369,7 +387,7 @@ class PipelineStore:
         if accepted:
             kind_sql = " AND j.kind IN (" + ",".join("?" for _ in accepted) + ")"
             args.extend(accepted)
-        with self._connect() as conn:
+        with self._session() as conn:
             conn.execute("BEGIN IMMEDIATE")
             try:
                 row = conn.execute(
@@ -429,7 +447,7 @@ class PipelineStore:
             fields += ", progress=?"
             args.append(max(0, min(99, int(progress))))
         args.extend([job_id, worker_id])
-        with self._connect() as conn:
+        with self._session() as conn:
             changed = conn.execute(
                 f"""
                 UPDATE jobs SET {fields}
@@ -441,7 +459,7 @@ class PipelineStore:
 
     def complete_job(self, job_id: str, worker_id: str, result: dict) -> bool:
         now = _now()
-        with self._connect() as conn:
+        with self._session() as conn:
             changed = conn.execute(
                 """
                 UPDATE jobs
@@ -465,7 +483,7 @@ class PipelineStore:
     ) -> str:
         """Fail/requeue a leased job and return the resulting status."""
         now = _now()
-        with self._connect() as conn:
+        with self._session() as conn:
             conn.execute("BEGIN IMMEDIATE")
             try:
                 row = conn.execute(
@@ -500,7 +518,7 @@ class PipelineStore:
                 raise
 
     def cancel_job(self, job_id: str, actor: str, *, is_admin: bool = False) -> dict | None:
-        with self._connect() as conn:
+        with self._session() as conn:
             conn.execute("BEGIN IMMEDIATE")
             try:
                 row = conn.execute("SELECT * FROM jobs WHERE id=?", (job_id,)).fetchone()
@@ -538,7 +556,7 @@ class PipelineStore:
         is_admin: bool = False,
         active_limit: int | None = None,
     ) -> dict | None:
-        with self._connect() as conn:
+        with self._session() as conn:
             conn.execute("BEGIN IMMEDIATE")
             try:
                 row = conn.execute("SELECT * FROM jobs WHERE id=?", (job_id,)).fetchone()
@@ -594,7 +612,7 @@ class PipelineStore:
         if status not in {"done", "failed"}:
             raise ValueError("Unknown jobs can only resolve to done or failed.")
         now = _now()
-        with self._connect() as conn:
+        with self._session() as conn:
             conn.execute("BEGIN IMMEDIATE")
             try:
                 row = conn.execute(
@@ -639,7 +657,7 @@ class PipelineStore:
     def recover_stale_jobs(self, stale_after_seconds: int = 120) -> dict:
         cutoff = _now() - max(30, int(stale_after_seconds))
         recovered = failed = 0
-        with self._connect() as conn:
+        with self._session() as conn:
             conn.execute("BEGIN IMMEDIATE")
             try:
                 rows = conn.execute(
@@ -792,7 +810,7 @@ class PipelineStore:
         job_id = uuid.uuid4().hex if reserves_job else ""
         now = _now()
         directory = self._upload_dir(session_id)
-        with self._connect() as conn:
+        with self._session() as conn:
             conn.execute("BEGIN IMMEDIATE")
             try:
                 if idem:
@@ -953,7 +971,7 @@ class PipelineStore:
     def get_upload_session(
         self, session_id: str, actor: str, *, is_admin: bool = False
     ) -> dict | None:
-        with self._connect() as conn:
+        with self._session() as conn:
             session = conn.execute(
                 "SELECT * FROM upload_sessions WHERE id=?", (session_id,)
             ).fetchone()
@@ -986,7 +1004,7 @@ class PipelineStore:
             path: Path | None = None
             original_size = 0
             try:
-                with self._connect() as conn:
+                with self._session() as conn:
                     row = conn.execute(
                         """
                         SELECT f.*, s.owner, s.status AS session_status
@@ -1030,7 +1048,7 @@ class PipelineStore:
                 new_size = received + int(length)
                 status = "complete" if new_size == expected else "uploading"
                 now = _now()
-                with self._connect() as conn:
+                with self._session() as conn:
                     conn.execute("BEGIN IMMEDIATE")
                     current = conn.execute(
                         """
@@ -1079,7 +1097,7 @@ class PipelineStore:
                 raise
 
     def complete_upload(self, session_id: str, owner: str) -> dict:
-        with self._connect() as conn:
+        with self._session() as conn:
             conn.execute("BEGIN IMMEDIATE")
             try:
                 session = conn.execute(
@@ -1120,7 +1138,7 @@ class PipelineStore:
 
     def queue_reserved_upload(self, session_id: str, owner: str) -> dict | None:
         """Attach validated files and atomically promote a reserved upload job."""
-        with self._connect() as conn:
+        with self._session() as conn:
             conn.execute("BEGIN IMMEDIATE")
             try:
                 session = conn.execute(
@@ -1206,7 +1224,7 @@ class PipelineStore:
                 raise
 
     def consume_upload(self, session_id: str, owner: str, job_id: str) -> dict:
-        with self._connect() as conn:
+        with self._session() as conn:
             conn.execute("BEGIN IMMEDIATE")
             try:
                 session = conn.execute(
@@ -1259,7 +1277,7 @@ class PipelineStore:
     ) -> tuple[dict, bool]:
         """Atomically consume a ready upload and create exactly one render job."""
         now = _now()
-        with self._connect() as conn:
+        with self._session() as conn:
             conn.execute("BEGIN IMMEDIATE")
             try:
                 session = conn.execute(
@@ -1358,7 +1376,7 @@ class PipelineStore:
     def cancel_upload(
         self, session_id: str, actor: str, *, is_admin: bool = False
     ) -> bool:
-        with self._connect() as conn:
+        with self._session() as conn:
             conn.execute("BEGIN IMMEDIATE")
             try:
                 row = conn.execute(
@@ -1399,7 +1417,7 @@ class PipelineStore:
     def cleanup_uploads(self, max_age_seconds: int = 24 * 3600) -> int:
         cutoff = _now() - max(3600, int(max_age_seconds))
         removable: list[tuple[str, str]] = []
-        with self._connect() as conn:
+        with self._session() as conn:
             rows = conn.execute(
                 """
                 SELECT s.id, COALESCE(s.job_id, '') AS job_id
@@ -1446,7 +1464,7 @@ class PipelineStore:
         return len(removable)
 
     def cleanup_job_upload(self, job_id: str) -> bool:
-        with self._connect() as conn:
+        with self._session() as conn:
             row = conn.execute(
                 "SELECT id FROM upload_sessions WHERE job_id=?", (job_id,)
             ).fetchone()
@@ -1474,7 +1492,7 @@ class PipelineStore:
     def import_resources(self, kind: str, records: Iterable[dict]) -> int:
         count = 0
         now = _now()
-        with self._connect() as conn:
+        with self._session() as conn:
             conn.execute("BEGIN IMMEDIATE")
             try:
                 for source in records:
@@ -1515,12 +1533,12 @@ class PipelineStore:
             sql += " AND owner=?"
             args.append(owner)
         sql += " ORDER BY event_time DESC, updated_at DESC"
-        with self._connect() as conn:
+        with self._session() as conn:
             rows = conn.execute(sql, args).fetchall()
         return [_json_load(row["data_json"], {}) for row in rows]
 
     def get_resource(self, kind: str, resource_id: str) -> dict | None:
-        with self._connect() as conn:
+        with self._session() as conn:
             row = conn.execute(
                 "SELECT data_json FROM resources WHERE kind=? AND id=?",
                 (kind, resource_id),
@@ -1533,7 +1551,7 @@ class PipelineStore:
         item.setdefault("status", "pending")
         item.setdefault("time", _now())
         owner = str(item.get("user") or item.get("owner") or "")
-        with self._connect() as conn:
+        with self._session() as conn:
             conn.execute(
                 """
                 INSERT INTO resources(
@@ -1559,7 +1577,7 @@ class PipelineStore:
         item.setdefault("status", "pending")
         item.setdefault("time", _now())
         owner = str(item.get("user") or item.get("owner") or "")
-        with self._connect() as conn:
+        with self._session() as conn:
             conn.execute("BEGIN IMMEDIATE")
             try:
                 changed = conn.execute(
@@ -1594,7 +1612,7 @@ class PipelineStore:
         if not resource_id:
             return False
         owner = str(item.get("user") or item.get("owner") or "")
-        with self._connect() as conn:
+        with self._session() as conn:
             changed = conn.execute(
                 """
                 UPDATE resources
@@ -1614,7 +1632,7 @@ class PipelineStore:
         return bool(changed)
 
     def update_resource(self, kind: str, resource_id: str, **fields) -> dict | None:
-        with self._connect() as conn:
+        with self._session() as conn:
             conn.execute("BEGIN IMMEDIATE")
             try:
                 row = conn.execute(
@@ -1650,7 +1668,7 @@ class PipelineStore:
                 raise
 
     def delete_resource(self, kind: str, resource_id: str) -> bool:
-        with self._connect() as conn:
+        with self._session() as conn:
             changed = conn.execute(
                 "DELETE FROM resources WHERE kind=? AND id=?",
                 (kind, resource_id),

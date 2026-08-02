@@ -770,11 +770,26 @@ def _durable_worker_loop(kinds: set[str], label: str) -> None:
     recovery = PIPELINE_STORE.recover_stale_jobs(_env_int("JOB_LEASE_SECONDS", 120, 30))
     if recovery["recovered"] or recovery["failed"]:
         print(f"[jobs] recovery {recovery}", file=sys.stderr)
+    # Retrying forever hid a dead queue for 24 hours: the process stayed
+    # "active" under systemd while every single claim failed. Give up instead,
+    # so Restart=always puts a healthy process back within seconds.
+    max_failures = _env_int("WORKER_MAX_CLAIM_FAILURES", 20, 3)
+    failures = 0
     while True:
         try:
             job = PIPELINE_STORE.claim_next(worker_id, kinds=kinds)
+            failures = 0
         except Exception as exc:
-            print(f"[jobs] claim lỗi: {exc}", file=sys.stderr)
+            failures += 1
+            print(f"[jobs] claim lỗi ({failures}/{max_failures}): {exc}", file=sys.stderr)
+            if failures >= max_failures:
+                print(
+                    f"[jobs] hàng đợi hỏng {failures} lần liên tiếp — thoát để "
+                    "systemd khởi động lại worker.",
+                    file=sys.stderr,
+                )
+                sys.stderr.flush()
+                os._exit(1)   # sys.exit() chỉ kết thúc luồng này, không phải process
             time.sleep(2)
             continue
         if not job:

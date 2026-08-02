@@ -18,6 +18,44 @@ def store(tmp_path):
     return PipelineStore(tmp_path / "pipeline.sqlite3", tmp_path / "uploads")
 
 
+def test_store_closes_every_connection_it_opens(tmp_path, monkeypatch):
+    """`with conn:` commits, it does not close.
+
+    Leaking one connection per call burned the worker's 1024 descriptors after
+    ~509 queue polls; every query then failed with "unable to open database
+    file" and the queue stalled silently until restart (outage 2026-08-02).
+    """
+    import sqlite3
+
+    from tools import pipeline_store
+
+    stats = {"opened": 0, "closed": 0}
+
+    class Tracking(sqlite3.Connection):
+        def close(self):
+            stats["closed"] += 1
+            super().close()
+
+    real_connect = sqlite3.connect
+
+    def tracking_connect(*args, **kwargs):
+        stats["opened"] += 1
+        kwargs["factory"] = Tracking
+        return real_connect(*args, **kwargs)
+
+    monkeypatch.setattr(pipeline_store.sqlite3, "connect", tracking_connect)
+
+    tracked = pipeline_store.PipelineStore(
+        tmp_path / "leak.sqlite3", tmp_path / "leak-uploads"
+    )
+    for _ in range(5):
+        tracked.queue_length()
+        tracked.claim_next("worker-1", kinds=["publish_video"])
+
+    assert stats["opened"] >= 10
+    assert stats["closed"] == stats["opened"]
+
+
 def test_job_idempotency_is_safe_under_concurrency(store):
     def create(_):
         job, created = store.create_job(

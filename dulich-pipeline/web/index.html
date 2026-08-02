@@ -373,14 +373,17 @@ async function renderSettings(){
     try{
       const rk=await fetch(API+"/user-keys",{cache:"no-store"}); const jk=await rk.json();
       html+=`<div style="margin:22px 0 8px;font-weight:800;color:var(--pine)">Key theo tài khoản</div>
-        <div class="muted" style="font-size:12px;margin-bottom:10px">NV có key Zernio → admin duyệt là đăng thẳng TikTok. Mỗi key kéo về <b>mọi kênh TikTok</b> đã nối trong Zernio của key đó; nv có nhiều kênh thì lúc bấm Đăng admin chọn kênh theo @handle. Ô có sẵn (••) = giữ key cũ; để trống = bỏ. Bấm "➕ Thêm key" nếu nv có nhiều tài khoản Zernio.</div>`;
+        <div class="muted" style="font-size:12px;margin-bottom:10px">NV có key Zernio → admin duyệt là đăng thẳng TikTok. Mỗi key kéo về <b>mọi kênh TikTok</b> đã nối trong Zernio của key đó; nv có nhiều kênh thì lúc bấm Đăng admin chọn kênh theo @handle. Ô có sẵn (••) = giữ key cũ. Muốn <b>bỏ một key</b> thì bấm ✕ ở ô đó rồi Lưu (xoá trắng ô không có tác dụng). Bấm "➕ Thêm key" nếu nv có nhiều tài khoản Zernio.</div>`;
       (jk.items||[]).forEach(it=>{
         if(it.role!=="news"){
           const n=Math.max(it.zernio_count||0,2);
           let rows="";
           for(let i=0;i<n;i++){
             const has=i<(it.zernio_count||0);
-            rows+=`<input data-zuser="${it.user}" type="password" autocomplete="off" placeholder="${has?'•••••• (giữ key cũ)':'Zernio key'}" style="flex:1;min-width:200px;margin-bottom:5px">`;
+            rows+=`<div style="display:flex;gap:6px;align-items:center;margin-bottom:5px">
+              <input data-zuser="${it.user}" ${has?'data-zhas="1"':''} type="password" autocomplete="off" placeholder="${has?'•••••• (giữ key cũ)':'Zernio key'}" style="flex:1;min-width:200px">
+              <button class="btn-ghost chip" title="Xoá key này" onclick="toggleZernioDel(this)">✕</button>
+            </div>`;
           }
           html+=`<div style="margin-bottom:12px;border-left:3px solid var(--surface2);padding-left:10px">
             <b>${it.name}</b> <span class="muted" style="font-size:11px">${it.zernio_count||0} key Zernio</span>
@@ -401,27 +404,47 @@ async function renderSettings(){
 }
 function addZernioKey(u){
   const box=document.getElementById("zbox-"+u); if(!box)return;
-  const inp=document.createElement("input");
-  inp.setAttribute("data-zuser",u); inp.type="password"; inp.autocomplete="off";
-  inp.placeholder="Zernio key"; inp.style.cssText="flex:1;min-width:200px;margin-bottom:5px";
-  box.appendChild(inp);
+  const row=document.createElement("div");
+  row.style.cssText="display:flex;gap:6px;align-items:center;margin-bottom:5px";
+  row.innerHTML=`<input data-zuser="${u}" type="password" autocomplete="off" placeholder="Zernio key" style="flex:1;min-width:200px">
+    <button class="btn-ghost chip" title="Bỏ ô này" onclick="toggleZernioDel(this)">✕</button>`;
+  box.appendChild(row);
+}
+// Ô trống KHÔNG có nghĩa là xoá: ô của key cũ luôn mang placeholder '••' nên
+// server hiểu là "giữ nguyên". Phải đánh dấu xoá tường minh, và phải GIỮ ô lại
+// trong DOM — server ghép key cũ theo THỨ TỰ ô, bỏ hẳn ô đi sẽ lệch chỉ số và
+// xoá nhầm key khác.
+function toggleZernioDel(btn){
+  const row=btn.parentElement, inp=row.querySelector("input");
+  if(inp.dataset.zhas!=="1"){ row.remove(); return; }   // ô mới, chưa có key → bỏ luôn
+  const dang=inp.dataset.zdel==="1";
+  inp.dataset.zdel=dang?"":"1";
+  inp.value=""; inp.disabled=!dang;
+  inp.placeholder=dang?"•••••• (giữ key cũ)":"sẽ xoá khi bấm Lưu";
+  row.style.opacity=dang?"1":".5";
+  btn.textContent=dang?"✕":"↩";
+  btn.title=dang?"Xoá key này":"Hoàn tác";
 }
 async function saveSettings(){
   const payload={};
   document.querySelectorAll("#setbox input[data-key]").forEach(i=>{ const v=i.value.trim(); if(v) payload[i.getAttribute("data-key")]=v; });
   const perUser={};
-  // Zernio keys (mảng theo thứ tự ô; ô để trống mà là placeholder cũ → gửi '•' để giữ)
+  // Zernio keys: gửi mảng ĐÚNG THỨ TỰ ô. '••' = giữ key cũ ở chỉ số đó,
+  // rỗng = bỏ key đó. Giữ nguyên số ô để chỉ số không lệch.
+  let coXoa=false;
   document.querySelectorAll("#setbox [id^='zbox-']").forEach(box=>{
     const u=box.id.slice(5);
     const arr=[...box.querySelectorAll("input[data-zuser]")].map(i=>{
+      if(i.dataset.zdel==="1"){ coXoa=true; return ""; }   // đánh dấu xoá
       const v=i.value.trim();
       if(v) return v;
-      return i.placeholder.includes("•") ? "••" : "";   // giữ key cũ nếu là ô có sẵn
+      return i.placeholder.includes("•") ? "••" : "";      // giữ key cũ nếu là ô có sẵn
     });
     (perUser[u]=perUser[u]||{user:u}).zernio_keys=arr;
   });
   const hasUser=Object.values(perUser).some(o=>o.zernio_keys?.some(x=>x&&x!=="••"));
-  if(!Object.keys(payload).length && !hasUser){ toast("Chưa nhập key mới nào"); return; }
+  // coXoa phải tính vào đây: chỉ xoá key mà không nhập gì mới thì vẫn phải lưu.
+  if(!Object.keys(payload).length && !hasUser && !coXoa){ toast("Chưa thay đổi gì"); return; }
   try{
     if(Object.keys(payload).length){
       const r=await fetch(API+"/settings",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload)});
